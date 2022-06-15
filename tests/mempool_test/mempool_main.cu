@@ -20,11 +20,34 @@
 
 
 
+   typedef  DoublyStackedArena DSA;
+   typedef FixedList<DSA>::Node Node;
 int main(){
 
-   UnifiedMemPool pool;
 
-   void * ptr = pool.allocate(1<<10);
-   void * ptr2 = pool.allocate(1<<10);
-   pool.stats();
+   //nightly example to show proper usage. 
+   FixedList<DSA> nodelist;
+   Node* block=nodelist.head;
+   DSA newStack=DSA(1024);
+   block->data=&newStack;
+   block->data->allocate(100);
+   std::cout<<block<<"  "<<block->data<<" "<<block->data->Size()<<std::endl;
+ 
+   block=block->next;
+
+   DSA newStack_2=DSA(4096);
+   block->data=&newStack_2;
+   std::cout<<block<<"  "<<block->data<<" "<<block->data->Size()<<std::endl;
+   
+   
+
+   
+
+
+
+   //UnifiedMemPool pool;
+
+   //void * ptr = pool.allocate(1<<10);
+   //void * ptr2 = pool.allocate(1<<10);
+   //pool.stats();
 }
