@@ -6,10 +6,10 @@
 
 
 class DoublyStackedArena{
-using val_type = char;
+using val_type = unsigned char;
 private:
    //Memebrs;
-   val_type*  _data;
+   void*  _data;
    val_type** _start;
    val_type** _current;
    size_t *_size;
@@ -17,8 +17,8 @@ private:
    
    __host__
    void reset(){
-      _start[0] = _data;
-      _start[1] = _data + *_size;
+      _start[0] = (val_type*)_data;
+      _start[1] = (val_type*)_data + *_size;
       _current[0] = _start[0];
       _current[1] = _start[1];
       *_available=*_size;
@@ -74,7 +74,8 @@ public:
       
       size=pad(size,align);
       //Not enough space
-      if ( _current[0] + size >_current[1]){
+      if ( availableSpace()<size || !canAllocate()){
+         printf("FUUUUUUUUUUUUUUU");
          return nullptr;
       }
       if (_current[0]==_start[0]){
@@ -86,12 +87,12 @@ public:
          return (void*)_start[0];
       }
       if (_current[1]==_start[1]){
-         _start[1]-=size;
+         _current[1]-=size;
          *_available-=size;
 #ifdef DEBUG
          printf("Right::Size /Free  = %zu / %zu \n",*_size,*_available);
 #endif
-         return (void*)_start[1];
+         return (void*)_current[1];
       }
       //Probably we already have 2 allocations in use so return a nullptr
       return nullptr;
@@ -103,7 +104,7 @@ public:
          *_available +=abs(_current[0]-_start[0]);
          _current[0]=_start[0];
       }
-      if (ptr==_start[1]){
+      if (ptr==_current[1]){
          *_available += abs(_current[1]-_start[1]);
          _current[1]=_start[1];
       }
@@ -111,7 +112,7 @@ public:
 
    void dump(uint16_t stride = 4){
       for (size_t i=0;i<this->size();i+=stride){
-         printf("%i ",(int)*(_data+i));
+         printf("%d ",*(int*)(_data+i));
       }
    }
 
