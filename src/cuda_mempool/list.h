@@ -4,7 +4,7 @@
 #include <cuda_runtime_api.h>
 #include <cuda.h>
 
-#define N 4
+#define N 10
 
 template<typename T>
 class FixedList{
@@ -19,14 +19,14 @@ public:
 
 
    FixedList(){
-      cudaMallocManaged((void**)(&(current)), sizeof(Node));
+      cudaMallocManaged((void**)(&(current)), sizeof(Node*));
       head=nullptr;
       current=nullptr;
 
 
       for (int i =0; i<N; i++){
          Node* newNode;
-         cudaMallocManaged((void**)(&(newNode)), sizeof(Node));
+         cudaMallocManaged((void**)(&(newNode)), sizeof(Node*));
          newNode->next=nullptr;
          if (head==nullptr){
             head=newNode;
@@ -35,7 +35,7 @@ public:
             head=newNode;
          }
       }
-      // print();
+      print();
    }
       
    ~FixedList(){
@@ -43,7 +43,8 @@ public:
       while (current!=nullptr){
          Node* toKill=current;
          current=current->next;
-         // std::cout<<"Killing node-> "<<toKill<<std::endl;
+         std::cout<<"Killing node-> "<<toKill<<std::endl;
+         toKill->data.cleanup();
          cudaFree(toKill);
       }
       cudaFree(current);
@@ -52,7 +53,9 @@ public:
    void print(){
       current=head;
       while (current!=nullptr){
+#ifdef DEBUG
          std::cout<<"New node at -> "<<current<<std::endl;
+#endif
          current=current->next;
       }
    }
