@@ -56,45 +56,4 @@ int main(){
       pool.stats(sizeof(int));
 
    }
-
-
-   std::cout<< "Initiating MemTests. Never-Ending so kill at will"<<std::endl;
-   int l =0;
-   while (l<2){
-
-      {
-         UnifiedMemPool pool;
-         int s=1e9;
-         int* ptr = (int*)pool.allocate(s*sizeof(int));
-         check_ptr(ptr);
-         for (int i=0; i<s; i++){
-            ptr[i]=1;
-         }
-
-         int* ptr2 = (int*)pool.allocate(2*s*sizeof(int));
-         check_ptr(ptr2);
-         for (int i=0; i<2*s; i++){
-           ptr2[i]=2;
-         }
-         //pool.stats();
-
-          
-            
-      }
-    l+=1;  
-   
-   
-   }
-
-   
-
-
-
-
-
-
-
- cudaDeviceReset();
-
-
 }
