@@ -86,7 +86,6 @@ public:
          return (void*)_start[0];
       }
       if (_current[1]==_start[1]){
-         _current[1]-=size;
          _start[1]-=size;
          *_available-=size;
 #ifdef DEBUG
@@ -101,9 +100,11 @@ public:
    __host__ __device__
    void deallocate(void * ptr){
       if (ptr==_start[0]){
+         *_available +=abs(_current[0]-_start[0]);
          _current[0]=_start[0];
       }
       if (ptr==_start[1]){
+         *_available += abs(_current[1]-_start[1]);
          _current[1]=_start[1];
       }
    }

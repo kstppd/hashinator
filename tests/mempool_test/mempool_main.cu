@@ -53,4 +53,25 @@ int main(){
 
    check_ptr(ptr);
    pool.stats(sizeof(int));
+
+
+
+   pool.free(ptr2);
+   pool.stats(sizeof(int));
+
+
+
+   pool.free(ptr);
+   pool.stats(sizeof(int));
+
+
+
+
+
+
+
+
+
+
+
 }

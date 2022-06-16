@@ -54,6 +54,20 @@ public:
 
    }
 
+
+   void free(void* ptr){
+      Node* block=nodeList.head;
+      while(block!=nullptr){
+         if (block->alive){
+            block->data.deallocate(ptr);
+         }
+         block=block->next;
+      }
+      return;
+   }
+
+
+
    __host__ 
    void stats(uint16_t stride= 4){
       std::cout<<"***************STATS*******************"<<std::endl;
