@@ -252,54 +252,15 @@ bool ranges_test(){
    return true;
 }
 
-bool push_test(){
-   vec a;
-
-   for (int i=0; i<10;i++){
-      a.push_back(i);
-      a.print();
-   }
-   
-   return true;
-}
-
-bool push_test2(vec &a){
-   
-   a.reserve(a.size()+1) ;
-   return true;
-
-}
-
-bool push_test3(vec a){
-   
-   a.push_back(a.size()+1) ;
-   return true;
-
-}
-
-bool push_ref(){
-   vec a(2);
-   vec b(2);
-   b.reserve(10);
-   push_test2(a);
-   push_test3(b);
-   a.print();
-   b.print();
-   return true;
-}
-
-
 
 void perform_tests(){
-    //IS_TRUE(swap_same_size());
-    //IS_TRUE(swap_different_size());
-    //IS_TRUE(gpu_add());
-    //IS_TRUE(gpu_add_double());
-    //IS_TRUE(access());
-    //IS_TRUE(operators());
-    //IS_TRUE(ranges_test());
-    IS_TRUE(push_test());
-    IS_TRUE(push_ref());
+    IS_TRUE(swap_same_size());
+    IS_TRUE(swap_different_size());
+    IS_TRUE(gpu_add());
+    IS_TRUE(gpu_add_double());
+    IS_TRUE(access());
+    IS_TRUE(operators());
+    IS_TRUE(ranges_test());
     std::cout << "\033[1;32m ==========> All OK <========== \033[0m\n"<<std::endl; \
 }
 
