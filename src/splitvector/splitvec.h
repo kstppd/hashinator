@@ -166,14 +166,12 @@ namespace split{
          __host__  SplitVector& operator= (const SplitVector& other){
             if (*_clones == 1){
                if (size() == other.size()){
-                  this->reserve(*other._capacity);
                   memcpy(_data,other._data,size()*sizeof(T));
                }else{
                   // we need to allocate a new block unfortunately
                   this->_deallocate();
                   _clones =new int(1);
                   this->_allocate(other.size());
-                  this->reserve(*other._capacity);
                   memcpy(_data,other._data,size()*sizeof(T));
                }
             }else{
@@ -301,167 +299,6 @@ namespace split{
          split_iterator<T> end(){
             return split_iterator<T>(_data+size());
          }
-
-
-         //Size modifiers
-         /* 
-            Reserve method:
-            Supports only host reserving.
-            Will never reduce the vector's size.
-            Memory location will change so any old pointers/iterators
-            will be invalid from now on.
-         */
-         __host__
-         void reserve(size_t requested_space){
-            
-            size_t current_space=*_capacity;
-            //Proper Malakas.
-            if (requested_space <= current_space){
-               return ;
-            }
-            
-            requested_space*=_alloc_multiplier;
-            _alloc_multiplier*=2;
-            // Allocate new Space
-            T* _new_data;
-            #ifdef CUDAVEC
-               cudaMallocManaged((void**)&_new_data, requested_space * sizeof(T));
-               CheckErrors("Reserve:: Managed Allocation");
-            #else
-               _new_data=new T[requested_space];
-               if (_new_data==nullptr){
-                  delete [] _new_data;
-                  this->_deallocate();
-                  throw std::bad_alloc();
-               }
-            #endif
-            
-            //Copy over
-            for (size_t i=0; i<size();i++){
-               _new_data[i] = _data[i];
-            }
-
-            //Deallocate old space
-            #ifdef CUDAVEC
-               cudaFree(_data);
-            #else
-               delete [] _data;
-            #endif
-
-            //Swap pointers & update capacity
-            //Size remains the same ofc
-            _data=_new_data;
-            *_capacity=requested_space;
-            return;
-         }
-
-         /* 
-            Resize method:
-            Supports only host resizing.
-            Will never reduce the vector's size.
-            Memory location will change so any old pointers/iterators
-            will be invalid from now on.
-         */
-         __host__
-         void resize(size_t newSize){
-
-            //Let's reserve some space and change our size
-            reserve(newSize);
-            *_size  =newSize; 
-         }
-
-
-         /* 
-            PushBack  method:
-            Supports only host  pushbacks.
-            Will never reduce the vector's size.
-            Memory location will change so any old pointers/iterators
-            will be invalid from now on.
-            Not thread safe
-         */      
-         __host__   
-         void push_back(T val){
-            
-            if (*_clones!=1 && size()==*_capacity){
-               return;
-            }
-
-            // We have no allocaetd memory because the default ctor was used. 
-            // Allocate one elemnt, set it and return 
-            if (_data==nullptr){
-               _allocate(1);
-               _data[size()-1] = val;
-               return;
-            }
-
-            resize(size()+1);
-            _data[size()-1] = val;
-            return;
-         }
-
-         /*
-            Trim method:
-            Will never reduce the actual number of elements
-            in the vector but only deallocate the excess elements 
-            and try to get capacity to match size.
-         */
-         __host__
-         void trim(){
-            
-            //Cannot trim unallocated space
-            if (_data==nullptr){
-               return;
-            }
-
-            //No chance to trim
-            if (size()==*_capacity){
-               return ;
-            }
-
-            // Allocate new Space
-            T* _new_data;
-            #ifdef CUDAVEC
-               cudaMallocManaged((void**)&_new_data, size() * sizeof(T));
-               CheckErrors("Reserve:: Managed Allocation");
-            #else
-               _new_data=new T[size()];
-               if (_new_data==nullptr){
-                  delete [] _new_data;
-                  this->_deallocate();
-                  throw std::bad_alloc();
-               }
-            #endif
-            
-             //Copy over
-            for (size_t i=0; i<size();i++){
-               _new_data[i] = _data[i];
-            }
-
-            //Deallocate old space
-            #ifdef CUDAVEC
-               cudaFree(_data);
-            #else
-               delete [] _data;
-            #endif
-
-            //Swap pointers & update capacity
-            //Size remains the same ofc
-            _data=_new_data;
-            *_capacity=size();
-            //Reset multiplier
-            _alloc_multiplier=1;
-            return;
-         }
-
-         /*Removes the last element of the vector*/
-         __host__
-         void pop_back(){
-            if (size()>0){
-               *_size=*_size-1;
-            }
-            return;
-         }
-
 
          //***************************temp****************************  
          __host__  void print(){
