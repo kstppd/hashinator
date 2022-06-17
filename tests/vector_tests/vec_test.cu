@@ -56,6 +56,19 @@ bool swap_same_size(){
    int* ad_b_2=b.data();
    std::cout<<"A resides in --> "<<ad_a_2<<std::endl;
    std::cout<<"B resides in --> "<<ad_b_2<<std::endl;
+   
+
+   for ( auto elem:a ){
+      if (elem!=2){
+         return false;
+      }
+   } 
+
+   for ( auto elem:b ){
+      if (elem!=1){
+         return false;
+      }
+   } 
    return true;
 }
 
@@ -79,6 +92,22 @@ bool swap_different_size(){
       b.print();
    } catch (...) { 
       std::cout << "There was a catastrophic exception of some kind at "<<__FILE__<<" : "<<__LINE__<<std::endl; 
+      return false;
+   }
+
+   for ( auto elem:a ){
+      if (elem!=1){
+         return false;
+      }
+   } 
+
+   for ( auto elem:b ){
+      if (elem!=2){
+         return false;
+      }
+   } 
+
+   if (a.size()!=N || b.size()!=N2){
       return false;
    }
    return true;
