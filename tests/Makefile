@@ -5,7 +5,7 @@ CXXFLAGS= -g -G
 EXTRA=-DCUDAVEC -Xcompiler -rdynamic --std=c++11
 EXTRA+= -gencode arch=compute_60,code=sm_60 -rdc=true -L /usr/lib/x86_64-linux-gnu
 
-OBJ= gpuport.o speed_test.o vec_test.o mempool_main.o
+OBJ= gpuport.o speed_test.o vec_test.o mempool_main.o alloc_vec_test.o
 
 
 all: ${OBJ}
@@ -27,6 +27,9 @@ speed_test.o: speed_tests/speed_test.cu
 
 vec_test.o: vector_tests/vec_test.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA}  -o vec_test vector_tests/vec_test.cu 
+
+alloc_vec_test.o: vec_allocator/alloc_vec_test.cu
+	${CC} ${CXXFLAGS} ${OPT} ${EXTRA}  -o vec_alloc vec_allocator/alloc_vec_test.cu
 
 mempool_main.o: mempool_test/mempool_main.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA}  -o mempool mempool_test/mempool_main.cu 
