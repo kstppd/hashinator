@@ -107,13 +107,15 @@ namespace split{
          /*Allocation/Deallocation only on host*/
          void _allocate(size_t size){
             _data=new T[size];
-            _size=new size_t(size);
-            _capacity=new size_t(size);
+            _size=new size_t;
+            _capacity=new size_t;
             if (_data == nullptr){
                delete [] _data;
                delete _size;
                throw std::bad_alloc();
             }
+            *this->_size= size;
+            *this->_capacity= size;
          }
 
          void _deallocate(){

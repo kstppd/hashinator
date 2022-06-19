@@ -285,8 +285,10 @@ bool ranges_test(){
 void perform_tests(){
     IS_TRUE(swap_same_size());
     IS_TRUE(swap_different_size());
+#ifdef CUDAVEC
     IS_TRUE(gpu_add());
     IS_TRUE(gpu_add_double());
+#endif
     IS_TRUE(access());
     IS_TRUE(operators());
     IS_TRUE(ranges_test());
