@@ -17,38 +17,30 @@
 typedef split::SplitVector<int> vec ;
 typedef split::SplitVector<double> dvec ;
 
-__global__
-void gpu_add(vec a ,vec b , vec c ){
-  int index = blockIdx.x * blockDim.x + threadIdx.x;
-  int stride = blockDim.x * gridDim.x;
-  for (int i = index; i < a.size(); i += stride)
-    c.at(i)= a.at(i)+ b.at(i);
-}
-
-__global__
-void gpu_add_double(dvec a ,dvec b , dvec c ){
-  int index = blockIdx.x * blockDim.x + threadIdx.x;
-  int stride = blockDim.x * gridDim.x;
-  for (int i = index; i < a.size(); i += stride)
-    c.at(i)= a.at(i)+ b.at(i);
-}
-
 
 bool vec_of_vec(){
-   split::SplitVector<vec> b(2); 
+   split::SplitVector<vec> a(10); 
 
-   b[0]=vec(10,1);
-   b[1]=vec(20,2);
-   b[0].print();
-   b[1].print();
-   b[1].resize(100);
-   b[0].print();
-   b[1].print();
+   a[0]=vec(2,2);
+   a[1]=vec(4,4);
+   a[2]=vec(8,8);
+   a[3]=vec(16,16);
+   a[4]=vec(32,32);
+   a[5]=vec(64,64);
+   a[6]=vec(128,128);
+   a[7]=vec(256,256);
+   a[8]=vec(512,512);
+   a[9]=vec(1024,1024);
 
-   //vec a(100);
-   //a.print();
-   //a.resize(1000);
-   //a.print();
+   for (int i =0; i<10; i++){
+      a[i].print();
+   }
+   a[0]=vec(2048,2048);
+   std::cout<<"***********************"<<std::endl;
+   for (int i =0; i<10; i++){
+      a[i].print();
+   }
+
    
 
    return true;
@@ -63,7 +55,5 @@ void perform_tests(){
 
 
 int main(){
-   cudaProfilerStart();
    perform_tests();
-   cudaProfilerStop();
 }

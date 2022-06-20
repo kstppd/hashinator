@@ -89,13 +89,23 @@ namespace split{
                *this->_size= size;
                *this->_capacity= size;
                CheckErrors("Managed Allocation");
+               //Here we also need to construct the object
+               for (size_t i=0; i < size; i++){
+                  new (&_data[i]) T(); 
+               }
+               CheckErrors("Managed Allocation");
                cudaDeviceSynchronize();
          }
 
          void _deallocate(){
                delete _clones;
-               cudaFree(_data);
-               CheckErrors("Managed Deallocation");
+               if (_data!=nullptr){
+                  for (size_t i=0; i<size();i++){
+                     _data[i].~T();
+                  }
+                  cudaFree(_data);
+                  CheckErrors("Managed Deallocation");
+               }
                cudaFree(_size);
                CheckErrors("Managed Deallocation");
                cudaFree(_capacity);
@@ -120,7 +130,9 @@ namespace split{
                delete _size;
                delete _capacity;
                delete _clones;
-               delete [] _data;
+               if (_data!=nullptr){
+                  delete [] _data;
+               }
          }
 #endif
 
@@ -128,7 +140,15 @@ namespace split{
 
          /*Constructors*/
          __host__ explicit   SplitVector():_data(nullptr),_clones(new int(1)){
-            this->_allocate(1);
+#ifdef CUDAVEC
+               cudaMallocManaged((void**)&_size,sizeof(size_t));
+               cudaMallocManaged((void**)&_capacity,sizeof(size_t));
+               *this->_size= 0;
+               *this->_capacity=0;
+#else
+               _size=new size_t(0);
+               _capacity=new size_t(0);
+#endif
          }
 
          __host__ explicit   SplitVector(size_t size)
@@ -144,7 +164,7 @@ namespace split{
                }
          }
 
-         __host__ SplitVector(const SplitVector &other){
+         __host__ explicit  SplitVector(const SplitVector &other){
             this->_data=other._data;
             this->_size=other._size; 
             this->_capacity=other._capacity; 
@@ -166,14 +186,12 @@ namespace split{
          
          /*Custom Assignment operator*/
          __host__  SplitVector& operator= (const SplitVector& other){
-            if (_clones==nullptr){
-               _clones= new int(1);
-               this->_allocate(1);
-            }
+
             if (*_clones == 1){
                if (size() == other.size()){
-                  this->_allocate(*other._capacity);
+                  printf("Memcpy\n");
                   memcpy(_data,other._data,size()*sizeof(T));
+                  printf("Memcpy done\n");
                }else{
                   // we need to allocate a new block unfortunately
                   this->_deallocate();
