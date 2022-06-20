@@ -127,7 +127,9 @@ namespace split{
       public:
 
          /*Constructors*/
-         __host__ explicit   SplitVector():_data(nullptr),_clones(new int(1)){}
+         __host__ explicit   SplitVector():_data(nullptr),_clones(new int(1)){
+            this->_allocate(1);
+         }
 
          __host__ explicit   SplitVector(size_t size)
                :_data(nullptr),_clones(new int(1)){
@@ -164,6 +166,10 @@ namespace split{
          
          /*Custom Assignment operator*/
          __host__  SplitVector& operator= (const SplitVector& other){
+            if (_clones==nullptr){
+               _clones= new int(1);
+               this->_allocate(1);
+            }
             if (*_clones == 1){
                if (size() == other.size()){
                   this->reserve(*other._capacity);
@@ -315,12 +321,13 @@ namespace split{
          void reserve(size_t requested_space){
             
             size_t current_space=*_capacity;
-            //Proper Malakas.
+            // Here we silently return as the condition is already met
             if (requested_space <= current_space){
                return ;
             }
             
-            requested_space*=_alloc_multiplier;
+            //TODO:fix this
+            //requested_space*=_alloc_multiplier;
             _alloc_multiplier*=2;
             // Allocate new Space
             T* _new_data;
