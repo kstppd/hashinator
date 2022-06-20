@@ -32,13 +32,13 @@ bool vec_of_vec(){
    a[8]=vec(512,512);
    a[9]=vec(1024,1024);
 
-   for (int i =0; i<10; i++){
-      a[i].print();
+   for (auto i=a.begin();i!=a.end(); ++i){
+      (*i).print();
    }
    a[0]=vec(2048,2048);
    std::cout<<"***********************"<<std::endl;
-   for (int i =0; i<10; i++){
-      a[i].print();
+   for (auto &i : a){
+      i.print();
    }
 
    
