@@ -69,75 +69,101 @@ namespace split{
    };
 
 
+   class split_allocator{
+
+      public:
+      bool killable=true;
+      split_allocator(){}
+      void* getHostMemory(size_t size){
+         void* ptr =(void*) malloc(size);
+         if (!ptr){abort();}
+         return ptr;
+      }
+
+      void* getDeviceMemory(size_t size){
+         void* ptr;
+         cudaMallocManaged((void**)&ptr,size);
+         return ptr;
+      }
+
+      void  freeHostMemory(void* ptr){
+         if (!ptr){abort();}
+         free(ptr);
+      }
+
+      void  freeDeviceMemory(void* ptr){
+         cudaFree(ptr);
+      }
+   };
+
    template<typename T>
    class SplitVector{
       
       private:
-         T* _data; //actual pointer to our data      
-         size_t* _size; // number of elements in vector.
-         size_t* _capacity; // number of allocated elements
-         int* _clones; //keeps a track of pointers for handling deallocations
-         int _alloc_multiplier=1; //host variable; multiplier for  when reserving
+         T*       _data; //actual pointer to our data      
+         size_t*  _size; // number of elements in vector.
+         size_t*  _capacity; // number of allocated elements
+         int*     _clones; //keeps a track of pointers for handling deallocations
+         int      _alloc_multiplier=1; //host variable; multiplier for  when reserving
+         split_allocator* _internal_allocator;
  
-
-#ifdef CUDAVEC
-         /*Allocation/Deallocation with unified memory*/
-         void _allocate(size_t size){
-               cudaMallocManaged((void**)&_data, size * sizeof(T));
-               cudaMallocManaged((void**)&_size,sizeof(size_t));
-               cudaMallocManaged((void**)&_capacity,sizeof(size_t));
-               *this->_size= size;
-               *this->_capacity= size;
-               CheckErrors("Managed Allocation");
-               cudaDeviceSynchronize();
-         }
-
-         void _deallocate(){
-               delete _clones;
-               cudaFree(_data);
-               CheckErrors("Managed Deallocation");
-               cudaFree(_size);
-               CheckErrors("Managed Deallocation");
-               cudaFree(_capacity);
-               CheckErrors("Managed Deallocation");
-               cudaDeviceSynchronize();
-         }
-
-#else
          /*Allocation/Deallocation only on host*/
          void _allocate(size_t size){
-            _data=new T[size];
-            _size=new size_t;
-            _capacity=new size_t;
-            if (_data == nullptr){
-               delete [] _data;
-               delete _size;
-               throw std::bad_alloc();
-            }
+#ifndef CUDAVEC
+            _data=(T*)_internal_allocator->getHostMemory(size*sizeof(T));
+            _size=(size_t*)_internal_allocator->getHostMemory(sizeof(size_t));
+            _capacity=(size_t*)_internal_allocator->getHostMemory(sizeof(size_t));
             *this->_size= size;
             *this->_capacity= size;
+#else
+            _data=(T*)_internal_allocator->getDeviceMemory(size*sizeof(T));
+            _size=(size_t*)_internal_allocator->getDeviceMemory(sizeof(size_t));
+            _capacity=(size_t*)_internal_allocator->getDeviceMemory(sizeof(size_t));
+            *this->_size= size;
+            *this->_capacity= size;
+            CheckErrors("Managed Allocation");
+            cudaDeviceSynchronize();
+#endif
          }
 
          void _deallocate(){
-               delete _size;
-               delete _capacity;
-               delete _clones;
-               delete [] _data;
-         }
+#ifndef CUDAVEC
+               _internal_allocator->freeHostMemory((void*)_data);
+               _internal_allocator->freeHostMemory((void*)_size);
+               _internal_allocator->freeHostMemory((void*)_capacity);
+               _internal_allocator->freeHostMemory((void*)_clones);
+#else
+               _internal_allocator->freeHostMemory((void*)_clones);
+               _internal_allocator->freeDeviceMemory((void*)_data);
+               _internal_allocator->freeDeviceMemory((void*)_size);
+               _internal_allocator->freeDeviceMemory((void*)_capacity);
+               CheckErrors("Managed Deallocation");
+               cudaDeviceSynchronize();
 #endif
+         }
 
       public:
 
          /*Constructors*/
-         __host__ explicit   SplitVector():_data(nullptr),_clones(new int(1)){}
-
-         __host__ explicit   SplitVector(size_t size)
-               :_data(nullptr),_clones(new int(1)){
+         __host__ explicit   SplitVector( split_allocator* alloc=new split_allocator):_data(nullptr){
+            _internal_allocator=alloc;
+            _clones=(int*)_internal_allocator->getHostMemory(sizeof(int));
+            *_clones=1;
+         }
+  
+         __host__ explicit   SplitVector(size_t size,split_allocator* alloc=new split_allocator)
+               :_data(nullptr){
+               _internal_allocator=alloc;
+               _clones=(int*)_internal_allocator->getHostMemory(sizeof(int));
+               *_clones=1;
                this->_allocate(size);
          }
 
-         __host__ explicit  SplitVector(size_t size, const T &val)
-               :_data(nullptr),_clones(new int(1)){
+         __host__ explicit  SplitVector(size_t size, const T &val,split_allocator* alloc=new split_allocator)
+               :_data(nullptr){
+               _internal_allocator=alloc;
+               _clones=(int*)_internal_allocator->getHostMemory(sizeof(int));
+               *_clones=1;
                this->_allocate(size);
                for (size_t i=0; i<size; i++){
                   _data[i]=val;
@@ -160,6 +186,9 @@ namespace split{
             --(*_clones);
             if(*_clones == 0){
                _deallocate();
+               if (_internal_allocator->killable){
+                  delete _internal_allocator;
+               }
             }  
          }
 
@@ -172,7 +201,8 @@ namespace split{
                }else{
                   // we need to allocate a new block unfortunately
                   this->_deallocate();
-                  _clones =new int(1);
+                  _clones=(int*)_internal_allocator->getHostMemory(sizeof(int));
+                  *_clones=1;
                   this->_allocate(other.size());
                   memcpy(_data,other._data,size()*sizeof(T));
                }
