@@ -9,7 +9,8 @@ EXTRA+=-DCUDAVEC
 GTEST=-lgtest -lgtest_main -lpthread
 
 
-OBJ= gpuport.o speed_test.o vec_test.o mempool_main.o vec_of_vec_test.o gtest_vec.o
+OBJ= gpuport.o speed_test.o vec_test.o mempool_main.o vec_of_vec_test.o gtest_vec.o\
+	  getst_hashmap.o
 
 
 all: ${OBJ}
@@ -22,6 +23,7 @@ allclean:
 	rm vec_test &
 	rm vec_of_vec &
 	rm gtestvec &
+	rm gtesthashmap &
 	rm mempool
 
 
@@ -41,4 +43,7 @@ mempool_main.o: mempool_test/mempool_main.cu
 
 gtest_vec.o: gtest_vec/vec_test.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o gtestvec gtest_vec/vec_test.cu
+
+gtest_hashmap.o: gtest_hasmap/unit.cu
+	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o gtesthashmap gtest_hasmap/unit.cu
 
