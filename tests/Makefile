@@ -1,5 +1,5 @@
 CC=nvcc  
-LNK=nvcc
+LNK=nvcc 
 OPT=
 CXXFLAGS= -g -G 
 EXTRA= -Xcompiler -rdynamic --std=c++11
