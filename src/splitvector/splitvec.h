@@ -46,30 +46,7 @@
 #endif
 
 namespace split{
-
-   //template <typename T>
-   //class split_iterator{
-      //private:
-         //T* data;
-      //public:
-         //using iterator_category = std::forward_iterator_tag;
-         
-         //split_iterator(){}
-         //split_iterator(T* _data) : data(_data) {}
-
-         //T& operator*() { return *data; }
-         //bool operator!=(const split_iterator& other){
-            //return data != other.data;
-         //}
-         //split_iterator<T>& operator++(){
-            //data += 1;
-            //return *this;
-         //}
-         //split_iterator<T> operator++(int){
-            //return split_iterator<T>(data + 1);
-         //}
-   //};
-
+   
    template <class T>
    class split_iterator{
        
