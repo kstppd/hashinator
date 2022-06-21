@@ -189,9 +189,7 @@ namespace split{
 
             if (*_clones == 1){
                if (size() == other.size()){
-                  printf("Memcpy\n");
                   memcpy(_data,other._data,size()*sizeof(T));
-                  printf("Memcpy done\n");
                }else{
                   // we need to allocate a new block unfortunately
                   this->_deallocate();
