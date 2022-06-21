@@ -50,6 +50,7 @@ namespace split{
    template <class T>
    class split_iterator{
        
+      private:
       T* _data;
       
       public:
@@ -80,7 +81,7 @@ namespace split{
 
    template <class T>
    class const_split_iterator{
-       
+      private: 
       T* _data;
       
       public:
