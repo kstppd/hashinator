@@ -164,7 +164,7 @@ namespace split{
                }
          }
 
-         __host__ explicit  SplitVector(const SplitVector &other){
+         __host__ SplitVector(const SplitVector &other){
             this->_data=other._data;
             this->_size=other._size; 
             this->_capacity=other._capacity; 
