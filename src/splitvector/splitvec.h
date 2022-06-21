@@ -47,26 +47,90 @@
 
 namespace split{
 
-   template <typename T>
-   class split_iterator{
-      public:
-         T* data;
-         using iterator_category = std::forward_iterator_tag;
-         split_iterator(){}
-         split_iterator(T* _data) : data(_data) {}
+   //template <typename T>
+   //class split_iterator{
+      //private:
+         //T* data;
+      //public:
+         //using iterator_category = std::forward_iterator_tag;
+         
+         //split_iterator(){}
+         //split_iterator(T* _data) : data(_data) {}
 
-         T& operator*() { return *data; }
-         bool operator!=(const split_iterator& other){
-            return data != other.data;
-         }
-         split_iterator<T>& operator++(){
-            data += 1;
-            return *this;
-         }
-         split_iterator<T> operator++(int){
-            return split_iterator<T>(data + 1);
-         }
+         //T& operator*() { return *data; }
+         //bool operator!=(const split_iterator& other){
+            //return data != other.data;
+         //}
+         //split_iterator<T>& operator++(){
+            //data += 1;
+            //return *this;
+         //}
+         //split_iterator<T> operator++(int){
+            //return split_iterator<T>(data + 1);
+         //}
+   //};
+
+   template <class T>
+   class split_iterator{
+       
+      T* _data;
+      
+      public:
+      
+      using iterator_category = std::forward_iterator_tag;
+      using value_type = T;
+      using difference_type = size_t;
+      using pointer = T*;
+      using reference = T&;
+
+      split_iterator(){}
+      split_iterator(pointer data) : _data(data) {}
+
+      pointer data() { return _data; }
+      reference operator*() { return *_data; }
+      bool operator!=(const split_iterator& other){
+        return _data != other._data;
+      }
+      split_iterator<T>& operator++(){
+        _data += 1;
+        return *this;
+      }
+      split_iterator<T> operator++(int){
+        return split_iterator<T>(_data + 1);
+      }
    };
+
+
+   template <class T>
+   class const_split_iterator{
+       
+      T* _data;
+      
+      public:
+      
+      using iterator_category = std::forward_iterator_tag;
+      using value_type = T;
+      using difference_type = size_t;
+      using pointer = T*;
+      using reference = T&;
+
+      const_split_iterator(){}
+      const_split_iterator(pointer data) : _data(data) {}
+
+      const pointer data() { return _data; }
+      const reference operator*()  { return *_data; }
+      bool operator!=(const const_split_iterator& other){
+        return _data != other._data;
+      }
+      const_split_iterator<T>& operator++(){
+        _data += 1;
+        return *this;
+      }
+      const_split_iterator<T> operator++(int){
+        return const_split_iterator<T>(_data + 1);
+      }
+   };
+
 
 
    template<typename T>
@@ -104,6 +168,7 @@ namespace split{
                      _data[i].~T();
                   }
                   cudaFree(_data);
+                  _data=nullptr;
                   CheckErrors("Managed Deallocation");
                }
                cudaFree(_size);
@@ -132,6 +197,7 @@ namespace split{
                delete _clones;
                if (_data!=nullptr){
                   delete [] _data;
+                  _data=nullptr;
                }
          }
 #endif
@@ -171,6 +237,14 @@ namespace split{
             this->_clones= other._clones;
             ++(*_clones);
          }
+
+         __host__ SplitVector(std::initializer_list<T> init_list)
+               :_data(nullptr),_clones(new int(1)){
+               this->_allocate(init_list.size());
+               for (size_t i =0 ; i< size();i++){
+                  _data[i]=init_list.begin()[i];
+               }
+         }
          
          /*Destructor: here we only actually deallocate 
             * if we are the first clone so the original container
@@ -189,13 +263,17 @@ namespace split{
 
             if (*_clones == 1){
                if (size() == other.size()){
-                  memcpy(_data,other._data,size()*sizeof(T));
+                  for (size_t i=0; i< size(); i++){
+                     _data[i]=other._data[i];
+                  }
                }else{
                   // we need to allocate a new block unfortunately
                   this->_deallocate();
                   _clones =new int(1);
                   this->_allocate(other.size());
-                  memcpy(_data,other._data,size()*sizeof(T));
+                  for (size_t i=0; i< size(); i++){
+                     _data[i]=other._data[i];
+                  }
                }
             }else{
                //we are migrating here
@@ -322,6 +400,13 @@ namespace split{
          split_iterator<T> end(){
             return split_iterator<T>(_data+size());
          }
+         
+        const_split_iterator<T> cbegin(){
+            return const_split_iterator<T>(_data);
+         }
+        const_split_iterator<T> cend(){
+            return const_split_iterator<T>(_data+size());
+         }
 
          //***************************temp****************************  
          __host__  void print(){
@@ -372,7 +457,7 @@ namespace split{
 			return false;
 		}
 		for (size_t i=0; i<lhs.size(); i++){
-			if (lhs[i]!=rhs[i]){
+			if ( !(lhs[i]==rhs[i]) ){
 				return false;
 			}
 		}
