@@ -84,7 +84,9 @@ public:
    // Resize the table to fit more things. This is automatically invoked once
    // maxBucketOverflow has triggered.
    void rehash(int newSizePower) {
-      //std::cout<<"Rehashing to "<<( 1<<newSizePower )<<std::endl;
+#ifdef DEBUG
+      std::cout<<"Rehashing to "<<( 1<<newSizePower )<<std::endl;
+#endif
       if (newSizePower > 32) {
          throw std::out_of_range("Hashinator ran into rehashing catastrophe and exceeded 32bit buckets.");
       }
