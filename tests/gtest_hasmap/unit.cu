@@ -1,11 +1,9 @@
 #include <iostream>
 #include <stdlib.h>
 #include <chrono>
-#include "../../src/hashinator/hashinator.h"
+#include "../../src/hashinator_2/hashinator.h"
 
 typedef uint32_t val_type;
-
-
 
 void load_N_elems(Hashinator<val_type,val_type>& map ,size_t N){
    for (size_t i =0; i<N;i++){
