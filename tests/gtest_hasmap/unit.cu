@@ -13,8 +13,10 @@ void load_N_elems(Hashinator<val_type,val_type>& map ,size_t N){
 
 void test1(){
    Hashinator<val_type,val_type> map;
-   load_N_elems(map,1024);
+   map.print_bank();   
+   load_N_elems(map,4096);
    map.print_all();
+   map.print_bank();   
 }
 
 int main(){

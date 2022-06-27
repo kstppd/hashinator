@@ -21,11 +21,20 @@
  */
 #pragma once
 #include <algorithm>
+#include <cstddef>
 #include <vector>
 #include <stdexcept>
 #include <cassert>
 #include "definitions.h"
+#include <stdlib.h>
 #include "../splitvector/splitvec.h"
+
+enum POLICY{
+   ECO,
+   COMFORT,
+   PERFORMANCE,
+   MEMHOG
+};
 
 // Open bucket power-of-two sized hash table with multiplicative fibonacci hashing
 template <typename GID, typename LID, int maxBucketOverflow = 4, GID EMPTYBUCKET = vmesh::INVALID_GLOBALID >
@@ -33,8 +42,10 @@ template <typename GID, typename LID, int maxBucketOverflow = 4, GID EMPTYBUCKET
 private:
    int sizePower; // Logarithm (base two) of the size of the table
    size_t fill;   // Number of filled buckets
-   split::SplitVector<std::pair<GID, LID>> buckets;
-
+   int nBlocks=4;                  
+   split::SplitVector<std::pair<GID, LID>>* buckets;
+   split::SplitVector<split::SplitVector<std::pair<GID,LID>>> bucket_bank;
+   split::split_iterator<split::SplitVector<split::SplitVector<std::pair<GID,LID>>>> bucket_iter;
    // Fibonacci hash function for 64bit values
    uint32_t fibonacci_hash(GID in) const {
       in ^= in >> (32 - sizePower);
@@ -66,9 +77,18 @@ private:
 
 public:
    Hashinator()
-       : sizePower(4), fill(0), buckets(1 << sizePower, std::pair<GID, LID>(EMPTYBUCKET, LID())){};
-   Hashinator(const Hashinator<GID, LID>& other)
-       : sizePower(other.sizePower), fill(other.fill), buckets(other.buckets){};
+      : sizePower(4), fill(0){
+
+         bucket_bank=split::SplitVector<split::SplitVector<std::pair<GID,LID>>>(nBlocks); 
+         for (size_t i =0; i<nBlocks;i++){
+            bucket_bank[i]=split::SplitVector<std::pair<GID,LID>>(1<<sizePower+i,std::pair<GID, LID>(EMPTYBUCKET, LID()));  
+         }
+         buckets=bucket_bank.begin().data();
+      }; 
+
+   Hashinator(const Hashinator<GID, LID>& other) 
+      : sizePower(other.sizePower), fill(other.fill),bucket_bank(other.bucket_bank){
+      };
 
    // Resize the table to fit more things. This is automatically invoked once
    // maxBucketOverflow has triggered.
@@ -79,13 +99,13 @@ public:
 #ifdef DEBUG
       std::cout<<"Rehashing to "<<( 1<<newSizePower )<<std::endl;
 #endif
-      split::SplitVector<std::pair<GID, LID>> newBuckets(1 << newSizePower,
+      split::SplitVector<std::pair<GID, LID>> newBucket_list(1 << newSizePower,
                                                   std::pair<GID, LID>(EMPTYBUCKET, LID()));
       sizePower = newSizePower;
       int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
 
       // Iterate through all old elements and rehash them into the new array.
-      for (auto& e : buckets) {
+      for (auto& e : *buckets) {
          // Skip empty buckets
          if (e.first == EMPTYBUCKET) {
             continue;
@@ -94,7 +114,7 @@ public:
          uint32_t newHash = hash(e.first);
          bool found = false;
          for (int i = 0; i < maxBucketOverflow; i++) {
-            std::pair<GID, LID>& candidate = newBuckets[(newHash + i) & bitMask];
+            std::pair<GID, LID>& candidate = newBucket_list[(newHash + i) & bitMask];
             if (candidate.first == EMPTYBUCKET) {
                // Found an empty bucket, assign that one.
                candidate = e;
@@ -111,7 +131,7 @@ public:
       }
 
       // Replace our buckets with the new ones
-      buckets = newBuckets;
+      *buckets = newBucket_list;
    }
 
    // Element access (by reference). Nonexistent elements get created.
@@ -121,7 +141,7 @@ public:
 
       // Try to find the matching bucket.
       for (int i = 0; i < maxBucketOverflow; i++) {
-         std::pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
+         std::pair<GID, LID>& candidate = buckets->operator[]((hashIndex + i) & bitMask);
          if (candidate.first == key) {
             // Found a match, return that
             return candidate.second;
@@ -175,6 +195,12 @@ public:
          std::cout<<it->first<<" "<<it->second<<std::endl;
       }
    }
+
+   void print_bank(){
+      for (auto& vec:bucket_bank ){
+         printf("Bucket bank with size %zu\n",vec.size());
+      }
+   }
    /***********************************************************************/
 
    // Typical array-like access with [] operator
@@ -183,7 +209,7 @@ public:
    // For STL compatibility: size(), bucket_count(), count(GID), clear()
    size_t size() const { return fill; }
 
-   size_t bucket_count() const { return buckets.size(); }
+   size_t bucket_count() const { return buckets->size(); }
 
    float load_factor() const {return (float)size()/bucket_count();}
 
@@ -273,7 +299,7 @@ public:
    };
 
    iterator begin() {
-      for (size_t i = 0; i < buckets.size(); i++) {
+      for (size_t i = 0; i < buckets->size(); i++) {
          if (buckets[i].first != EMPTYBUCKET) {
             return iterator(*this, i);
          }
@@ -281,7 +307,7 @@ public:
       return end();
    }
    const_iterator begin() const {
-      for (size_t i = 0; i < buckets.size(); i++) {
+      for (size_t i = 0; i < buckets->size(); i++) {
          if (buckets[i].first != EMPTYBUCKET) {
             return const_iterator(*this, i);
          }
@@ -289,8 +315,8 @@ public:
       return end();
    }
 
-   iterator end() { return iterator(*this, buckets.size()); }
-   const_iterator end() const { return const_iterator(*this, buckets.size()); }
+   iterator end() { return iterator(*this, buckets->size()); }
+   const_iterator end() const { return const_iterator(*this, buckets->size()); }
 
    // Element access by iterator
    iterator find(GID key) {
@@ -398,7 +424,7 @@ public:
    }
 
    void swap(Hashinator<GID, LID>& other) {
-      buckets.swap(other.buckets);
+      buckets->swap(other.buckets);
       int tempSizePower = sizePower;
       sizePower = other.sizePower;
       other.sizePower = tempSizePower;
