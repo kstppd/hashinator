@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <chrono>
 #include "../../src/hashinator/hashinator.h"
-#define N  1<<28
+#define N  1<<18
 
 typedef uint32_t val_type;
 
@@ -16,12 +16,13 @@ void cpuTest(){
    
    //timed block
    Hashinator<val_type,val_type> map;
-   map.resize(29);
+   map.resize(19);
    auto start = std::chrono::high_resolution_clock::now();
    for (val_type i=0; i<N;i++){
       map[i]=i;
    }
    map.print_all();
+   auto elem=map.find(1);
    auto end = std::chrono::high_resolution_clock::now();
    auto total_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
    printf("CPU time: %.3f seconds.\n", total_time.count() * 1e-9);
@@ -30,7 +31,7 @@ void cpuTest(){
 void gpuTest(int threads){
    //timed block
    Hashinator<val_type,val_type> map;
-   map.resize(29);
+   map.resize(19);
    size_t total_keys=N;
    size_t total_threads=threads;
    size_t total_blocks= total_keys/total_threads;
