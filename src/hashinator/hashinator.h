@@ -37,11 +37,13 @@ private:
    int* d_maxBucketOverflow;
    int postDevice_maxBucketOverflow;
    size_t* d_fill;
+   int nBlocks=3;
 
    int sizePower; // Logarithm (base two) of the size of the table
    int cpu_maxBucketOverflow;
    size_t fill;   // Number of filled buckets
-   split::SplitVector<std::pair<GID, LID>> buckets;
+   split::SplitVector<split::SplitVector<std::pair<GID,LID>>> bucket_bank;
+   split::SplitVector<std::pair<GID, LID>>* buckets;
 
    // Fibonacci hash function for 64bit values
    __host__ __device__
@@ -77,9 +79,17 @@ private:
 
 public:
    Hashinator()
-       : sizePower(4), fill(0), buckets(1 << sizePower, std::pair<GID, LID>(EMPTYBUCKET, LID())){};
+      : sizePower(4), fill(0){
+         bucket_bank=split::SplitVector<split::SplitVector<std::pair<GID,LID>>>(nBlocks); 
+         for (size_t i =0; i<nBlocks;i++){
+            bucket_bank[i]=split::SplitVector<std::pair<GID,LID>>(1<<sizePower+i,std::pair<GID, LID>(EMPTYBUCKET, LID()));  
+         }
+         buckets=&bucket_bank[0];
+      };
    Hashinator(const Hashinator<GID, LID>& other)
-       : sizePower(other.sizePower), fill(other.fill), buckets(other.buckets){};
+      : sizePower(other.sizePower), fill(other.fill), bucket_bank(other.bucket_bank){
+         buckets=&bucket_bank[0];
+      };
 
    // Resize the table to fit more things. This is automatically invoked once
    // maxBucketOverflow has triggered.
@@ -96,7 +106,7 @@ public:
       int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
 
       // Iterate through all old elements and rehash them into the new array.
-      for (auto& e : buckets) {
+      for (auto& e : bucket_bank[0]) {
          // Skip empty buckets
          if (e.first == EMPTYBUCKET) {
             continue;
@@ -122,7 +132,8 @@ public:
       }
 
       // Replace our buckets with the new ones
-      buckets = newBuckets;
+      bucket_bank[0] = newBuckets;
+      buckets=&bucket_bank[0];
    }
 
    // Element access (by reference). Nonexistent elements get created.
@@ -132,7 +143,7 @@ public:
 
       // Try to find the matching bucket.
       for (int i = 0; i < maxBucketOverflow; i++) {
-         std::pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
+         std::pair<GID, LID>& candidate = bucket_bank[0][(hashIndex + i) & bitMask];
          if (candidate.first == key) {
             // Found a match, return that
             return candidate.second;
@@ -177,7 +188,7 @@ public:
    // For STL compatibility: size(), bucket_count(), count(GID), clear()
    size_t size() const { return fill; }
 
-   size_t bucket_count() const { return buckets.size(); }
+   size_t bucket_count() const { return bucket_bank[0].size(); }
    
    float load_factor() const {return (float)size()/bucket_count();}
 
@@ -212,7 +223,7 @@ public:
    __host__
    Hashinator* upload(){
       cpu_maxBucketOverflow=maxBucketOverflow;
-      this->buckets.optimizeGPU();
+      this->bucket_bank[0].optimizeGPU();
       Hashinator* device_map;
       cudaMalloc((void **)&d_sizePower, sizeof(int));
       cudaMemcpy(d_sizePower, &sizePower, sizeof(int),cudaMemcpyHostToDevice);
@@ -237,7 +248,7 @@ public:
       //We need to handle this and clean up by rehashing to a larger container.
       std::cout<<"Overflow Limits Dev/Host "<<maxBucketOverflow<<"--> "<<postDevice_maxBucketOverflow<<std::endl;
       std::cout<<"Fill after device = "<<fill<<std::endl;
-      this->buckets.optimizeCPU();
+      this->bucket_bank[0].optimizeCPU();
       if (postDevice_maxBucketOverflow!=maxBucketOverflow){
          rehash(sizePower+1);
       }
@@ -275,7 +286,7 @@ public:
       // Try to find the matching bucket.
       for (int i = 0; i < thread_overflowLookup; i++) {
          uint32_t vecindex=(hashIndex + i) & bitMask;
-         std::pair<GID, LID>& candidate = buckets[vecindex];
+         std::pair<GID, LID>& candidate = bucket_bank[0][vecindex];
          if (candidate.first == key) {
             // Found a match, return that
             retval = &candidate.second;
@@ -330,7 +341,7 @@ public:
          if (!found){
             thread_overflowLookup+=1;
          }
-         assert(thread_overflowLookup < buckets.size() && "Buckets are completely overflown. This is a catastrophic failure...Consider .resize_to_lf()");
+         assert(thread_overflowLookup < bucket_bank[0].size() && "Buckets are completely overflown. This is a catastrophic failure...Consider .resize_to_lf()");
       }
       /*Now the local overflow might have changed for a thread. 
       We need to update the global one here.
@@ -439,7 +450,7 @@ public:
    };
 
    iterator begin() {
-      for (size_t i = 0; i < buckets.size(); i++) {
+      for (size_t i = 0; i < bucket_bank[0].size(); i++) {
          if (buckets[i].first != EMPTYBUCKET) {
             return iterator(*this, i);
          }
@@ -447,16 +458,16 @@ public:
       return end();
    }
    const_iterator begin() const {
-      for (size_t i = 0; i < buckets.size(); i++) {
-         if (buckets[i].first != EMPTYBUCKET) {
+      for (size_t i = 0; i < bucket_bank[0].size(); i++) {
+         if (bucket_bank[0][i].first != EMPTYBUCKET) {
             return const_iterator(*this, i);
          }
       }
       return end();
    }
 
-   iterator end() { return iterator(*this, buckets.size()); }
-   const_iterator end() const { return const_iterator(*this, buckets.size()); }
+   iterator end() { return iterator(*this, bucket_bank[0].size()); }
+   const_iterator end() const { return const_iterator(*this, bucket_bank[0].size()); }
 
    // Element access by iterator
    iterator find(GID key) {
@@ -465,7 +476,7 @@ public:
 
       // Try to find the matching bucket.
       for (int i = 0; i < maxBucketOverflow; i++) {
-         const std::pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
+         const std::pair<GID, LID>& candidate = bucket_bank[0][(hashIndex + i) & bitMask];
          if (candidate.first == key) {
             // Found a match, return that
             return iterator(*this, (hashIndex + i) & bitMask);
@@ -564,7 +575,8 @@ public:
    }
 
    void swap(Hashinator<GID, LID>& other) {
-      buckets.swap(other.buckets);
+      std::cout<<"SWAPPING"<<std::endl;
+      bucket_bank.swap(other.bucket_bank);
       int tempSizePower = sizePower;
       sizePower = other.sizePower;
       other.sizePower = tempSizePower;
@@ -572,5 +584,21 @@ public:
       size_t tempFill = fill;
       fill = other.fill;
       other.fill = tempFill;
+
+      int target_capacity=1<<sizePower;
+      for (auto b=bucket_bank.begin();b!=bucket_bank.end();++b){
+         if (b.data()->size()==target_capacity){
+            buckets=b.data();
+            break;
+         }
+      }
+
+      int other_target_capacity=1<<other.sizePower;
+      for (auto b=other.bucket_bank.begin();b!=other.bucket_bank.end();++b){
+         if (b.data()->size()==other_target_capacity){
+            other.buckets=b.data();
+            break;
+         }
+      }
    }
 };
