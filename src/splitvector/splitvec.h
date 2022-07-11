@@ -82,7 +82,7 @@ namespace split{
    template <class T>
    class const_split_iterator{
       private: 
-      T* _data;
+      const T* _data;
       
       public:
       
@@ -95,8 +95,8 @@ namespace split{
       const_split_iterator(){}
       const_split_iterator(pointer data) : _data(data) {}
 
-      const pointer data() { return _data; }
-      const reference operator*()  { return *_data; }
+      pointer data() const  { return _data; }
+      reference operator*() const  { return *_data; }
       bool operator!=(const const_split_iterator& other){
         return _data != other._data;
       }
@@ -379,10 +379,10 @@ namespace split{
             return split_iterator<T>(_data+size());
          }
          
-        const_split_iterator<T> cbegin(){
+        const_split_iterator<T> begin() const{
             return const_split_iterator<T>(_data);
          }
-        const_split_iterator<T> cend(){
+        const_split_iterator<T> end() const{
             return const_split_iterator<T>(_data+size());
          }
 

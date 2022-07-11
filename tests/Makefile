@@ -1,10 +1,10 @@
-CC=nvcc  
+CC=nvcc 
 LNK=nvcc 
 OPT=
-CXXFLAGS= -g -G 
+CXXFLAGS= -g -G
 EXTRA= -Xcompiler -rdynamic --std=c++11
 EXTRA+= -gencode arch=compute_60,code=sm_60 -rdc=true -L /usr/lib/x86_64-linux-gnu
-EXTRA+=-DCUDAVEC -DDEBUG
+#EXTRA+=-DCUDAVEC -DDEBUG
 
 GTEST=-lgtest -lgtest_main -lpthread
 OBJ= gpuport.o speed_test.o vec_test.o mempool_main.o vec_of_vec_test.o gtest_vec.o gtest_hashmap.o
