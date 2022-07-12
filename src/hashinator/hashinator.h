@@ -85,13 +85,20 @@ public:
          for (size_t i =0; i<nBlocks;i++){
             bucket_bank[i]=split::SplitVector<std::pair<GID,LID>>(1<<sizePower+i,std::pair<GID, LID>(EMPTYBUCKET, LID()));  
          }
-         buckets=&bucket_bank[0];
+         buckets=&bucket_bank[bIndex()];
       };
    Hashinator(const Hashinator<GID, LID>& other)
       : sizePower(other.sizePower), fill(other.fill), bucket_bank(other.bucket_bank){
-         buckets=&bucket_bank[0];
+         buckets=&bucket_bank[bIndex()];
       };
 
+   
+   //Temporary function to return current bucket index
+   __host__ __device__
+   int bIndex()const {
+      return 0;
+   }
+   
    // Resize the table to fit more things. This is automatically invoked once
    // maxBucketOverflow has triggered.
    void rehash(int newSizePower) {
@@ -107,7 +114,7 @@ public:
       int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
 
       // Iterate through all old elements and rehash them into the new array.
-      for (auto& e : bucket_bank[0]) {
+      for (auto& e : bucket_bank[bIndex()]) {
          // Skip empty buckets
          if (e.first == EMPTYBUCKET) {
             continue;
@@ -133,8 +140,8 @@ public:
       }
 
       // Replace our buckets with the new ones
-      bucket_bank[0] = newBuckets;
-      buckets=&bucket_bank[0];
+      bucket_bank[bIndex()] = newBuckets;
+      buckets=&bucket_bank[bIndex()];
    }
 
    // Element access (by reference). Nonexistent elements get created.
@@ -144,7 +151,7 @@ public:
 
       // Try to find the matching bucket.
       for (int i = 0; i < maxBucketOverflow; i++) {
-         std::pair<GID, LID>& candidate = bucket_bank[0][(hashIndex + i) & bitMask];
+         std::pair<GID, LID>& candidate = bucket_bank[bIndex()][(hashIndex + i) & bitMask];
          if (candidate.first == key) {
             // Found a match, return that
             return candidate.second;
@@ -168,7 +175,7 @@ public:
 
       // Try to find the matching bucket.
       for (int i = 0; i < maxBucketOverflow; i++) {
-         const std::pair<GID, LID>& candidate = bucket_bank[0][(hashIndex + i) & bitMask];
+         const std::pair<GID, LID>& candidate = bucket_bank[bIndex()][(hashIndex + i) & bitMask];
          if (candidate.first == key) {
             // Found a match, return that
             return candidate.second;
@@ -189,7 +196,7 @@ public:
    // For STL compatibility: size(), bucket_count(), count(GID), clear()
    size_t size() const { return fill; }
 
-   size_t bucket_count() const { return bucket_bank[0].size(); }
+   size_t bucket_count() const { return bucket_bank[bIndex()].size(); }
    
    float load_factor() const {return (float)size()/bucket_count();}
 
@@ -228,7 +235,7 @@ public:
    __host__
    Hashinator* upload(){
       cpu_maxBucketOverflow=maxBucketOverflow;
-      this->bucket_bank[0].optimizeGPU();
+      this->bucket_bank[bIndex()].optimizeGPU();
       Hashinator* device_map;
       cudaMalloc((void **)&d_sizePower, sizeof(int));
       cudaMemcpy(d_sizePower, &sizePower, sizeof(int),cudaMemcpyHostToDevice);
@@ -253,7 +260,7 @@ public:
       //We need to handle this and clean up by rehashing to a larger container.
       std::cout<<"Overflow Limits Dev/Host "<<maxBucketOverflow<<"--> "<<postDevice_maxBucketOverflow<<std::endl;
       std::cout<<"Fill after device = "<<fill<<std::endl;
-      this->bucket_bank[0].optimizeCPU();
+      this->bucket_bank[bIndex()].optimizeCPU();
       if (postDevice_maxBucketOverflow!=maxBucketOverflow){
          rehash(sizePower+1);
       }
@@ -291,7 +298,7 @@ public:
       // Try to find the matching bucket.
       for (int i = 0; i < thread_overflowLookup; i++) {
          uint32_t vecindex=(hashIndex + i) & bitMask;
-         std::pair<GID, LID>& candidate = bucket_bank[0][vecindex];
+         std::pair<GID, LID>& candidate = bucket_bank[bIndex()][vecindex];
          if (candidate.first == key) {
             // Found a match, return that
             retval = &candidate.second;
@@ -318,7 +325,7 @@ public:
       // Try to find the matching bucket.
       for (int i = 0; i < maxBucketOverflow; i++) {
          uint32_t vecindex=(hashIndex + i) & bitMask;
-         const std::pair<GID, LID>& candidate = bucket_bank[0][vecindex];
+         const std::pair<GID, LID>& candidate = bucket_bank[bIndex()][vecindex];
          if (candidate.first == key) {
             // Found a match, return that
             retval = &candidate.second;
@@ -346,7 +353,7 @@ public:
          if (!found){
             thread_overflowLookup+=1;
          }
-         assert(thread_overflowLookup < bucket_bank[0].size() && "Buckets are completely overflown. This is a catastrophic failure...Consider .resize_to_lf()");
+         assert(thread_overflowLookup < bucket_bank[bIndex()].size() && "Buckets are completely overflown. This is a catastrophic failure...Consider .resize_to_lf()");
       }
       /*Now the local overflow might have changed for a thread. 
       We need to update the global one here.
@@ -392,8 +399,8 @@ public:
 
       iterator& operator++() {
          index++;
-         while(index < hashtable->bucket_bank[0].size()){
-            if (hashtable->bucket_bank[0][index].first != EMPTYBUCKET){
+         while(index < hashtable->bucket_bank[hashtable->bIndex()].size()){
+            if (hashtable->bucket_bank[hashtable->bIndex()][index].first != EMPTYBUCKET){
                break;
             }
             index++;
@@ -408,13 +415,13 @@ public:
       }
 
       bool operator==(iterator other) const {
-         return &hashtable->bucket_bank[0][index] == &other.hashtable->bucket_bank[0][other.index];
+         return &hashtable->bucket_bank[hashtable->bIndex()][index] == &other.hashtable->bucket_bank[other.hashtable->bIndex()][other.index];
       }
       bool operator!=(iterator other) const {
-         return &hashtable->bucket_bank[0][index] != &other.hashtable->bucket_bank[0][other.index];
+         return &hashtable->bucket_bank[hashtable->bIndex()][index] != &other.hashtable->bucket_bank[other.hashtable->bIndex()][other.index];
       }
-      std::pair<GID, LID>& operator*() const { return hashtable->bucket_bank[0][index]; }
-      std::pair<GID, LID>* operator->() const { return &hashtable->bucket_bank[0][index]; }
+      std::pair<GID, LID>& operator*() const { return hashtable->bucket_bank[hashtable->bIndex()][index]; }
+      std::pair<GID, LID>* operator->() const { return &hashtable->bucket_bank[hashtable->bIndex()][index]; }
       size_t getIndex() { return index; }
    };
 
@@ -429,8 +436,8 @@ public:
 
       const_iterator& operator++() {
          index++;
-         while(index < hashtable->bucket_bank[0].size()){
-            if (hashtable->bucket_bank[0][index].first != EMPTYBUCKET){
+         while(index < hashtable->bucket_bank[hashtable->bIndex()].size()){
+            if (hashtable->bucket_bank[hashtable->bIndex()][index].first != EMPTYBUCKET){
                break;
             }
             index++;
@@ -444,35 +451,35 @@ public:
       }
 
       bool operator==(const_iterator other) const {
-         return &hashtable->bucket_bank[0][index] == &other.hashtable->bucket_bank[0][other.index];
+         return &hashtable->bucket_bank[hashtable->bIndex()][index] == &other.hashtable->bucket_bank[other.hashtable->bIndex()][other.index];
       }
       bool operator!=(const_iterator other) const {
-         return &hashtable->bucket_bank[0][index] != &other.hashtable->bucket_bank[0][other.index];
+         return &hashtable->bucket_bank[hashtable->bIndex()][index] != &other.hashtable->bucket_bank[other.hashtable->bIndex()][other.index];
       }
-      const std::pair<GID, LID>& operator*() const { return hashtable->bucket_bank[0][index]; }
-      const std::pair<GID, LID>* operator->() const { return &hashtable->bucket_bank[0][index]; }
+      const std::pair<GID, LID>& operator*() const { return hashtable->bucket_bank[hashtable->bIndex()][index]; }
+      const std::pair<GID, LID>* operator->() const { return &hashtable->bucket_bank[hashtable->bIndex()][index]; }
       size_t getIndex() { return index; }
    };
 
    iterator begin() {
-      for (size_t i = 0; i < bucket_bank[0].size(); i++) {
-         if (bucket_bank[0][i].first != EMPTYBUCKET) {
+      for (size_t i = 0; i < bucket_bank[bIndex()].size(); i++) {
+         if (bucket_bank[bIndex()][i].first != EMPTYBUCKET) {
             return iterator(*this, i);
          }
       }
       return end();
    }
    const_iterator begin() const {
-      for (size_t i = 0; i < bucket_bank[0].size(); i++) {
-         if (bucket_bank[0][i].first != EMPTYBUCKET) {
+      for (size_t i = 0; i < bucket_bank[bIndex()].size(); i++) {
+         if (bucket_bank[bIndex()][i].first != EMPTYBUCKET) {
             return const_iterator(*this, i);
          }
       }
       return end();
    }
 
-   iterator end() { return iterator(*this, bucket_bank[0].size()); }
-   const_iterator end() const { return const_iterator(*this, bucket_bank[0].size()); }
+   iterator end() { return iterator(*this, bucket_bank[bIndex()].size()); }
+   const_iterator end() const { return const_iterator(*this, bucket_bank[bIndex()].size()); }
 
    // Element access by iterator
    iterator find(GID key) {
@@ -481,7 +488,7 @@ public:
 
       // Try to find the matching bucket.
       for (int i = 0; i < maxBucketOverflow; i++) {
-         const std::pair<GID, LID>& candidate = bucket_bank[0][(hashIndex + i) & bitMask];
+         const std::pair<GID, LID>& candidate = bucket_bank[bIndex()][(hashIndex + i) & bitMask];
          if (candidate.first == key) {
             // Found a match, return that
             return iterator(*this, (hashIndex + i) & bitMask);
@@ -503,7 +510,7 @@ public:
 
       // Try to find the matching bucket.
       for (int i = 0; i < maxBucketOverflow; i++) {
-         const std::pair<GID, LID>& candidate = bucket_bank[0][(hashIndex + i) & bitMask];
+         const std::pair<GID, LID>& candidate = bucket_bank[bIndex()][(hashIndex + i) & bitMask];
          if (candidate.first == key) {
             // Found a match, return that
             return const_iterator(*this, (hashIndex + i) & bitMask);
@@ -533,18 +540,18 @@ public:
       // Due to overflowing buckets, this might require moving quite a bit of stuff around.
       size_t index = keyPos.getIndex();
 
-      if (bucket_bank[0][index].first != EMPTYBUCKET) {
+      if (bucket_bank[bIndex()][index].first != EMPTYBUCKET) {
          // Decrease fill count
          fill--;
 
          // Clear the element itself.
-         bucket_bank[0][index].first = EMPTYBUCKET;
+         bucket_bank[bIndex()][index].first = EMPTYBUCKET;
 
          int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
          size_t targetPos = index;
          // Search ahead to verify items are in correct places (until empty bucket is found)
          for (unsigned int i = 1; i < fill; i++) {
-            GID nextBucket = bucket_bank[0][(index + i)&bitMask].first;
+            GID nextBucket = bucket_bank[bIndex()][(index + i)&bitMask].first;
             if (nextBucket == EMPTYBUCKET) {
                // The next bucket is empty, we are done.
                break;
@@ -557,11 +564,11 @@ public:
                if (distance < maxBucketOverflow) {
                   // Copy this entry to the current newly empty bucket, then continue with deleting
                   // this overflown entry and continue searching for overflown entries
-                  LID moveValue = bucket_bank[0][(index+i)&bitMask].second;
-                  bucket_bank[0][targetPos] = std::pair<GID, LID>(nextBucket,moveValue);
+                  LID moveValue = bucket_bank[bIndex()][(index+i)&bitMask].second;
+                  bucket_bank[bIndex()][targetPos] = std::pair<GID, LID>(nextBucket,moveValue);
                   targetPos = ((index+i)&bitMask);
-                  bucket_bank[0][targetPos].first = EMPTYBUCKET;
-               }
+                  bucket_bank[bIndex()][targetPos].first = EMPTYBUCKET;
+               }   
             }
          }
       }
