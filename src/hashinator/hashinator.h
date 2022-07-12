@@ -77,6 +77,12 @@ private:
           return fnv_1a(&in, sizeof(GID));
        }
     }
+    
+   enum migration_status{
+       success,
+       no_bucket_available,
+       overflown
+    };
 
 public:
    Hashinator()
@@ -93,21 +99,8 @@ public:
       };
 
    
-   //Temporary function to return current bucket index
-   __host__ __device__
-   int bIndex()const {
-      return 0;
-   }
-   
-   // Resize the table to fit more things. This is automatically invoked once
-   // maxBucketOverflow has triggered.
-   void rehash(int newSizePower) {
-#ifdef DEBUG
-      std::cout<<"Rehashing to "<<( 1<<newSizePower )<<std::endl;
-#endif
-      if (newSizePower > 32) {
-         throw std::out_of_range("Hashinator ran into rehashing catastrophe and exceeded 32bit buckets.");
-      }
+
+   void rehash_by_growing(int newSizePower){
       split::SplitVector<std::pair<GID, LID>> newBuckets(1 << newSizePower,
                                                   std::pair<GID, LID>(EMPTYBUCKET, LID()));
       sizePower = newSizePower;
@@ -142,6 +135,99 @@ public:
       // Replace our buckets with the new ones
       bucket_bank[bIndex()] = newBuckets;
       buckets=&bucket_bank[bIndex()];
+
+   }
+   
+   int migrate(int newSizePower,int targetBucket){
+      
+      sizePower = newSizePower;
+      int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
+
+      // Iterate through all old elements and rehash them into the new array.
+      for (auto& e : bucket_bank[bIndex()]) {
+         // Skip empty buckets
+         if (e.first == EMPTYBUCKET) {
+            continue;
+         }
+
+         uint32_t newHash = hash(e.first);
+         bool found = false;
+         for (int i = 0; i < maxBucketOverflow; i++) {
+            std::pair<GID, LID>& candidate = bucket_bank[targetBucket][(newHash + i) & bitMask];
+            if (candidate.first == EMPTYBUCKET) {
+               // Found an empty bucket, assign that one.
+               candidate = e;
+               found = true;
+               break;
+            }
+         }
+
+         if (!found) {
+            // Having arrived here means that we unsuccessfully rehashed and
+            // are *still* overflowing our buckets. So we need to try again with a bigger one.
+            return migration_status::overflown ;
+         }
+      }
+
+      //// Replace our buckets with the new ones
+      cur_bucket_index=targetBucket;
+      return migration_status::success;
+
+   }
+
+   int rehash_by_migrating(int newSizePower){
+      
+      uint32_t target_capacity= 1<<newSizePower;
+      //Let's see if we have a suitable bucket in the bucket bank
+      auto bucket_iter=bucket_bank.begin();
+      int cnt=0;
+      while(bucket_iter!=bucket_bank.end()){
+         if (bucket_iter.data()->size()==target_capacity){
+             return migrate(newSizePower,cnt);
+         }
+         cnt++;
+         ++bucket_iter;
+      }
+      return migration_status::no_bucket_available;
+
+   }
+
+   void expand_bucket_bank(int newSizePower){
+      for (int i=0; i < nBlocks; i++){
+         if (newSizePower > 32) {
+            throw std::out_of_range("Hashinator ran into rehashing catastrophe and exceeded 32bit buckets.");
+         }
+         if (bucket_bank[i].size()==bucket_bank[bIndex()].size()){
+            continue;
+         }
+         bucket_bank[i]=split::SplitVector<std::pair<GID,LID>>(1<<newSizePower,std::pair<GID, LID>(EMPTYBUCKET, LID()));  
+         newSizePower++;
+      }
+   }
+   
+   // Resize the table to fit more things. This is automatically invoked once
+   // maxBucketOverflow has triggered.
+   void rehash(int newSizePower) {
+      std::cout<<"Rehashing to "<<( 1<<newSizePower )<<std::endl;
+      if (newSizePower > 32) {
+         throw std::out_of_range("Hashinator ran into rehashing catastrophe and exceeded 32bit buckets.");
+      }
+
+      if (nBlocks>1){
+         int rehash_status;
+         do {
+            rehash_status=rehash_by_migrating(newSizePower);
+            if (rehash_status==migration_status::overflown){
+               newSizePower++;
+            }
+            if (rehash_status==migration_status::no_bucket_available){
+               std::cout<<"Expanding to "<<newSizePower<<std::endl;
+               expand_bucket_bank(newSizePower);
+            }
+         }while(rehash_status!=migration_status::success);
+      }else{
+         rehash_by_growing( newSizePower);
+      }
    }
 
    // Element access (by reference). Nonexistent elements get created.
@@ -217,6 +303,23 @@ public:
       fill = 0;
    }
 
+   //*************** Bucket Bank Methods***********************
+   //Temporary function to return current bucket index
+   __host__ __device__
+   int bIndex(void)const {
+      return cur_bucket_index;
+   }
+
+   void print_bank(void){
+      int c=0;
+      for (auto& vec:bucket_bank ){
+         printf("Bucket bank %d with size %zu\n",c,vec.size());
+         c++;
+      }
+      printf("SRC size %zu\n",bucket_bank[bIndex()].size());
+   }
+
+   //**********************************************************
 
    /************************Device Methods*********************************/
    __host__
