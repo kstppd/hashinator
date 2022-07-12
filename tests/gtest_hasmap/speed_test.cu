@@ -67,7 +67,7 @@ void load_to_lf(Hashinator<val_type,val_type>& map ,float target_lf){
 
 void addNelems(Hashinator<val_type,val_type>&map,int numel){
 
-   int threads=32;
+   int threads=1;
    auto initial_lf=map.load_factor();
    int blocks=numel/threads;
    //printf("Adding %i elements  with %i Threads and %i Blocks\n ",(int)numel,(int)threads,(int)blocks);

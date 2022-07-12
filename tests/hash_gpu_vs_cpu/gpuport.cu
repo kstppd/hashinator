@@ -16,15 +16,14 @@ void cpuTest(){
    
    //timed block
    Hashinator<val_type,val_type> map;
-   map.resize(19);
    auto start = std::chrono::high_resolution_clock::now();
    for (val_type i=0; i<N;i++){
       map[i]=i;
    }
    map.print_all();
-   auto elem=map.find(1);
    auto end = std::chrono::high_resolution_clock::now();
    auto total_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+   map.print_bank();
    printf("CPU time: %.3f seconds.\n", total_time.count() * 1e-9);
 }
 
@@ -51,6 +50,6 @@ void gpuTest(int threads){
 
 int main(){
    cpuTest();
-   gpuTest(32);
+   //gpuTest(32);
 }
 

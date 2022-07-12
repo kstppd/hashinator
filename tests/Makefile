@@ -7,7 +7,7 @@ EXTRA+= -gencode arch=compute_60,code=sm_60 -rdc=true -L /usr/lib/x86_64-linux-g
 EXTRA+=-DCUDAVEC -DDEBUG
 
 GTEST=-lgtest -lgtest_main -lpthread
-OBJ= gpuport.o speed_test.o vec_test.o mempool_main.o vec_of_vec_test.o gtest_vec.o gtest_hashmap.o
+OBJ=gpuport.o bank_test.o speed_test.o vec_test.o mempool_main.o vec_of_vec_test.o gtest_vec.o gtest_hashmap.o
 
 all: ${OBJ}
 
@@ -15,6 +15,7 @@ clean:
 	rm  *.o 
 allclean:
 	rm gpuport &
+	rm bank_test &
 	rm speed_test &
 	rm vec_test &
 	rm vec_of_vec &
@@ -25,6 +26,9 @@ allclean:
 
 gpuport.o: hash_gpu_vs_cpu/gpuport.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA}  -o gpuport  hash_gpu_vs_cpu/gpuport.cu 
+
+bank_test.o: bucket_bank/bank.cu
+	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o bank_test  bucket_bank/bank.cu
 
 speed_test.o: speed_tests/speed_test.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA}  -o speed_test speed_tests/speed_test.cu 

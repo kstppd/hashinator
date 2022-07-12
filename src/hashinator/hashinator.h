@@ -30,14 +30,16 @@
 
 
 // Open bucket power-of-two sized hash table with multiplicative fibonacci hashing
-template <typename GID, typename LID, int maxBucketOverflow = 32, GID EMPTYBUCKET = vmesh::INVALID_GLOBALID > 
+template <typename GID, typename LID, int maxBucketOverflow = 8, GID EMPTYBUCKET = vmesh::INVALID_GLOBALID > 
 class Hashinator {
 private:
    int* d_sizePower;
    int* d_maxBucketOverflow;
    int postDevice_maxBucketOverflow;
    size_t* d_fill;
-   int nBlocks=3;
+   int* d_nBlocks;
+   int* d_curr_bucket_index;
+   int nBlocks=6;
    size_t cur_bucket_index=0;
 
    int sizePower; // Logarithm (base two) of the size of the table
@@ -208,7 +210,6 @@ public:
    // Resize the table to fit more things. This is automatically invoked once
    // maxBucketOverflow has triggered.
    void rehash(int newSizePower) {
-      std::cout<<"Rehashing to "<<( 1<<newSizePower )<<std::endl;
       if (newSizePower > 32) {
          throw std::out_of_range("Hashinator ran into rehashing catastrophe and exceeded 32bit buckets.");
       }
@@ -221,7 +222,6 @@ public:
                newSizePower++;
             }
             if (rehash_status==migration_status::no_bucket_available){
-               std::cout<<"Expanding to "<<newSizePower<<std::endl;
                expand_bucket_bank(newSizePower);
             }
          }while(rehash_status!=migration_status::success);
@@ -307,7 +307,11 @@ public:
    //Temporary function to return current bucket index
    __host__ __device__
    int bIndex(void)const {
+#ifndef __CUDA_ARCH__
       return cur_bucket_index;
+#else
+      return *d_curr_bucket_index;
+#endif
    }
 
    void print_bank(void){
@@ -316,7 +320,7 @@ public:
          printf("Bucket bank %d with size %zu\n",c,vec.size());
          c++;
       }
-      printf("SRC size %zu\n",bucket_bank[bIndex()].size());
+      printf("SRC is %d\n",bIndex());
    }
 
    //**********************************************************
@@ -346,6 +350,10 @@ public:
       cudaMemcpy(d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice);
       cudaMalloc((void **)&d_fill, sizeof(size_t));
       cudaMemcpy(d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice);
+      cudaMalloc((void **)&d_nBlocks, sizeof(int));
+      cudaMemcpy(d_nBlocks, &nBlocks, sizeof(int),cudaMemcpyHostToDevice);
+      cudaMalloc((void **)&d_curr_bucket_index, sizeof(int));
+      cudaMemcpy(d_curr_bucket_index, &cur_bucket_index, sizeof(int),cudaMemcpyHostToDevice);
       cudaMalloc((void **)&device_map, sizeof(Hashinator));
       cudaMemcpy(device_map, this, sizeof(Hashinator),cudaMemcpyHostToDevice);
       return device_map;
@@ -356,6 +364,8 @@ public:
       
       //Copy over fill as it might have changed
       cudaMemcpy(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost);
+      //We need to copy over the bucket index in use. This might have changed upon exiting the kernel.
+      cudaMemcpy(&cur_bucket_index, d_curr_bucket_index, sizeof(int),cudaMemcpyDeviceToHost);
       
       cudaMemcpy(&postDevice_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost);
       //TODO
@@ -363,6 +373,7 @@ public:
       //We need to handle this and clean up by rehashing to a larger container.
       std::cout<<"Overflow Limits Dev/Host "<<maxBucketOverflow<<"--> "<<postDevice_maxBucketOverflow<<std::endl;
       std::cout<<"Fill after device = "<<fill<<std::endl;
+      std::cout<<"Bucket index after device = "<<bIndex()<<std::endl;
       this->bucket_bank[bIndex()].optimizeCPU();
       if (postDevice_maxBucketOverflow!=maxBucketOverflow){
          rehash(sizePower+1);
@@ -372,6 +383,8 @@ public:
       cudaFree(d_sizePower);
       cudaFree(d_maxBucketOverflow);
       cudaFree(d_fill);
+      cudaFree(d_nBlocks);
+      cudaFree(d_curr_bucket_index);
    }
 
    __host__
@@ -394,7 +407,7 @@ public:
    
    // Device code for element access (by reference). Nonexistent elements get created.
    __device__
-   bool retrieve_w(const GID& key, size_t &thread_overflowLookup,LID* &retval) {
+   bool retrieve_w(const GID& key, size_t thread_overflowLookup,LID* &retval) {
       int bitMask = (1 << *d_sizePower) - 1; // For efficient modulo of the array size
       uint32_t hashIndex = hash(key);
 
@@ -412,6 +425,7 @@ public:
             candidate.first = key;
             //compute capability 6.* and higher
             atomicAdd((unsigned long long  int*)d_fill, 1);
+            assert(*d_fill < bucket_bank[bIndex()].size() && "No free buckets left on device memory. Exiting!");
             retval = &candidate.second;
             return true;
          }
@@ -420,15 +434,16 @@ public:
       return false;
    }
 
+   #pragma message ("TODO-->Handle constness here correctly. Temporarilly overidden!!!!" );
    __device__
-   bool retrieve_r(const GID& key,size_t thread_overflowLookup,LID* &retval) const {
+   bool retrieve_r(const GID& key,size_t thread_overflowLookup,LID* &retval)  {
       int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
       uint32_t hashIndex = hash(key);
 
       // Try to find the matching bucket.
       for (int i = 0; i < maxBucketOverflow; i++) {
          uint32_t vecindex=(hashIndex + i) & bitMask;
-         const std::pair<GID, LID>& candidate = bucket_bank[bIndex()][vecindex];
+         std::pair<GID, LID>& candidate = bucket_bank[bIndex()][vecindex];
          if (candidate.first == key) {
             // Found a match, return that
             retval = &candidate.second;
@@ -456,6 +471,7 @@ public:
          if (!found){
             thread_overflowLookup+=1;
          }
+         //printf("%d  --  %d \n",(int)thread_overflowLookup,(int)bucket_bank[bIndex()].size());
          assert(thread_overflowLookup < bucket_bank[bIndex()].size() && "Buckets are completely overflown. This is a catastrophic failure...Consider .resize_to_lf()");
       }
       /*Now the local overflow might have changed for a thread. 
@@ -479,7 +495,7 @@ public:
    }
 
    __device__
-   LID* read_element(const GID& key)const{
+   LID* read_element(const GID& key){
       LID* candidate=nullptr;
       bool found=false;
       size_t thread_overflowLookup=*d_maxBucketOverflow;
