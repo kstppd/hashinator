@@ -11,8 +11,8 @@ typedef uint32_t val_type;
 __global__
 void readMap(Hashinator<val_type,val_type> *dmap){
    int index = blockIdx.x * blockDim.x + threadIdx.x;
-   val_type* element=dmap->read_element(index);
-   assert(*element == index);
+   const val_type& element=dmap->read_element(index);
+   assert(element == index);
 
 }
 
@@ -85,12 +85,14 @@ TEST(GPU_TEST,GPU_Write_Check){
       EXPECT_TRUE(kval.first == kval.second);
    }
    map.print_bank();
+   map.print_all();
    addNelems(map, 1000000);
    
    for (auto &kval:map){
       EXPECT_TRUE(kval.first == kval.second);
    }
    map.print_bank();
+   map.print_all();
 
 }   
 
