@@ -130,7 +130,7 @@ public:
          if (!found) {
             // Having arrived here means that we unsuccessfully rehashed and
             // are *still* overflowing our buckets. So we need to try again with a bigger one.
-            return rehash(newSizePower + 1);
+            return rehash_by_growing(newSizePower + 1);
          }
       }
 
