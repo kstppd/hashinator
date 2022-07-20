@@ -286,36 +286,12 @@ public:
             candidate.first = key;
             //compute capability 6.* and higher
             atomicAdd((unsigned long long  int*)d_fill, 1);
+            assert(*d_fill < buckets.size() && "No free buckets left on device memory. Exiting!");
             retval = &candidate.second;
             return true;
          }
       }
 
-      return false;
-   }
-
-   __device__
-   bool retrieve_r(const GID& key,size_t thread_overflowLookup,LID* &retval) const {
-      int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
-      uint32_t hashIndex = hash(key);
-
-      // Try to find the matching bucket.
-      for (int i = 0; i < maxBucketOverflow; i++) {
-         uint32_t vecindex=(hashIndex + i) & bitMask;
-         const std::pair<GID, LID>& candidate = buckets[vecindex];
-         if (candidate.first == key) {
-            // Found a match, return that
-            retval = &candidate.second;
-            return true;
-         }
-         if (candidate.first == EMPTYBUCKET) {
-            // Found an empty bucket, so error.
-            return false;
-         }
-      }
-
-      // Not found, so error.
-      retval=nullptr;
       return false;
    }
 
@@ -352,16 +328,27 @@ public:
       }
    }
 
-   __device__
-   LID* read_element(const GID& key)const{
-      LID* candidate=nullptr;
-      bool found=false;
-      size_t thread_overflowLookup=*d_maxBucketOverflow;
-      found = retrieve_r(key,thread_overflowLookup,candidate);
-      if (!found){
-         assert(candidate && "Key element does not exist in the map");
+     __device__
+   const LID& read_element(const GID& key) const {
+      int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
+      uint32_t hashIndex = hash(key);
+
+      // Try to find the matching bucket.
+      for (int i = 0; i < *d_maxBucketOverflow; i++) {
+         uint32_t vecindex=(hashIndex + i) & bitMask;
+         const std::pair<GID, LID>& candidate = buckets[vecindex];
+         if (candidate.first == key) {
+            // Found a match, return that
+            return candidate.second;
+         }
+         if (candidate.first == EMPTYBUCKET) {
+            // Found an empty bucket, so error.
+             assert(false && "Key does not exist");
+         }
       }
-      return candidate;
+       assert(false && "Key does not exist");
+       //will never get here so just to stop the compiler from nagging add a return
+       return ;
    }
 
    /**************************device code*************************************************/
