@@ -47,68 +47,6 @@
 
 namespace split{
    
-   template <class T>
-   class split_iterator{
-       
-      private:
-      T* _data;
-      
-      public:
-      
-      using iterator_category = std::forward_iterator_tag;
-      using value_type = T;
-      using difference_type = size_t;
-      using pointer = T*;
-      using reference = T&;
-
-      split_iterator(){}
-      split_iterator(pointer data) : _data(data) {}
-
-      pointer data() { return _data; }
-      reference operator*() { return *_data; }
-      bool operator!=(const split_iterator& other){
-        return _data != other._data;
-      }
-      split_iterator<T>& operator++(){
-        _data += 1;
-        return *this;
-      }
-      split_iterator<T> operator++(int){
-        return split_iterator<T>(_data + 1);
-      }
-   };
-
-
-   template <class T>
-   class const_split_iterator{
-      private: 
-      const T* _data;
-      
-      public:
-      
-      using iterator_category = std::forward_iterator_tag;
-      using value_type = T;
-      using difference_type = size_t;
-      using pointer = T*;
-      using reference = T&;
-
-      const_split_iterator(){}
-      const_split_iterator(pointer data) : _data(data) {}
-
-      const pointer data() { return _data; }
-      const reference operator*()  { return *_data; }
-      bool operator!=(const const_split_iterator& other){
-        return _data != other._data;
-      }
-      const_split_iterator<T>& operator++(){
-        _data += 1;
-        return *this;
-      }
-      const_split_iterator<T> operator++(int){
-        return const_split_iterator<T>(_data + 1);
-      }
-   };
-
 
 
    template<typename T>
@@ -372,18 +310,80 @@ namespace split{
 
 
          //Iterators
-         split_iterator<T> begin(){
-            return split_iterator<T>(_data);
-         }
-         split_iterator<T> end(){
-            return split_iterator<T>(_data+size());
+         class iterator{
+             
+            private:
+            T* _data;
+            
+            public:
+            
+            using iterator_category = std::forward_iterator_tag;
+            using value_type = T;
+            using difference_type = size_t;
+            using pointer = T*;
+            using reference = T&;
+
+            //iterator(){}
+            iterator(pointer data) : _data(data) {}
+
+            pointer data() { return _data; }
+            reference operator*() { return *_data; }
+            bool operator!=(const iterator& other){
+              return _data != other._data;
+            }
+            iterator& operator++(){
+              _data += 1;
+              return *this;
+            }
+            iterator operator++(int){
+              return iterator(_data + 1);
+            }
+         };
+
+
+         class const_iterator{
+            private: 
+            T* _data;
+            
+            public:
+            
+            using iterator_category = std::forward_iterator_tag;
+            using value_type = T;
+            using difference_type = size_t;
+            using pointer = T*;
+            using reference = T&;
+
+            //const_iterator(){}
+            explicit const_iterator(pointer data) : _data(data) {}
+
+            const pointer data() const { return _data; }
+            const reference operator*() const  { return *_data; }
+            bool operator!=(const const_iterator& other){
+              return _data != other._data;
+            }
+            const_iterator& operator++(){
+              _data += 1;
+              return *this;
+            }
+            const_iterator operator++(int){
+              return const_iterator(_data + 1);
+            }
+         };
+
+         
+         iterator begin(){
+            return iterator(_data);
          }
          
-        const_split_iterator<T> cbegin(){
-            return const_split_iterator<T>(_data);
+        const_iterator begin()const{
+            return const_iterator(_data);
          }
-        const_split_iterator<T> cend(){
-            return const_split_iterator<T>(_data+size());
+         
+        iterator end(){
+            return iterator(_data+size());
+         }
+        const_iterator end() const {
+            return const_iterator(_data+size());
          }
 
          //***************************temp****************************  
