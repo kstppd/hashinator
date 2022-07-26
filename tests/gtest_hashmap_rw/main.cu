@@ -100,7 +100,7 @@ TEST(GPU_TEST,GPU_Write_Check){
 
 TEST(GPU_TEST,GPU_Read_Write_Check){
    Hashinator<val_type,val_type> map;
-   map.resize(29);
+   map.resize(8);
    
    Hashinator<val_type,val_type>* dmap = map.upload();
    size_t blocks=(1<<7)/32;
@@ -115,6 +115,34 @@ TEST(GPU_TEST,GPU_Read_Write_Check){
    map.print_all();
 
 }   
+
+__global__
+void gpu_test_iterator(Hashinator<val_type,val_type> *dmap){
+   Hashinator<val_type,val_type>::d_iterator it=dmap->d_end();
+   printf("iterator = %d \n",it.getIndex());
+   auto it2=dmap->d_find(55);
+   it2=dmap->d_erase(it2);
+   printf("GPU find  %d  %d  %d \n",(int)it2.getIndex(),(int)it2->first,(int)it2->second);
+
+}
+
+
+TEST(GPU_TEST,GPU_Iterator){
+   Hashinator<val_type,val_type> map;
+   map.resize(8);
+   
+   Hashinator<val_type,val_type>* dmap = map.upload();
+   size_t blocks=(1<<7)/32;
+
+   gpu_write_map<<<blocks,32>>>(dmap);
+   cudaDeviceSynchronize();
+   gpu_test_iterator<<<1,1>>>(dmap);
+   cudaDeviceSynchronize();
+   map.clean_up_after_device(dmap);
+   auto it=map.find(55);
+   std::cout<<it.getIndex()<<" "<<it->first<< " "<<it->second<<std::endl;
+}   
+
 
 int main(int argc, char* argv[]){
    ::testing::InitGoogleTest(&argc, argv);
