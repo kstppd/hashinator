@@ -30,7 +30,7 @@
 
 
 // Open bucket power-of-two sized hash table with multiplicative fibonacci hashing
-template <typename GID, typename LID, int maxBucketOverflow = 32, GID EMPTYBUCKET = vmesh::INVALID_GLOBALID > 
+template <typename GID, typename LID, int maxBucketOverflow = 8, GID EMPTYBUCKET = vmesh::INVALID_GLOBALID > 
 class Hashinator {
 private:
    int* d_sizePower;
@@ -517,10 +517,15 @@ public:
 
       if (buckets[index].first != EMPTYBUCKET) {
          // Decrease fill count
-         *d_fill=*d_fill-1;
+         atomicAdd((unsigned long long int*)d_fill, -1);
 
          // Clear the element itself.
-         buckets[index].first = EMPTYBUCKET;
+         static constexpr bool n = (std::is_arithmetic<GID>::value && sizeof(GID) <= sizeof(uint32_t));
+         if(n){
+            atomicExch((unsigned int*)&buckets[index].first,(unsigned int)EMPTYBUCKET);
+         }else{
+            atomicExch((unsigned long long int*)&buckets[index].first,(unsigned long long int)EMPTYBUCKET);
+         }
 
          int bitMask = (1 << *d_sizePower) - 1; // For efficient modulo of the array size
          size_t targetPos = index;
@@ -540,10 +545,17 @@ public:
                   //// Copy this entry to the current newly empty bucket, then continue with deleting
                   //// this overflown entry and continue searching for overflown entries
                   LID moveValue = buckets[(index+i)&bitMask].second;
-                  buckets[targetPos].first=nextBucket;
-                  buckets[targetPos].first=moveValue;
-                  targetPos = ((index+i)&bitMask);
-                  buckets[targetPos].first = EMPTYBUCKET;
+                  if (n){
+                     atomicExch((unsigned int*)&buckets[targetPos].first,(unsigned int)nextBucket);
+                     atomicExch((unsigned int*)&buckets[targetPos].second,(unsigned int)moveValue);
+                     targetPos = ((index+i)&bitMask);
+                     atomicExch((unsigned int*)&buckets[targetPos].first,(unsigned int)EMPTYBUCKET);
+                  }else{
+                     atomicExch((unsigned long long int*)&buckets[targetPos].first,(unsigned long long int)nextBucket);
+                     atomicExch((unsigned long long int*)&buckets[targetPos].second,(unsigned long long int)moveValue);
+                     targetPos = ((index+i)&bitMask);
+                     atomicExch((unsigned long long int*)&buckets[targetPos].first,(unsigned long long int)EMPTYBUCKET);
+                  }
                }
             }
          }

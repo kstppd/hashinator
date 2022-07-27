@@ -125,18 +125,30 @@ void gpu_test_delete_iterator(Hashinator<val_type,val_type> *dmap){
    }
 }
 
+__global__
+void gpu_delete_map(Hashinator<val_type,val_type> *dmap){
+   int index = blockIdx.x * blockDim.x + threadIdx.x;
+   //auto it=dmap->d_find(64);
+   //dmap->d_erase(it);
+   dmap->d_erase(index);
+
+}
 
 TEST(GPU_TEST,GPU_Iterator){
    Hashinator<val_type,val_type> map;
-   map.resize(8);
+   map.resize(4);
    Hashinator<val_type,val_type>* dmap = map.upload();
-   size_t blocks=(1<<7)/32;
-   gpu_write_map<<<blocks,32>>>(dmap);
-   cudaDeviceSynchronize();
-   gpu_test_delete_iterator<<<1,1>>>(dmap);
+   size_t blocks=(1<<3)/4;
+   gpu_write_map<<<blocks,4>>>(dmap);
    cudaDeviceSynchronize();
    map.clean_up_after_device(dmap);
+   dmap=map.upload();
+   gpu_delete_map<<<1,2>>>(dmap); 
+   cudaDeviceSynchronize();
+   map.clean_up_after_device(dmap);
+   //cudaDeviceSynchronize();
    map.print_all();
+   map.print_kvals();
 }   
 
 
