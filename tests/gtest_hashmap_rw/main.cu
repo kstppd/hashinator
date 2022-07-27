@@ -117,30 +117,26 @@ TEST(GPU_TEST,GPU_Read_Write_Check){
 }   
 
 __global__
-void gpu_test_iterator(Hashinator<val_type,val_type> *dmap){
-   Hashinator<val_type,val_type>::d_iterator it=dmap->d_end();
-   printf("iterator = %d \n",it.getIndex());
-   auto it2=dmap->d_find(55);
-   it2=dmap->d_erase(it2);
-   printf("GPU find  %d  %d  %d \n",(int)it2.getIndex(),(int)it2->first,(int)it2->second);
+void gpu_test_delete_iterator(Hashinator<val_type,val_type> *dmap){
 
+   for (auto it=dmap->d_begin(); it!=dmap->d_end(); it++){
+      dmap->d_erase(it);
+
+   }
 }
 
 
 TEST(GPU_TEST,GPU_Iterator){
    Hashinator<val_type,val_type> map;
    map.resize(8);
-   
    Hashinator<val_type,val_type>* dmap = map.upload();
    size_t blocks=(1<<7)/32;
-
    gpu_write_map<<<blocks,32>>>(dmap);
    cudaDeviceSynchronize();
-   gpu_test_iterator<<<1,1>>>(dmap);
+   gpu_test_delete_iterator<<<1,1>>>(dmap);
    cudaDeviceSynchronize();
    map.clean_up_after_device(dmap);
-   auto it=map.find(55);
-   std::cout<<it.getIndex()<<" "<<it->first<< " "<<it->second<<std::endl;
+   map.print_all();
 }   
 
 

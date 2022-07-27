@@ -517,7 +517,7 @@ public:
 
       if (buckets[index].first != EMPTYBUCKET) {
          // Decrease fill count
-         *d_fill--;
+         *d_fill=*d_fill-1;
 
          // Clear the element itself.
          buckets[index].first = EMPTYBUCKET;
