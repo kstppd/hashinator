@@ -33,10 +33,13 @@
 template <typename GID, typename LID, int maxBucketOverflow = 8, GID EMPTYBUCKET = vmesh::INVALID_GLOBALID > 
 class Hashinator {
 private:
+   //CUDA device handles
    int* d_sizePower;
    int* d_maxBucketOverflow;
    int postDevice_maxBucketOverflow;
    size_t* d_fill;
+   Hashinator* device_map;
+   //~CUDA device handles
 
    int sizePower; // Logarithm (base two) of the size of the table
    int cpu_maxBucketOverflow;
@@ -67,19 +70,38 @@ private:
    __host__ __device__
    uint32_t hash(GID in) const {
        static constexpr bool n = (std::is_arithmetic<GID>::value && sizeof(GID) <= sizeof(uint32_t));
-
        if (n) {
           return fibonacci_hash(in);
        } else {
           return fnv_1a(&in, sizeof(GID));
        }
     }
+   
+   void preallocate_device_handles(){
+      cudaMalloc((void **)&d_sizePower, sizeof(int));
+      cudaMalloc((void **)&d_maxBucketOverflow, sizeof(int));
+      cudaMalloc((void **)&d_fill, sizeof(size_t));
+      cudaMalloc((void **)&device_map, sizeof(Hashinator));
+   }
+   void deallocate_device_handles(){
+      cudaFree(device_map);
+      cudaFree(d_sizePower);
+      cudaFree(d_maxBucketOverflow);
+      cudaFree(d_fill);
+   }
 
 public:
    Hashinator()
-       : sizePower(4), fill(0), buckets(1 << sizePower, std::pair<GID, LID>(EMPTYBUCKET, LID())){};
+       : sizePower(4), fill(0), buckets(1 << sizePower, std::pair<GID, LID>(EMPTYBUCKET, LID())){
+         preallocate_device_handles();
+       };
    Hashinator(const Hashinator<GID, LID>& other)
-       : sizePower(other.sizePower), fill(other.fill), buckets(other.buckets){};
+       : sizePower(other.sizePower), fill(other.fill), buckets(other.buckets){
+         preallocate_device_handles();
+       };
+   ~Hashinator(){     
+      deallocate_device_handles();
+   };
 
    // Resize the table to fit more things. This is automatically invoked once
    // maxBucketOverflow has triggered.
@@ -194,7 +216,6 @@ public:
       fill = 0;
    }
 
-
    /************************Device Methods*********************************/
    __host__
    void resize_to_lf(float targetLF=0.5){
@@ -210,42 +231,27 @@ public:
    }
 
    __host__
-   Hashinator* upload(){
+   Hashinator* upload(cudaStream_t stream = 0 ){
       cpu_maxBucketOverflow=maxBucketOverflow;
-      this->buckets.optimizeGPU();
-      Hashinator* device_map;
-      cudaMalloc((void **)&d_sizePower, sizeof(int));
-      cudaMemcpy(d_sizePower, &sizePower, sizeof(int),cudaMemcpyHostToDevice);
-      cudaMalloc((void **)&d_maxBucketOverflow, sizeof(int));
-      cudaMemcpy(d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice);
-      cudaMalloc((void **)&d_fill, sizeof(size_t));
-      cudaMemcpy(d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice);
-      cudaMalloc((void **)&device_map, sizeof(Hashinator));
-      cudaMemcpy(device_map, this, sizeof(Hashinator),cudaMemcpyHostToDevice);
+      this->buckets.optimizeGPU(); //already async so can be overlapped if used with streams
+      cudaMemcpyAsync(d_sizePower, &sizePower, sizeof(int),cudaMemcpyHostToDevice,stream);
+      cudaMemcpyAsync(d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice,stream);
+      cudaMemcpyAsync(d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice,stream);
+      cudaMemcpyAsync(device_map, this, sizeof(Hashinator),cudaMemcpyHostToDevice,stream);
       return device_map;
    }
 
    __host__
-   void clean_up_after_device(Hashinator* device_map ){
-      
+   void clean_up_after_device(Hashinator* device_map ,cudaStream_t stream = 0){
       //Copy over fill as it might have changed
-      cudaMemcpy(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost);
-      
-      cudaMemcpy(&postDevice_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost);
-      //TODO
-      //Here postDevice_maxBucketOverflow is the new overflowing that took place while running on device
-      //We need to handle this and clean up by rehashing to a larger container.
+      cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,stream);
+      cudaMemcpyAsync(&postDevice_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,stream);
       std::cout<<"Overflow Limits Dev/Host "<<maxBucketOverflow<<"--> "<<postDevice_maxBucketOverflow<<std::endl;
       std::cout<<"Fill after device = "<<fill<<std::endl;
       this->buckets.optimizeCPU();
       if (postDevice_maxBucketOverflow>maxBucketOverflow){
          rehash(sizePower+1);
       }
-     
-      cudaFree(device_map);
-      cudaFree(d_sizePower);
-      cudaFree(d_maxBucketOverflow);
-      cudaFree(d_fill);
    }
 
    __host__
