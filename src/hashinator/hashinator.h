@@ -77,12 +77,15 @@ private:
        }
     }
    
+   __host__
    void preallocate_device_handles(){
       cudaMalloc((void **)&d_sizePower, sizeof(int));
       cudaMalloc((void **)&d_maxBucketOverflow, sizeof(int));
       cudaMalloc((void **)&d_fill, sizeof(size_t));
       cudaMalloc((void **)&device_map, sizeof(Hashinator));
    }
+
+   __host__
    void deallocate_device_handles(){
       cudaFree(device_map);
       cudaFree(d_sizePower);
@@ -91,20 +94,24 @@ private:
    }
 
 public:
+   __host__
    Hashinator()
        : sizePower(4), fill(0), buckets(1 << sizePower, std::pair<GID, LID>(EMPTYBUCKET, LID())){
          preallocate_device_handles();
        };
+   __host__
    Hashinator(const Hashinator<GID, LID>& other)
        : sizePower(other.sizePower), fill(other.fill), buckets(other.buckets){
          preallocate_device_handles();
        };
+   __host__
    ~Hashinator(){     
       deallocate_device_handles();
    };
 
    // Resize the table to fit more things. This is automatically invoked once
    // maxBucketOverflow has triggered.
+   __host__
    void rehash(int newSizePower) {
 #ifdef DEBUG
       std::cout<<"Rehashing to "<<( 1<<newSizePower )<<std::endl;
@@ -148,6 +155,7 @@ public:
    }
 
    // Element access (by reference). Nonexistent elements get created.
+   __host__
    LID& at(const GID& key) {
       int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
       uint32_t hashIndex = hash(key);
@@ -171,7 +179,8 @@ public:
       rehash(sizePower + 1);
       return at(key); // Recursive tail call to try again with larger table.
    }
-      
+
+   __host__
    const LID& at(const GID& key) const {
       int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
       uint32_t hashIndex = hash(key);
@@ -194,15 +203,20 @@ public:
    }
 
    // Typical array-like access with [] operator
+   __host__
    LID& operator[](const GID& key) { return at(key); }
 
    // For STL compatibility: size(), bucket_count(), count(GID), clear()
+   __host__
    size_t size() const { return fill; }
 
+   __host__
    size_t bucket_count() const { return buckets.size(); }
    
+   __host__
    float load_factor() const {return (float)size()/bucket_count();}
 
+   __host__
    size_t count(const GID& key) const {
       if (find(key) != end()) {
          return 1;
@@ -211,6 +225,7 @@ public:
       }
    }
 
+   __host__
    void clear() {
       buckets = split::SplitVector<std::pair<GID, LID>>(1 << sizePower, {EMPTYBUCKET, LID()});
       fill = 0;
@@ -265,6 +280,7 @@ public:
       std::cout<<"<<<<*********************************"<<std::endl;
    }
 
+   __host__
    void print_kvals(){
       for (auto it=begin(); it!=end();it++){
          std::cout<<it->first<<" "<<it->second<<std::endl;
@@ -347,6 +363,7 @@ public:
    
      
    // Device Iterator type. Iterates through all non-empty buckets.
+   __device__
    class d_iterator  {
    private:
       size_t index;
@@ -394,7 +411,7 @@ public:
    };
 
 
-
+   __device__
    class d_const_iterator  {
    private:
       size_t index;
@@ -574,13 +591,16 @@ public:
    /**************************device code*************************************************/
 
    // Iterator type. Iterates through all non-empty buckets.
+   __host__
    class iterator : public std::iterator<std::random_access_iterator_tag, std::pair<GID, LID>> {
       Hashinator<GID, LID>* hashtable;
       size_t index;
 
    public:
+      __host__
       iterator(Hashinator<GID, LID>& hashtable, size_t index) : hashtable(&hashtable), index(index) {}
 
+      __host__
       iterator& operator++() {
          index++;
          while(index < hashtable->buckets.size()){
@@ -592,32 +612,39 @@ public:
          return *this;
       }
       
+      __host__
       iterator operator++(int) { // Postfix version
          iterator temp = *this;
          ++(*this);
          return temp;
       }
-
+      __host__
       bool operator==(iterator other) const {
          return &hashtable->buckets[index] == &other.hashtable->buckets[other.index];
       }
+      __host__
       bool operator!=(iterator other) const {
          return &hashtable->buckets[index] != &other.hashtable->buckets[other.index];
       }
+      __host__
       std::pair<GID, LID>& operator*() const { return hashtable->buckets[index]; }
+      __host__
       std::pair<GID, LID>* operator->() const { return &hashtable->buckets[index]; }
+      __host__
       size_t getIndex() { return index; }
    };
 
    // Const iterator.
+   __host__
    class const_iterator : public std::iterator<std::random_access_iterator_tag, std::pair<GID, LID>> {
       const Hashinator<GID, LID>* hashtable;
       size_t index;
 
    public:
+      __host__
       explicit const_iterator(const Hashinator<GID, LID>& hashtable, size_t index)
           : hashtable(&hashtable), index(index) {}
-
+      __host__
       const_iterator& operator++() {
          index++;
          while(index < hashtable->buckets.size()){
@@ -628,23 +655,28 @@ public:
          }
          return *this;
       }
+      __host__
       const_iterator operator++(int) { // Postfix version
          const_iterator temp = *this;
          ++(*this);
          return temp;
       }
-
+      __host__
       bool operator==(const_iterator other) const {
          return &hashtable->buckets[index] == &other.hashtable->buckets[other.index];
       }
+      __host__
       bool operator!=(const_iterator other) const {
          return &hashtable->buckets[index] != &other.hashtable->buckets[other.index];
       }
+      __host__
       const std::pair<GID, LID>& operator*() const { return hashtable->buckets[index]; }
+      __host__
       const std::pair<GID, LID>* operator->() const { return &hashtable->buckets[index]; }
+      __host__
       size_t getIndex() { return index; }
    };
-
+   __host__
    iterator begin() {
       for (size_t i = 0; i < buckets.size(); i++) {
          if (buckets[i].first != EMPTYBUCKET) {
@@ -653,6 +685,7 @@ public:
       }
       return end();
    }
+   __host__
    const_iterator begin() const {
       for (size_t i = 0; i < buckets.size(); i++) {
          if (buckets[i].first != EMPTYBUCKET) {
@@ -662,10 +695,13 @@ public:
       return end();
    }
 
+   __host__
    iterator end() { return iterator(*this, buckets.size()); }
+   __host__
    const_iterator end() const { return const_iterator(*this, buckets.size()); }
 
    // Element access by iterator
+   __host__
    iterator find(GID key) {
       int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
       uint32_t hashIndex = hash(key);
@@ -688,6 +724,7 @@ public:
       return end();
    }
 
+   __host__
    const const_iterator find(GID key) const {
       int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
       uint32_t hashIndex = hash(key);
@@ -711,6 +748,7 @@ public:
    }
 
    // More STL compatibility implementations
+   __host__
    std::pair<iterator, bool> insert(std::pair<GID, LID> newEntry) {
       bool found = find(newEntry.first) != end();
       if (!found) {
@@ -720,6 +758,7 @@ public:
    }
 
    // Remove one element from the hash table.
+   __host__
    iterator erase(iterator keyPos) {
       // Due to overflowing buckets, this might require moving quite a bit of stuff around.
       size_t index = keyPos.getIndex();
@@ -760,6 +799,7 @@ public:
       ++keyPos;
       return keyPos;
    }
+   __host__
    size_t erase(const GID& key) {
       iterator element = find(key);
       if(element == end()) {
@@ -769,7 +809,8 @@ public:
          return 1;
       }
    }
-
+   
+   __host__
    void swap(Hashinator<GID, LID>& other) {
       buckets.swap(other.buckets);
       int tempSizePower = sizePower;
