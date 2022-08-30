@@ -238,7 +238,7 @@ public:
       std::cout<<"Overflow Limits Dev/Host "<<maxBucketOverflow<<"--> "<<postDevice_maxBucketOverflow<<std::endl;
       std::cout<<"Fill after device = "<<fill<<std::endl;
       this->buckets.optimizeCPU();
-      if (postDevice_maxBucketOverflow!=maxBucketOverflow){
+      if (postDevice_maxBucketOverflow>maxBucketOverflow){
          rehash(sizePower+1);
       }
      
@@ -283,7 +283,7 @@ public:
          }
          if (candidate.first == EMPTYBUCKET) {
             // Found an empty bucket, assign and return that.
-            candidate.first = key;
+            atomicExch(&candidate.first,key);
             //compute capability 6.* and higher
             atomicAdd((unsigned long long  int*)d_fill, 1);
             assert(*d_fill < buckets.size() && "No free buckets left on device memory. Exiting!");
@@ -320,12 +320,7 @@ public:
    __device__
    void set_element(const GID& key,LID val){
       LID* candidate= dev_at(key);
-      static constexpr bool n = (std::is_arithmetic<LID>::value && sizeof(LID) <= sizeof(uint32_t));
-      if(n){
-         atomicExch((unsigned int*)candidate,(unsigned int)val);
-      }else{
-         atomicExch((unsigned long long int*)candidate,(unsigned long long int)val);
-      }
+      atomicExch(candidate,val);
    }
 
      __device__
