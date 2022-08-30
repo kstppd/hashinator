@@ -41,11 +41,13 @@ private:
    Hashinator* device_map;
    //~CUDA device handles
 
+   //Host members
    int sizePower; // Logarithm (base two) of the size of the table
    int cpu_maxBucketOverflow;
    size_t fill;   // Number of filled buckets
    split::SplitVector<std::pair<GID, LID>> buckets;
-
+   //~Host members
+   
    // Fibonacci hash function for 64bit values
    __host__ __device__
    uint32_t fibonacci_hash(GID in) const {
