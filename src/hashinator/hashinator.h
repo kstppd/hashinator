@@ -273,12 +273,13 @@ public:
       uint32_t hashIndex = hash(key);
 
       // Try to find the matching bucket.
-      for (int i = 0; i < thread_overflowLookup; i++) {
+      for (int i = 0; i < buckets.size(); i++) {
          uint32_t vecindex=(hashIndex + i) & bitMask;
          std::pair<GID, LID>& candidate = buckets[vecindex];
          if (candidate.first == key) {
             // Found a match, return that
             retval = &candidate.second;
+            thread_overflowLookup = i+1;
             return true;
          }
          if (candidate.first == EMPTYBUCKET) {
@@ -287,6 +288,7 @@ public:
             //compute capability 6.* and higher
             atomicAdd((unsigned long long  int*)d_fill, 1);
             assert(*d_fill < buckets.size() && "No free buckets left on device memory. Exiting!");
+            thread_overflowLookup = i+1;
             retval = &candidate.second;
             return true;
          }
@@ -298,19 +300,12 @@ public:
 
    __device__
    LID* dev_at(const GID& key){
-      size_t thread_overflowLookup=*d_maxBucketOverflow;
       LID* candidate=nullptr;
-      bool found=false;
-      while(!found){
-         found = retrieve_w(key,thread_overflowLookup,candidate);
-         if (!found){
-            thread_overflowLookup+=1;
-         }
-         assert(thread_overflowLookup < buckets.size() && "Buckets are completely overflown. This is a catastrophic failure...Consider .resize_to_lf()");
-      }
+      size_t thread_overflowLookup;
+      bool found = retrieve_w(key,thread_overflowLookup,candidate);
       /*Now the local overflow might have changed for a thread. 
-      We need to update the global one here.
-      compute capability 3.5 and higher*/
+      We need to update the global one here if it any thread exceeded 
+      the maxBucketOverflows. compute capability 3.5 and higher*/
       atomicMax(d_maxBucketOverflow,thread_overflowLookup);
       assert(candidate && "NULL pointer");
       return candidate;
