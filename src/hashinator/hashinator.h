@@ -250,7 +250,7 @@ public:
    __host__
    Hashinator* upload(cudaStream_t stream = 0 ){
       cpu_maxBucketOverflow=maxBucketOverflow;
-      this->buckets.optimizeGPU(); //already async so can be overlapped if used with streams
+      this->buckets.optimizeGPU(stream); //already async so can be overlapped if used with streams
       cudaMemcpyAsync(d_sizePower, &sizePower, sizeof(int),cudaMemcpyHostToDevice,stream);
       cudaMemcpyAsync(d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice,stream);
       cudaMemcpyAsync(d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice,stream);
@@ -265,7 +265,7 @@ public:
       cudaMemcpyAsync(&postDevice_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,stream);
       std::cout<<"Overflow Limits Dev/Host "<<maxBucketOverflow<<"--> "<<postDevice_maxBucketOverflow<<std::endl;
       std::cout<<"Fill after device = "<<fill<<std::endl;
-      this->buckets.optimizeCPU();
+      this->buckets.optimizeCPU(stream);
       if (postDevice_maxBucketOverflow>maxBucketOverflow){
          rehash(sizePower+1);
       }

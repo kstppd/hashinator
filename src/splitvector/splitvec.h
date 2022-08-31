@@ -258,16 +258,16 @@ namespace split{
          }
 
          /*Manually prefetch data on Device*/
-         __host__ void optimizeGPU(){
-            #pragma message ("TODO-->Handle stream and device IDs!" )
+         __host__ void optimizeGPU(cudaStream_t stream = 0){
+            #pragma message ("TODO-->Handle device IDs!" )
             int device = 0;
-            cudaMemPrefetchAsync(_data ,size()*sizeof(T),device,0);
+            cudaMemPrefetchAsync(_data ,size()*sizeof(T),device,stream);
             CheckErrors("Prefetch GPU");
          }
 
          /*Manually prefetch data on Host*/
-         __host__ void optimizeCPU(){
-            cudaMemPrefetchAsync(_data ,size()*sizeof(T),cudaCpuDeviceId);
+         __host__ void optimizeCPU(cudaStream_t stream = 0){
+            cudaMemPrefetchAsync(_data ,size()*sizeof(T),cudaCpuDeviceId,stream);
             CheckErrors("Prefetch CPU");
          }
 
