@@ -259,8 +259,9 @@ namespace split{
 
          /*Manually prefetch data on Device*/
          __host__ void optimizeGPU(cudaStream_t stream = 0){
-            #pragma message ("TODO-->Handle device IDs!" )
-            int device = 0;
+            int device;
+            cudaGetDevice(&device);
+            CheckErrors("Prefetch GPU-Device-ID");
             cudaMemPrefetchAsync(_data ,size()*sizeof(T),device,stream);
             CheckErrors("Prefetch GPU");
          }

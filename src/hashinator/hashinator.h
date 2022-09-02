@@ -158,7 +158,7 @@ public:
 
    // Element access (by reference). Nonexistent elements get created.
    __host__
-   LID& at(const GID& key) {
+   LID& _at(const GID& key) {
       int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
       uint32_t hashIndex = hash(key);
 
@@ -183,7 +183,7 @@ public:
    }
 
    __host__
-   const LID& at(const GID& key) const {
+   const LID& _at(const GID& key) const {
       int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
       uint32_t hashIndex = hash(key);
 
@@ -206,14 +206,44 @@ public:
 
    // Typical array-like access with [] operator
    __host__
-   LID& operator[](const GID& key) { return at(key); }
+   LID& operator[](const GID& key) {
+      return at(key); 
+   }
+
+   //------common operator wrappers---------
+   //Read only access with () operator on device
+   __device__
+   const LID& operator()(const GID& key) const {
+      return read_element(key); 
+   }
+
+   //See _at(key)
+   __host__
+   LID& at(const GID& key) {
+      return _at(key);
+   }
+   
+   //Read only  access to reference. Works on both host
+   //and device.
+   //See read_element() and (const) _at(key)
+   __host__  __device__
+   const LID& at(const GID& key) const {
+#ifdef __CUDA_ARCH__
+      return read_element(key);
+#else
+      return _at(key);
+#endif
+   }
+   //---------------------------------------
 
    // For STL compatibility: size(), bucket_count(), count(GID), clear()
    __host__
    size_t size() const { return fill; }
 
-   __host__
-   size_t bucket_count() const { return buckets.size(); }
+   __host__ __device__
+   size_t bucket_count() const {
+      return buckets.size();
+   }
    
    __host__
    float load_factor() const {return (float)size()/bucket_count();}
@@ -364,6 +394,27 @@ public:
    }
    
      
+     __device__
+     LID& get_element(const GID& key){
+      int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
+      uint32_t hashIndex = hash(key);
+
+      // Try to find the matching bucket.
+      for (int i = 0; i < *d_maxBucketOverflow; i++) {
+         uint32_t vecindex=(hashIndex + i) & bitMask;
+         std::pair<GID, LID>& candidate = buckets[vecindex];
+         if (candidate.first == key) {
+            // Found a match, return that
+            return candidate.second;
+         }
+         if (candidate.first == EMPTYBUCKET) {
+            // Found an empty bucket, so error.
+             assert(false && "Key does not exist");
+         }
+      }
+       assert(false && "Key does not exist");
+   }
+
    // Device Iterator type. Iterates through all non-empty buckets.
    __device__
    class d_iterator  {
