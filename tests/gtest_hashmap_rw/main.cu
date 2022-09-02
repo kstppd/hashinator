@@ -11,7 +11,7 @@ typedef uint32_t val_type;
 __global__
 void gpu_read_map(Hashinator<val_type,val_type> *dmap){
    int index = blockIdx.x * blockDim.x + threadIdx.x;
-   const val_type& element=dmap->read_element(index);
+   auto element=dmap->operator()(index);
    assert(element == index);
 }
 
