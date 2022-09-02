@@ -532,7 +532,7 @@ public:
 
       if (buckets[index].first != EMPTYBUCKET) {
          // Decrease fill count
-         atomicAdd((unsigned long long int*)d_fill, -1);
+         atomicSub((unsigned int*)d_fill, 1);
 
          // Clear the element itself.
          static constexpr bool n = (std::is_arithmetic<GID>::value && sizeof(GID) <= sizeof(uint32_t));
