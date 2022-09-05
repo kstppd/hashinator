@@ -115,7 +115,7 @@ public:
    // maxBucketOverflow has triggered.
    __host__
    void rehash(int newSizePower) {
-#ifdef DEBUG
+#ifdef HASHMAPDEBUG
       std::cout<<"Rehashing to "<<( 1<<newSizePower )<<std::endl;
 #endif
       if (newSizePower > 32) {
@@ -293,8 +293,10 @@ public:
       //Copy over fill as it might have changed
       cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,stream);
       cudaMemcpyAsync(&postDevice_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,stream);
+#ifdef HASHMAPDEBUG
       std::cout<<"Overflow Limits Dev/Host "<<maxBucketOverflow<<"--> "<<postDevice_maxBucketOverflow<<std::endl;
       std::cout<<"Fill after device = "<<fill<<std::endl;
+#endif
       this->buckets.optimizeCPU(stream);
       if (postDevice_maxBucketOverflow>maxBucketOverflow){
          rehash(sizePower+1);
@@ -323,7 +325,7 @@ public:
    // Device code for element access (by reference). Nonexistent elements get created.
    __device__
    bool retrieve_w(const GID& key, size_t &thread_overflowLookup,LID* &retval) {
-      int bitMask = (1 << *d_sizePower) - 1; // For efficient modulo of the array size
+      int bitMask = (1 <<(*d_sizePower )) - 1; // For efficient modulo of the array size
       uint32_t hashIndex = hash(key);
 
       // Try to find the matching bucket.
@@ -586,17 +588,12 @@ public:
          atomicSub((unsigned int*)d_fill, 1);
 
          // Clear the element itself.
-         static constexpr bool n = (std::is_arithmetic<GID>::value && sizeof(GID) <= sizeof(uint32_t));
-         if(n){
-            atomicExch((unsigned int*)&buckets[index].first,(unsigned int)EMPTYBUCKET);
-         }else{
-            atomicExch((unsigned long long int*)&buckets[index].first,(unsigned long long int)EMPTYBUCKET);
-         }
+         atomicExch(&buckets[index].first,EMPTYBUCKET);
 
-         int bitMask = (1 << *d_sizePower) - 1; // For efficient modulo of the array size
+         int bitMask = (1 <<(*d_sizePower )) - 1; // For efficient modulo of the array size
          size_t targetPos = index;
          // Search ahead to verify items are in correct places (until empty bucket is found)
-         for (unsigned int i = 1; i < fill; i++) {
+         for (unsigned int i = 1; i < (*d_fill); i++) {
             GID nextBucket = buckets[(index + i)&bitMask].first;
             if (nextBucket == EMPTYBUCKET) {
                // The next bucket is empty, we are done.
@@ -606,22 +603,15 @@ public:
             uint32_t hashIndex = hash(nextBucket);
             if ((hashIndex&bitMask) != ((index + i)&bitMask)) {
                //// This entry has overflown. Now check if it should be moved:
-               uint32_t distance =  ((targetPos - hashIndex + (1<<*d_sizePower) )&bitMask);
+               uint32_t distance =  ((targetPos - hashIndex + (1<<(*d_sizePower)))&bitMask);
                if (distance < *d_maxBucketOverflow) {
                   //// Copy this entry to the current newly empty bucket, then continue with deleting
                   //// this overflown entry and continue searching for overflown entries
                   LID moveValue = buckets[(index+i)&bitMask].second;
-                  if (n){
-                     atomicExch((unsigned int*)&buckets[targetPos].first,(unsigned int)nextBucket);
-                     atomicExch((unsigned int*)&buckets[targetPos].second,(unsigned int)moveValue);
-                     targetPos = ((index+i)&bitMask);
-                     atomicExch((unsigned int*)&buckets[targetPos].first,(unsigned int)EMPTYBUCKET);
-                  }else{
-                     atomicExch((unsigned long long int*)&buckets[targetPos].first,(unsigned long long int)nextBucket);
-                     atomicExch((unsigned long long int*)&buckets[targetPos].second,(unsigned long long int)moveValue);
-                     targetPos = ((index+i)&bitMask);
-                     atomicExch((unsigned long long int*)&buckets[targetPos].first,(unsigned long long int)EMPTYBUCKET);
-                  }
+                  atomicExch(&buckets[targetPos].first,nextBucket);
+                  atomicExch(&buckets[targetPos].second,moveValue);
+                  targetPos = ((index+i)&bitMask);
+                  atomicExch(&buckets[targetPos].first,EMPTYBUCKET);
                }
             }
          }
