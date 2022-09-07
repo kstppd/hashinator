@@ -53,11 +53,10 @@ namespace split{
    class SplitVector{
       
       private:
-         T* _data; //actual pointer to our data      
+         T*      _data; //actual pointer to our data      
          size_t* _size; // number of elements in vector.
-         int* _clones; //keeps a track of pointers for handling deallocations
          size_t* _capacity; // number of allocated elements
-         size_t _alloc_multiplier = 1; //host variable; multiplier for  when reserving more space
+         size_t  _alloc_multiplier = 1; //host variable; multiplier for  when reserving more space
  
 
 #ifdef CUDAVEC
@@ -78,7 +77,6 @@ namespace split{
          }
 
          void _deallocate(){
-               delete _clones;
                if (_data!=nullptr){
                   for (size_t i=0; i<size();i++){
                      _data[i].~T();
@@ -110,7 +108,6 @@ namespace split{
          void _deallocate(){
                delete _size;
                delete _capacity;
-               delete _clones;
                if (_data!=nullptr){
                   delete [] _data;
                   _data=nullptr;
@@ -121,87 +118,69 @@ namespace split{
       public:
 
          /*Constructors*/
-         __host__ explicit   SplitVector():_data(nullptr),_clones(new int(1)){
-#ifdef CUDAVEC
+         __host__ explicit   SplitVector():_data(nullptr){
+               #ifdef CUDAVEC
                cudaMallocManaged((void**)&_size,sizeof(size_t));
                cudaMallocManaged((void**)&_capacity,sizeof(size_t));
                *this->_size= 0;
                *this->_capacity=0;
-#else
+               #else
                _size=new size_t(0);
                _capacity=new size_t(0);
-#endif
+               #endif
          }
 
          __host__ explicit   SplitVector(size_t size)
-               :_data(nullptr),_clones(new int(1)){
+               :_data(nullptr){
                this->_allocate(size);
          }
 
          __host__ explicit  SplitVector(size_t size, const T &val)
-               :_data(nullptr),_clones(new int(1)){
+               :_data(nullptr){
                this->_allocate(size);
                for (size_t i=0; i<size; i++){
                   _data[i]=val;
                }
-         }
+            }
 
          __host__ SplitVector(const SplitVector &other){
-            this->_data=other._data;
-            this->_size=other._size; 
-            this->_capacity=other._capacity; 
-            this->_clones= other._clones;
-            ++(*_clones);
-         }
+            std::cout<<"Copy constructor init"<<std::endl;
+               const size_t size_to_allocate = other.size();
+               this->_allocate(size_to_allocate);
+               for (size_t i=0; i<size_to_allocate; i++){
+                  _data[i]=other._data[i];
+               }
+            }
 
          __host__ SplitVector(std::initializer_list<T> init_list)
-               :_data(nullptr),_clones(new int(1)){
+               :_data(nullptr){
                this->_allocate(init_list.size());
                for (size_t i =0 ; i< size();i++){
                   _data[i]=init_list.begin()[i];
                }
-         }
+            }
          
-         /*Destructor: here we only actually deallocate 
-            * if we are the first clone so the original container
-            * otherwise we would invalidate our data when a pointer 
-            * would get out of scope of its lifetime*/
-         __host__  ~SplitVector(){
-            --(*_clones);
-            if(*_clones == 0){
-               _deallocate();
-            }  
+         //Destructor
+         __host__ ~SplitVector(){
+            _deallocate();
          }
 
          
          /*Custom Assignment operator*/
-         __host__  SplitVector& operator= (const SplitVector& other){
-
-            if (*_clones == 1){
-               if (size() == other.size()){
-                  for (size_t i=0; i< size(); i++){
-                     _data[i]=other._data[i];
-                  }
-               }else{
-                  // we need to allocate a new block unfortunately
-                  this->_deallocate();
-                  _clones =new int(1);
-                  this->_allocate(other.size());
-                  for (size_t i=0; i< size(); i++){
-                     _data[i]=other._data[i];
-                  }
+         __host__  SplitVector& operator=(const SplitVector& other){
+            if (size() == other.size()){
+               for (size_t i=0; i< size(); i++){
+                  _data[i]=other._data[i];
                }
             }else{
-               //we are migrating here
-               --(*_clones);
-               this->_data=other._data;
-               this->_size=other._size; 
-               this->_clones= other._clones;
-               this->_capacity= other._capacity;
-               ++(*_clones);
+               // we need to allocate a new block unfortunately
+               _deallocate();
+               _allocate(other.size());
+               for (size_t i=0; i< size(); i++){
+                  _data[i]=other._data[i];
+               }
             }
-   
-         return *this;
+            return *this;
          }
 
          /*Custom swap mehtod. Pointers after swap 
@@ -556,7 +535,7 @@ namespace split{
 
          //***************************temp****************************  
          __host__  void print(){
-               std::cout<<&(_data[0])<<" -->"<<_data[0]<<" - "<<_data[size()-1 ]<<" Clone # "<<*_clones<<" Capacity= "<<*_capacity<<" Size= "<<size()<<std::endl;
+               std::cout<<&(_data[0])<<" -->"<<_data[0]<<" - "<<_data[size()-1 ]<<" Capacity= "<<*_capacity<<" Size= "<<size()<<std::endl;
          } 
 
          __host__  void print_full(){
