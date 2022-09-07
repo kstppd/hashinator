@@ -25,6 +25,7 @@
 #include <cuda.h>
 #include <cassert>
 #include <cstring>
+#include <stdlib.h>
 
 #ifdef CUDAVEC
    #define CheckErrors(msg) \
@@ -131,14 +132,11 @@ namespace split{
 
       public:
          /* Available Constructors :
-          *    -- SplitVector()                       --> Default constructor. Almost a no OP but _size and _capacity have 
-          *                                                to be allocated for device usage. 
+          *    -- SplitVector()                       --> Default constructor. Almost a no OP but _size and _capacity have  to be allocated for device usage. 
           *    -- SplitVector(size_t)                 --> Instantiates a splitvector with a specific size. (capacity == size)
-          *    -- SplitVector(size_t,T)               --> Instantiates a splitvector with a specific size and sets all elements to 
-          *                                                 T.(capacity == size)
+          *    -- SplitVector(size_t,T)               --> Instantiates a splitvector with a specific size and sets all elements to T.(capacity == size)
           *    -- SplitVector(SplitVector&)           --> Copy constructor. 
           *    -- SplitVector(std::initializer_list&) --> Creates a SplitVector and copies over the elemets of the init. list. 
-          *
           * */
 
          /*Constructors*/
@@ -169,6 +167,13 @@ namespace split{
                this->_allocate(init_list.size());
                for (size_t i =0 ; i< size();i++){
                   _data[i]=init_list.begin()[i];
+               }
+            }
+    
+         __host__ explicit  SplitVector(const std::vector<T> &other ){
+               this->_allocate(other.size());
+               for (size_t i=0; i<size(); i++){
+                  _data[i]=other[i];
                }
             }
          

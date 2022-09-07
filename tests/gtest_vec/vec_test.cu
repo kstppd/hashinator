@@ -48,6 +48,17 @@ TEST(Constructors,Size_based){
    expect_true(a.data()!=nullptr);
 }
 
+TEST(Constructors,std_vector){
+   std::vector<int>  stdvec(N,10);
+   vec a(stdvec);
+
+   for (size_t i=0; i<N; i++){
+      expect_true(stdvec[i]=a[i]);
+   }
+   vec b(a);
+   expect_true(a==b);
+}
+
 TEST(Constructors,Specific_Value){
    vec a(N,5);
    expect_true(a.size()==N && a.capacity()==N);
@@ -117,8 +128,6 @@ TEST(Vector_Functionality , Push_Back){
    expect_true(12==a[a.size()-1]);
 
 }
-
-
 
 TEST(Vector_Functionality , Push_Back_2){
    vec a{1,2,3,4,5,6,7,8,9,10};
