@@ -47,68 +47,6 @@
 
 namespace split{
    
-   template <class T>
-   class split_iterator{
-       
-      private:
-      T* _data;
-      
-      public:
-      
-      using iterator_category = std::forward_iterator_tag;
-      using value_type = T;
-      using difference_type = size_t;
-      using pointer = T*;
-      using reference = T&;
-
-      split_iterator(){}
-      split_iterator(pointer data) : _data(data) {}
-
-      pointer data() { return _data; }
-      reference operator*() { return *_data; }
-      bool operator!=(const split_iterator& other){
-        return _data != other._data;
-      }
-      split_iterator<T>& operator++(){
-        _data += 1;
-        return *this;
-      }
-      split_iterator<T> operator++(int){
-        return split_iterator<T>(_data + 1);
-      }
-   };
-
-
-   template <class T>
-   class const_split_iterator{
-      private: 
-      T* _data;
-      
-      public:
-      
-      using iterator_category = std::forward_iterator_tag;
-      using value_type = T;
-      using difference_type = size_t;
-      using pointer = T*;
-      using reference = T&;
-
-      const_split_iterator(){}
-      const_split_iterator(pointer data) : _data(data) {}
-
-      const pointer data() { return _data; }
-      const reference operator*()  { return *_data; }
-      bool operator!=(const const_split_iterator& other){
-        return _data != other._data;
-      }
-      const_split_iterator<T>& operator++(){
-        _data += 1;
-        return *this;
-      }
-      const_split_iterator<T> operator++(int){
-        return const_split_iterator<T>(_data + 1);
-      }
-   };
-
 
 
    template<typename T>
@@ -117,9 +55,9 @@ namespace split{
       private:
          T* _data; //actual pointer to our data      
          size_t* _size; // number of elements in vector.
-         size_t* _capacity; // number of allocated elements
          int* _clones; //keeps a track of pointers for handling deallocations
-         int _alloc_multiplier=1; //host variable; multiplier for  when reserving
+         size_t* _capacity; // number of allocated elements
+         size_t _alloc_multiplier = 1; //host variable; multiplier for  when reserving more space
  
 
 #ifdef CUDAVEC
@@ -320,18 +258,186 @@ namespace split{
          }
 
          /*Manually prefetch data on Device*/
-         __host__ void optimizeGPU(){
-            #pragma message ("TODO-->Handle stream and device IDs!" )
-            int device = 0;
-            cudaMemPrefetchAsync(_data ,size()*sizeof(T),device,0);
+         __host__ void optimizeGPU(cudaStream_t stream = 0){
+            int device;
+            cudaGetDevice(&device);
+            CheckErrors("Prefetch GPU-Device-ID");
+            cudaMemPrefetchAsync(_data ,size()*sizeof(T),device,stream);
             CheckErrors("Prefetch GPU");
          }
 
          /*Manually prefetch data on Host*/
-         __host__ void optimizeCPU(){
-            cudaMemPrefetchAsync(_data ,size()*sizeof(T),cudaCpuDeviceId);
+         __host__ void optimizeCPU(cudaStream_t stream = 0){
+            cudaMemPrefetchAsync(_data ,size()*sizeof(T),cudaCpuDeviceId,stream);
             CheckErrors("Prefetch CPU");
          }
+
+         //Size modifiers
+         /* 
+            Reserve method:
+            Supports only host reserving.
+            Will never reduce the vector's size.
+            Memory location will change so any old pointers/iterators
+            will be invalidated after a call.
+         */
+         __host__
+         void reserve(size_t requested_space){
+            size_t current_space=*_capacity;
+            
+            //Nope.
+            if (requested_space <= current_space){
+               return ;
+            }
+            
+            requested_space*=_alloc_multiplier;
+            _alloc_multiplier*=2;
+            // Allocate new Space
+            T* _new_data;
+            #ifdef CUDAVEC
+               cudaMallocManaged((void**)&_new_data, requested_space * sizeof(T));
+               //Here we also need to construct the objects manually
+               for (size_t i=0; i < requested_space; i++){
+                  new (&_new_data[i]) T(); 
+               }
+               CheckErrors("Reserve:: Managed Allocation");
+            #else
+               _new_data=new T[requested_space];
+               if (_new_data==nullptr){
+                  delete [] _new_data;
+                  this->_deallocate();
+                  throw std::bad_alloc();
+               }
+            #endif
+            
+            //Copy over
+            for (size_t i=0; i<size();i++){
+               _new_data[i] = _data[i];
+            }
+
+            //Deallocate old space
+            #ifdef CUDAVEC
+               cudaFree(_data);
+            #else
+               delete [] _data;
+            #endif
+
+            //Swap pointers & update capacity
+            //Size remains the same ofc
+            _data=_new_data;
+            *_capacity=requested_space;
+            return;
+         }
+
+          /* 
+            Resize method:
+            Supports only host resizing.
+            Will never reduce the vector's size.
+            Memory location will change so any old pointers/iterators
+            will be invalid from now on.
+         */
+         __host__
+         void resize(size_t newSize){
+            //Let's reserve some space and change our size
+            reserve(newSize);
+            *_size  =newSize; 
+         }
+
+       /* 
+            PushBack  method:
+            Supports only host  pushbacks.
+            Will never reduce the vector's size.
+            Memory location will change so any old pointers/iterators
+            will be invalid from now on.
+            Not thread safe
+         */      
+         __host__   
+         void push_back(T val){
+            // If we have no allocated memory because the default ctor was used then 
+            // allocate one element, set it and return 
+            if (_data==nullptr){
+               _allocate(1);
+               _data[size()-1] = val;
+               return;
+            }
+
+            resize(size()+1);
+            _data[size()-1] = val;
+            return;
+         }
+         
+         /*
+            Trim method:
+            Will never reduce the actual number of elements
+            in the vector but only deallocate the excess elements 
+            and try to get capacity to match size.
+         */
+         __host__
+         void trim(){
+            
+            //Cannot trim unallocated space
+            if (_data==nullptr){
+               return;
+            }
+
+            //No chance to trim
+            if (size()==*_capacity){
+               return ;
+            }
+
+            // Allocate new Space
+            T* _new_data;
+            #ifdef CUDAVEC
+               cudaMallocManaged((void**)&_new_data, size() * sizeof(T));
+               for (size_t i=0; i < size(); i++){
+                  new (&_new_data[i]) T(); 
+               }
+               CheckErrors("Reserve:: Managed Allocation");
+            #else
+               _new_data=new T[size()];
+               if (_new_data==nullptr){
+                  delete [] _new_data;
+                  this->_deallocate();
+                  throw std::bad_alloc();
+               }
+            #endif
+            
+             //Copy over
+            for (size_t i=0; i<size();i++){
+               _new_data[i] = _data[i];
+            }
+
+            //Deallocate old space
+            #ifdef CUDAVEC
+               cudaFree(_data);
+            #else
+               delete [] _data;
+            #endif
+
+            //Swap pointers & update capacity
+            //Size remains the same ofc
+            _data=_new_data;
+            *_capacity=size();
+            //Reset multiplier
+            _alloc_multiplier=1;
+            return;
+         }
+
+         /*Removes the last element of the vector*/
+         __host__ __device__
+         void pop_back(){
+            if (size()>0){
+               *_size=*_size-1;
+            }
+            return;
+         }
+
+         __host__ __device__
+         size_t capacity(){
+            return *_capacity;
+         }
+
+
+            //~Size modifiers
 
          /*Host side operator += */
          __host__  SplitVector<T>& operator+=(const SplitVector<T>& rhs) {
@@ -372,18 +478,80 @@ namespace split{
 
 
          //Iterators
-         split_iterator<T> begin(){
-            return split_iterator<T>(_data);
-         }
-         split_iterator<T> end(){
-            return split_iterator<T>(_data+size());
+         class iterator{
+             
+            private:
+            T* _data;
+            
+            public:
+            
+            using iterator_category = std::forward_iterator_tag;
+            using value_type = T;
+            using difference_type = size_t;
+            using pointer = T*;
+            using reference = T&;
+
+            //iterator(){}
+            iterator(pointer data) : _data(data) {}
+
+            pointer data() { return _data; }
+            reference operator*() { return *_data; }
+            bool operator!=(const iterator& other){
+              return _data != other._data;
+            }
+            iterator& operator++(){
+              _data += 1;
+              return *this;
+            }
+            iterator operator++(int){
+              return iterator(_data + 1);
+            }
+         };
+
+
+         class const_iterator{
+            private: 
+            T* _data;
+            
+            public:
+            
+            using iterator_category = std::forward_iterator_tag;
+            using value_type = T;
+            using difference_type = size_t;
+            using pointer = T*;
+            using reference = T&;
+
+            //const_iterator(){}
+            explicit const_iterator(pointer data) : _data(data) {}
+
+            const pointer data() const { return _data; }
+            const reference operator*() const  { return *_data; }
+            bool operator!=(const const_iterator& other){
+              return _data != other._data;
+            }
+            const_iterator& operator++(){
+              _data += 1;
+              return *this;
+            }
+            const_iterator operator++(int){
+              return const_iterator(_data + 1);
+            }
+         };
+
+         
+         iterator begin(){
+            return iterator(_data);
          }
          
-        const_split_iterator<T> cbegin(){
-            return const_split_iterator<T>(_data);
+        const_iterator begin()const{
+            return const_iterator(_data);
          }
-        const_split_iterator<T> cend(){
-            return const_split_iterator<T>(_data+size());
+         
+        iterator end(){
+            return iterator(_data+size());
+         }
+        const_iterator end() const {
+            return const_iterator(_data+size());
          }
 
          //***************************temp****************************  

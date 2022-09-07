@@ -149,6 +149,19 @@ TEST(Operator, NotEqual){
    EXPECT_FALSE(a != b);
 }
 
+TEST(Iterators, NotEqual){
+   //const vec a(10,2);
+
+   const split::SplitVector< int> a(10,2) ;
+   //vec b(10,2);
+   split::SplitVector< int>::const_iterator it=a.begin();
+   std::cout<<*it<<std::endl;
+   *it=3;
+   std::cout<<*it<<std::endl;
+   //EXPECT_FALSE(a != b);
+}
+
+
 
 int main(int argc, char* argv[]){
    ::testing::InitGoogleTest(&argc, argv);
