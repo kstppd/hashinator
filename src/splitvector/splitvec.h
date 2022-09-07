@@ -46,28 +46,39 @@
 #endif
 
 namespace split{
-   
-
 
    template<typename T>
    class SplitVector{
       
       private:
-         T*      _data; //actual pointer to our data      
+         T*      _data=nullptr; //actual pointer to our data      
          size_t* _size; // number of elements in vector.
          size_t* _capacity; // number of allocated elements
          size_t  _alloc_multiplier = 1; //host variable; multiplier for  when reserving more space
  
+         void _check_ptr(void* ptr){
+            if (ptr==nullptr){
+               throw std::bad_alloc();
+            }
+         }
+
+         /*Internal range check for use in .at()*/
+         __host__ __device__ void _rangeCheck(size_t index){
+            assert(index<size() &&  "out of range");
+         }
 
 #ifdef CUDAVEC
          /*Allocation/Deallocation with unified memory*/
          void _allocate(size_t size){
-               cudaMallocManaged((void**)&_data, size * sizeof(T));
                cudaMallocManaged((void**)&_size,sizeof(size_t));
                cudaMallocManaged((void**)&_capacity,sizeof(size_t));
-               *this->_size= size;
-               *this->_capacity= size;
-               CheckErrors("Managed Allocation");
+               _check_ptr(_size);
+               _check_ptr(_capacity);
+               new (_size) size_t(size);
+               new (_capacity) size_t(size);
+               if (size==0){return;}
+               cudaMallocManaged((void**)&_data, size * sizeof(T));
+               _check_ptr(_data);
                //Here we also need to construct the object
                for (size_t i=0; i < size; i++){
                   new (&_data[i]) T(); 
@@ -86,7 +97,6 @@ namespace split{
                   CheckErrors("Managed Deallocation");
                }
                cudaFree(_size);
-               CheckErrors("Managed Deallocation");
                cudaFree(_capacity);
                CheckErrors("Managed Deallocation");
                cudaDeviceSynchronize();
@@ -95,9 +105,13 @@ namespace split{
 #else
          /*Allocation/Deallocation only on host*/
          void _allocate(size_t size){
-            _data=new T[size];
             _size=new size_t(size);
             _capacity=new size_t(size);
+            _check_ptr(_size);
+            _check_ptr(_capacity);
+            if (size==0){return;}
+            _data=new T[size];
+            _check_ptr(_data);
             if (_data == nullptr){
                delete [] _data;
                delete _size;
@@ -116,27 +130,27 @@ namespace split{
 #endif
 
       public:
+         /* Available Constructors :
+          *    -- SplitVector()                       --> Default constructor. Almost a no OP but _size and _capacity have 
+          *                                                to be allocated for device usage. 
+          *    -- SplitVector(size_t)                 --> Instantiates a splitvector with a specific size. (capacity == size)
+          *    -- SplitVector(size_t,T)               --> Instantiates a splitvector with a specific size and sets all elements to 
+          *                                                 T.(capacity == size)
+          *    -- SplitVector(SplitVector&)           --> Copy constructor. 
+          *    -- SplitVector(std::initializer_list&) --> Creates a SplitVector and copies over the elemets of the init. list. 
+          *
+          * */
 
          /*Constructors*/
-         __host__ explicit   SplitVector():_data(nullptr){
-               #ifdef CUDAVEC
-               cudaMallocManaged((void**)&_size,sizeof(size_t));
-               cudaMallocManaged((void**)&_capacity,sizeof(size_t));
-               *this->_size= 0;
-               *this->_capacity=0;
-               #else
-               _size=new size_t(0);
-               _capacity=new size_t(0);
-               #endif
+         __host__ explicit   SplitVector(){
+            this->_allocate(0); //seems counter-intuitive based on stl but it is not!
          }
 
-         __host__ explicit   SplitVector(size_t size)
-               :_data(nullptr){
+         __host__ explicit   SplitVector(size_t size){
                this->_allocate(size);
          }
 
-         __host__ explicit  SplitVector(size_t size, const T &val)
-               :_data(nullptr){
+         __host__ explicit  SplitVector(size_t size, const T &val){
                this->_allocate(size);
                for (size_t i=0; i<size; i++){
                   _data[i]=val;
@@ -144,7 +158,6 @@ namespace split{
             }
 
          __host__ SplitVector(const SplitVector &other){
-            std::cout<<"Copy constructor init"<<std::endl;
                const size_t size_to_allocate = other.size();
                this->_allocate(size_to_allocate);
                for (size_t i=0; i<size_to_allocate; i++){
@@ -152,8 +165,7 @@ namespace split{
                }
             }
 
-         __host__ SplitVector(std::initializer_list<T> init_list)
-               :_data(nullptr){
+         __host__ SplitVector(std::initializer_list<T> init_list){
                this->_allocate(init_list.size());
                for (size_t i =0 ; i< size();i++){
                   _data[i]=init_list.begin()[i];
@@ -204,11 +216,6 @@ namespace split{
             return *_size;
          }
 
-         /*Internal range check for use in .at()*/
-         __host__ __device__ void rangeCheck(size_t index){
-            assert(index<size() &&  "out of range");
-         }
-
          /*Bracket accessor - no bounds check*/
          __host__ __device__ T& operator [](size_t index){
                return _data[index];
@@ -221,13 +228,13 @@ namespace split{
 
          /*at accesor with bounds check*/
          __host__ __device__ T& at(size_t index){
-            rangeCheck(index);
+            _rangeCheck(index);
             return _data[index];
          }
          
          /*const at accesor with bounds check*/
          __host__ __device__ const T& at(size_t index)const{
-            rangeCheck(index);
+            _rangeCheck(index);
             return _data[index];
          }
 
@@ -262,6 +269,12 @@ namespace split{
          __host__
          void reserve(size_t requested_space){
             size_t current_space=*_capacity;
+
+            if (_data == nullptr && size()==0){
+               _allocate(requested_space);
+               *_size=0;
+               return;
+            }
             
             //Nope.
             if (requested_space <= current_space){
@@ -334,72 +347,14 @@ namespace split{
             // If we have no allocated memory because the default ctor was used then 
             // allocate one element, set it and return 
             if (_data==nullptr){
-               _allocate(1);
-               _data[size()-1] = val;
+               *this=SplitVector<T>(1,val);
                return;
             }
-
             resize(size()+1);
             _data[size()-1] = val;
             return;
          }
          
-         /*
-            Trim method:
-            Will never reduce the actual number of elements
-            in the vector but only deallocate the excess elements 
-            and try to get capacity to match size.
-         */
-         __host__
-         void trim(){
-            
-            //Cannot trim unallocated space
-            if (_data==nullptr){
-               return;
-            }
-
-            //No chance to trim
-            if (size()==*_capacity){
-               return ;
-            }
-
-            // Allocate new Space
-            T* _new_data;
-            #ifdef CUDAVEC
-               cudaMallocManaged((void**)&_new_data, size() * sizeof(T));
-               for (size_t i=0; i < size(); i++){
-                  new (&_new_data[i]) T(); 
-               }
-               CheckErrors("Reserve:: Managed Allocation");
-            #else
-               _new_data=new T[size()];
-               if (_new_data==nullptr){
-                  delete [] _new_data;
-                  this->_deallocate();
-                  throw std::bad_alloc();
-               }
-            #endif
-            
-             //Copy over
-            for (size_t i=0; i<size();i++){
-               _new_data[i] = _data[i];
-            }
-
-            //Deallocate old space
-            #ifdef CUDAVEC
-               cudaFree(_data);
-            #else
-               delete [] _data;
-            #endif
-
-            //Swap pointers & update capacity
-            //Size remains the same ofc
-            _data=_new_data;
-            *_capacity=size();
-            //Reset multiplier
-            _alloc_multiplier=1;
-            return;
-         }
 
          /*Removes the last element of the vector*/
          __host__ __device__
@@ -416,8 +371,7 @@ namespace split{
          }
 
 
-            //~Size modifiers
-
+         //~Size modifiers
          /*Host side operator += */
          __host__  SplitVector<T>& operator+=(const SplitVector<T>& rhs) {
             assert(this->size()==rhs.size());
@@ -533,42 +487,30 @@ namespace split{
             return const_iterator(_data+size());
          }
 
-         //***************************temp****************************  
-         __host__  void print(){
-               std::cout<<&(_data[0])<<" -->"<<_data[0]<<" - "<<_data[size()-1 ]<<" Capacity= "<<*_capacity<<" Size= "<<size()<<std::endl;
-         } 
-
-         __host__  void print_full(){
-            for (size_t i =0; i< size(); i++){
-               std::cout<<at(i)<<std::endl;
-            } 
-         } 
-
-
    };
     
-   template <typename  T>
+   template <typename  T,typename std::enable_if<std::is_arithmetic<T>::value>::type * = nullptr> 
    static inline __host__  SplitVector<T> operator+(const  SplitVector<T> &lhs, const  SplitVector<T> &rhs){
       SplitVector<T> child(lhs.size());
       child=lhs;
       return child+=rhs;
    }
 
-   template <typename  T>
+   template <typename  T,typename std::enable_if<std::is_arithmetic<T>::value>::type * = nullptr> 
    static inline __host__  SplitVector<T> operator-(const  SplitVector<T> &lhs, const  SplitVector<T> &rhs){
       SplitVector<T> child(lhs.size());
       child=lhs;
       return child-=rhs;
    }
 
-   template <typename  T>
+   template <typename  T,typename std::enable_if<std::is_arithmetic<T>::value>::type * = nullptr> 
    static inline __host__  SplitVector<T> operator*(const  SplitVector<T> &lhs, const  SplitVector<T> &rhs){
       SplitVector<T> child(lhs.size());
       child=lhs;
       return child*=rhs;
    }
  
-   template <typename  T>
+   template <typename  T,typename std::enable_if<std::is_arithmetic<T>::value>::type * = nullptr> 
    static inline __host__  SplitVector<T> operator/(const  SplitVector<T> &lhs, const  SplitVector<T> &rhs){
       SplitVector<T> child(lhs.size());
       child=lhs;
