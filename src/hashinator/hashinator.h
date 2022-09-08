@@ -327,57 +327,31 @@ public:
       }
    }
 
-   
-   // Device code for element access (by reference). Nonexistent elements get created.
+   // Device code for inserting elements. Nonexistent elements get created.
    __device__
-   bool retrieve_w(const GID& key, size_t &thread_overflowLookup,LID* &retval) {
+   void insert_element(const GID& key,LID value, size_t &thread_overflowLookup) {
       int bitMask = (1 <<(*d_sizePower )) - 1; // For efficient modulo of the array size
       uint32_t hashIndex = hash(key);
-
-      // Try to find the matching bucket.
-      for (int i = 0; i < buckets.size(); i++) {
+      size_t i =0;
+      while(i<buckets.size()){
          uint32_t vecindex=(hashIndex + i) & bitMask;
-         std::pair<GID, LID>& candidate = buckets[vecindex];
-         if (candidate.first == key) {
-            // Found a match, return that
-            retval = &candidate.second;
+         GID old = atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, key);
+         if (old == EMPTYBUCKET || old == key){
+            atomicExch(&buckets[vecindex].second,value);
             thread_overflowLookup = i+1;
-            return true;
+            return;
          }
-         if (candidate.first == EMPTYBUCKET) {
-            // Found an empty bucket, assign and return that.
-            atomicExch(&candidate.first,key);
-            //compute capability 6.* and higher
-            atomicAdd((unsigned long long  int*)d_fill, 1);
-            assert(*d_fill < buckets.size() && "No free buckets left on device memory. Exiting!");
-            thread_overflowLookup = i+1;
-            retval = &candidate.second;
-            return true;
-         }
+         i++;
       }
-
-      return false;
-   }
-
-
-   __device__
-   LID* dev_at(const GID& key){
-      LID* candidate=nullptr;
-      size_t thread_overflowLookup;
-      bool found = retrieve_w(key,thread_overflowLookup,candidate);
-      /*Now the local overflow might have changed for a thread. 
-      We need to update the global one here if it any thread exceeded 
-      the maxBucketOverflows. compute capability 3.5 and higher*/
-      atomicMax(d_maxBucketOverflow,thread_overflowLookup);
-      assert(candidate && "NULL pointer");
-      return candidate;
+      assert(false && "Hashmap completely overflown");
    }
 
 
    __device__
    void set_element(const GID& key,LID val){
-      LID* candidate= dev_at(key);
-      atomicExch(candidate,val);
+      size_t thread_overflowLookup;
+      insert_element(key,val,thread_overflowLookup);
+      atomicMax(d_maxBucketOverflow,thread_overflowLookup);
    }
 
      __device__
@@ -401,27 +375,6 @@ public:
        assert(false && "Key does not exist");
    }
    
-     
-     __device__
-     LID& get_element(const GID& key){
-      int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
-      uint32_t hashIndex = hash(key);
-
-      // Try to find the matching bucket.
-      for (int i = 0; i < *d_maxBucketOverflow; i++) {
-         uint32_t vecindex=(hashIndex + i) & bitMask;
-         std::pair<GID, LID>& candidate = buckets[vecindex];
-         if (candidate.first == key) {
-            // Found a match, return that
-            return candidate.second;
-         }
-         if (candidate.first == EMPTYBUCKET) {
-            // Found an empty bucket, so error.
-             assert(false && "Key does not exist");
-         }
-      }
-       assert(false && "Key does not exist");
-   }
 
    // Device Iterator type. Iterates through all non-empty buckets.
    __device__
