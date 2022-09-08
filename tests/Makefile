@@ -7,7 +7,7 @@ EXTRA+= -gencode arch=compute_60,code=sm_60 -rdc=true -L /usr/lib/x86_64-linux-g
 EXTRA+=-DCUDAVEC -DHASHMAPDEBUG
 
 GTEST=-lgtest -lgtest_main -lpthread
-OBJ= gpuport.o speed_test.o vec_test.o mempool_main.o vec_of_vec_test.o gtest_vec.o gtest_hashmap.o gtest_map_rw.o map_operators.o map_add_remove.o
+OBJ= gpuport.o speed_test.o vec_test.o mempool_main.o vec_of_vec_test.o gtest_vec.o gtest_hashmap.o gtest_map_rw.o map_operators.o map_add_remove.o ctor_test
 
 all: ${OBJ}
 
@@ -23,7 +23,8 @@ allclean:
 	rm mempool &
 	rm map_rw &
 	rm map_operators_test &
-	rm map_add_remove
+	rm map_add_remove & 
+	rm ctor_test
 
 
 gpuport.o: hash_gpu_vs_cpu/gpuport.cu
@@ -46,11 +47,15 @@ vec_test.o: vector_tests/vec_test.cu
 
 vec_of_vec_test.o: vector_of_vectors/vec_of_vec_test.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA}  -o vec_of_vec vector_of_vectors/vec_of_vec_test.cu
+
 mempool_main.o: mempool_test/mempool_main.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA}  -o mempool mempool_test/mempool_main.cu 
 
 gtest_vec.o: gtest_vec/vec_test.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o gtestvec gtest_vec/vec_test.cu
+
+ctor_test.o: constructor_test/vec_test.cu
+	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o ctor_test constructor_test/vec_test.cu
 
 gtest_hashmap.o: gtest_hasmap/unit.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o gtesthashmap gtest_hasmap/unit.cu

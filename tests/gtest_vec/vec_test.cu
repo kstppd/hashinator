@@ -5,162 +5,186 @@
 #include "../../src/splitvector/splitvec.h"
 #include <cuda_profiler_api.h>
 
-
+#define expect_true EXPECT_TRUE
+#define expect_false EXPECT_FALSE
+#define expect_eq EXPECT_EQ
+#define N 1<<12
 
 typedef split::SplitVector<int> vec ;
 typedef split::SplitVector<split::SplitVector<int>> vec2d ;
 
-TEST(Ctor,Vec_of_Vec){
+TEST(Test_2D_Contruct,VecOfVec){
 
    vec inner_a(100,1);
    vec inner_b(100,2);
    vec2d a(10,inner_a);
    vec2d b(10,inner_b);
 
-
    for (auto &i:a){
       for (const auto &val:i){
          EXPECT_EQ(val, 1);
       }
    }
-   
    for (auto &i:b){
       for (const auto &val:i){
          EXPECT_EQ(val, 2);
       }
    }
-
-   b.swap(a);
-   EXPECT_FALSE(a==b);
-   //a.swap(b);
-   EXPECT_FALSE(a==b);
-
-
+   expect_true(a!=b);
+   expect_true(a!=b);
+   expect_false(a==b);
+   expect_false(a==b);
 }
 
-TEST(Constructor,Elemtent_and_Size_Checks){
-   const int val=42;
-   const int size=1e6;
-   vec a(size,val);
-   for (int i=0; i<a.size(); i++){
-      EXPECT_EQ(val, a.at(i));
-      EXPECT_EQ(val, a[i]);
+TEST(Constructors,Default){
+   vec a;
+   expect_true(a.size()==0 && a.capacity()==0);
+   expect_true(a.data()==nullptr);
+}
+
+TEST(Constructors,Size_based){
+   vec a(N);
+   expect_true(a.size()==N && a.capacity()==N);
+   expect_true(a.data()!=nullptr);
+}
+
+TEST(Constructors,std_vector){
+   std::vector<int>  stdvec(N,10);
+   vec a(stdvec);
+
+   for (size_t i=0; i<N; i++){
+      expect_true(stdvec[i]=a[i]);
    }
-   EXPECT_EQ(size, a.size());
-
+   vec b(a);
+   expect_true(a==b);
 }
 
-TEST(Constructor, Copy){
-   vec a(1e6,2);
-
-   EXPECT_TRUE(a.size() == 1e6);
-   for (int i=0; i<a.size(); i++){
-      EXPECT_EQ(2, a.at(i));
+TEST(Constructors,Specific_Value){
+   vec a(N,5);
+   expect_true(a.size()==N && a.capacity()==N);
+   for (size_t i=0; i<N;i++){
+      expect_true(a[i]==5);
+      expect_true(a.at(i)==5);
    }
-   vec b=a;
-   EXPECT_TRUE(a == b);
-   EXPECT_TRUE(a.data() == b.data());
 }
 
-TEST(Constructor, Initializer_List){
-   std::initializer_list<int> list({ 1, 2, 3, 4 });
-   vec a(list);
-   EXPECT_TRUE(a[0] == 1);
-   EXPECT_TRUE(a[1] == 2);
-   EXPECT_TRUE(a[2] == 3);
-   EXPECT_TRUE(a[3] == 4);
-   EXPECT_TRUE(a.size() == list.size());
-
-}
-
-TEST(Constructor, Initializer_List_Equality){
-   vec a({1,2,3,4});
-   vec b({1,2,3,4});
-   vec c({-1,2,3,4});
-   EXPECT_TRUE(a==b);
-   EXPECT_TRUE(b==a);
-   EXPECT_FALSE(c==a);
-   EXPECT_FALSE(c==b);
-   EXPECT_FALSE(a==c);
-   EXPECT_FALSE(b==c);
-
-}
-
-TEST(Iterators, Access){
-   vec a(10,2);
-
-}
-
-
-TEST(Swap, Swap){
-   vec a(1e6,2);
-   vec b(1e4,3);
-   EXPECT_TRUE(a.size() == 1e6);
-   EXPECT_TRUE(b.size() == 1e4);
-   for (int i=0; i<a.size(); i++){
-      EXPECT_EQ(2, a.at(i));
+TEST(Constructors,Copy){
+   vec a(N,5);
+   vec b(a);
+   for (size_t i=0; i<N;i++){
+      expect_true(a[i]==b[i]);
+      expect_true(a.at(i)==b.at(i));
    }
-   for (int i=0; i<b.size(); i++){
-      EXPECT_EQ(3, b.at(i));
-   }
+}
 
+TEST(Vector_Functionality , Reserve){
+   vec a;
+   size_t cap =1000000;
+   a.reserve(cap);
+   expect_true(a.size()==0);
+   expect_true(a.capacity()==cap);
+}
+
+TEST(Vector_Functionality , Resize){
+   vec a;
+   size_t size =1<<20;
+   a.resize(size);
+   expect_true(a.size()==size);
+   expect_true(a.capacity()==a.size());
+}
+
+TEST(Vector_Functionality , Swap){
+   vec a(10,2),b(10,2);
    a.swap(b);
-   
-   EXPECT_TRUE(a.size() == 1e4);
-   EXPECT_TRUE(b.size() == 1e6);
-   for (int i=0; i<a.size(); i++){
-      EXPECT_EQ(3, a.at(i));
+   expect_true(a==b);
+   vec c(100,1);
+   vec d (200,3);
+   c.swap(d);
+   expect_true(c.size()==200);
+   expect_true(d.size()==100);
+   expect_true(c.front()==3);
+   expect_true(d.front()==1);
+
+}
+
+TEST(Vector_Functionality , Resize2){
+   vec a;
+   size_t size =1<<20;
+   a.resize(size);
+   expect_true(a.size()==size);
+   expect_true(a.capacity()==a.size());
+}
+
+TEST(Vector_Functionality , Clear){
+   vec a(10);
+   size_t size =1<<20;
+   a.resize(size);
+   expect_true(a.size()==size);
+   expect_true(a.capacity()==a.size());
+   auto cap=a.capacity();
+   a.clear();
+   expect_true(a.size()==0);
+   expect_true(a.capacity()==cap);
+}
+
+TEST(Vector_Functionality , PopBack){
+   vec a{1,2,3,4,5,6,7,8,9,10};
+   size_t initial_size=a.size();
+   size_t initial_cap=a.capacity();
+   for (int i=9;i>=0;i--){
+      a.pop_back();
+      expect_true(i==a[a.size()-1]);
    }
-   for (int i=0; i<b.size(); i++){
-      EXPECT_EQ(2, b.at(i));
-   }
+   expect_true(a.size()==0);
+   expect_true(a.capacity()==initial_cap);
 }
 
-
-TEST(Copy, Equal){
-   vec a(1e6,2);
-   vec b(1e4,3);
-
-   EXPECT_TRUE(a.size() == 1e6);
-   EXPECT_TRUE(b.size() == 1e4);
-   for (int i=0; i<a.size(); i++){
-      EXPECT_EQ(2, a.at(i));
-   }
-   for (int i=0; i<b.size(); i++){
-      EXPECT_EQ(3, b.at(i));
+TEST(Vector_Functionality , Push_Back){
+   vec a;
+   for (auto i=a.begin(); i!=a.end();i++){
+      expect_true(false);
    }
 
-   a=b;
+   size_t initial_size=a.size();
+   size_t initial_cap=a.capacity();
 
-   EXPECT_TRUE(a.size() == b.size());
-   EXPECT_TRUE(a == b);
-   EXPECT_FALSE(a.data() == b.data());
+   a.push_back(11);
+   expect_true(11==a[a.size()-1]);
+   a.push_back(12);
+   expect_true(12==a[a.size()-1]);
+
 }
 
-TEST(Operator, Equal){
-   vec a(10,2);
-   vec b(10,2);
-   EXPECT_TRUE(a == b);
+
+TEST(Vector_Functionality , Shrink_to_Fit){
+   vec a;
+   for (auto i=a.begin(); i!=a.end();i++){
+      expect_true(false);
+   }
+
+   size_t initial_size=a.size();
+   size_t initial_cap=a.capacity();
+
+   for (int i =0 ; i< 1024; i++){
+      a.push_back(i);
+   }
+
+   expect_true(a.size()<a.capacity());
+   a.shrink_to_fit();
+   expect_true(a.size()==a.capacity());
+
 }
+TEST(Vector_Functionality , Push_Back_2){
+   vec a{1,2,3,4,5,6,7,8,9,10};
+   size_t initial_size=a.size();
+   size_t initial_cap=a.capacity();
 
-TEST(Operator, NotEqual){
-   vec a(10,2);
-   vec b(10,2);
-   EXPECT_FALSE(a != b);
+   a.push_back(11);
+   expect_true(11==a[a.size()-1]);
+   a.push_back(12);
+   expect_true(12==a[a.size()-1]);
+
 }
-
-TEST(Iterators, NotEqual){
-   //const vec a(10,2);
-
-   const split::SplitVector< int> a(10,2) ;
-   //vec b(10,2);
-   split::SplitVector< int>::const_iterator it=a.begin();
-   std::cout<<*it<<std::endl;
-   *it=3;
-   std::cout<<*it<<std::endl;
-   //EXPECT_FALSE(a != b);
-}
-
 
 
 int main(int argc, char* argv[]){
