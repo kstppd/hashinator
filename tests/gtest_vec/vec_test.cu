@@ -93,12 +93,38 @@ TEST(Vector_Functionality , Resize){
    expect_true(a.capacity()==a.size());
 }
 
-TEST(Vector_Functionality , Resize_2){
+TEST(Vector_Functionality , Swap){
+   vec a(10,2),b(10,2);
+   a.swap(b);
+   expect_true(a==b);
+   vec c(100,1);
+   vec d (200,3);
+   c.swap(d);
+   expect_true(c.size()==200);
+   expect_true(d.size()==100);
+   expect_true(c.front()==3);
+   expect_true(d.front()==1);
+
+}
+
+TEST(Vector_Functionality , Resize2){
+   vec a;
+   size_t size =1<<20;
+   a.resize(size);
+   expect_true(a.size()==size);
+   expect_true(a.capacity()==a.size());
+}
+
+TEST(Vector_Functionality , Clear){
    vec a(10);
    size_t size =1<<20;
    a.resize(size);
    expect_true(a.size()==size);
    expect_true(a.capacity()==a.size());
+   auto cap=a.capacity();
+   a.clear();
+   expect_true(a.size()==0);
+   expect_true(a.capacity()==cap);
 }
 
 TEST(Vector_Functionality , PopBack){
@@ -129,6 +155,25 @@ TEST(Vector_Functionality , Push_Back){
 
 }
 
+
+TEST(Vector_Functionality , Shrink_to_Fit){
+   vec a;
+   for (auto i=a.begin(); i!=a.end();i++){
+      expect_true(false);
+   }
+
+   size_t initial_size=a.size();
+   size_t initial_cap=a.capacity();
+
+   for (int i =0 ; i< 1024; i++){
+      a.push_back(i);
+   }
+
+   expect_true(a.size()<a.capacity());
+   a.shrink_to_fit();
+   expect_true(a.size()==a.capacity());
+
+}
 TEST(Vector_Functionality , Push_Back_2){
    vec a{1,2,3,4,5,6,7,8,9,10};
    size_t initial_size=a.size();

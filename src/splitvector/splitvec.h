@@ -75,8 +75,8 @@ namespace split{
                cudaMallocManaged((void**)&_capacity,sizeof(size_t));
                _check_ptr(_size);
                _check_ptr(_capacity);
-               new (_size) size_t(size);
-               new (_capacity) size_t(size);
+               *_size = size;
+               *_capacity = size;
                if (size==0){return;}
                cudaMallocManaged((void**)&_data, size * sizeof(T));
                _check_ptr(_data);
@@ -137,6 +137,7 @@ namespace split{
           *    -- SplitVector(size_t,T)               --> Instantiates a splitvector with a specific size and sets all elements to T.(capacity == size)
           *    -- SplitVector(SplitVector&)           --> Copy constructor. 
           *    -- SplitVector(std::initializer_list&) --> Creates a SplitVector and copies over the elemets of the init. list. 
+          *    -- SplitVector(std::vector&)           --> Creates a SplitVector and copies over the elemets of the std vector
           * */
 
          /*Constructors*/
@@ -200,6 +201,21 @@ namespace split{
             return *this;
          }
 
+         /*Manually prefetch data on Device*/
+         __host__ void optimizeGPU(cudaStream_t stream = 0){
+            int device;
+            cudaGetDevice(&device);
+            CheckErrors("Prefetch GPU-Device-ID");
+            cudaMemPrefetchAsync(_data ,size()*sizeof(T),device,stream);
+            CheckErrors("Prefetch GPU");
+         }
+
+         /*Manually prefetch data on Host*/
+         __host__ void optimizeCPU(cudaStream_t stream = 0){
+            cudaMemPrefetchAsync(_data ,size()*sizeof(T),cudaCpuDeviceId,stream);
+            CheckErrors("Prefetch CPU");
+         }
+
          /*Custom swap mehtod. Pointers after swap 
          * are pointing to the same container as 
          * before. 
@@ -216,6 +232,9 @@ namespace split{
             return;
          }
 
+
+
+         /************STL compatibility***************/
          /*Returns number of elements in this container*/
          __host__ __device__ const size_t& size() const{
             return *_size;
@@ -248,23 +267,8 @@ namespace split{
             return &(_data[0]);
          }
 
-         /*Manually prefetch data on Device*/
-         __host__ void optimizeGPU(cudaStream_t stream = 0){
-            int device;
-            cudaGetDevice(&device);
-            CheckErrors("Prefetch GPU-Device-ID");
-            cudaMemPrefetchAsync(_data ,size()*sizeof(T),device,stream);
-            CheckErrors("Prefetch GPU");
-         }
 
-         /*Manually prefetch data on Host*/
-         __host__ void optimizeCPU(cudaStream_t stream = 0){
-            cudaMemPrefetchAsync(_data ,size()*sizeof(T),cudaCpuDeviceId,stream);
-            CheckErrors("Prefetch CPU");
-         }
-
-         //Size modifiers
-         /* 
+         /* Modifiers
             Reserve method:
             Supports only host reserving.
             Will never reduce the vector's size.
@@ -275,6 +279,7 @@ namespace split{
          void reserve(size_t requested_space){
             size_t current_space=*_capacity;
 
+            //Vector was default initialized
             if (_data == nullptr && size()==0){
                _allocate(requested_space);
                *_size=0;
@@ -313,9 +318,12 @@ namespace split{
 
             //Deallocate old space
             #ifdef CUDAVEC
-               cudaFree(_data);
+            for (size_t i=0; i<size();i++){
+               _data[i].~T();
+            }
+            cudaFree(_data);
             #else
-               delete [] _data;
+            delete [] _data;
             #endif
 
             //Swap pointers & update capacity
@@ -359,8 +367,58 @@ namespace split{
             _data[size()-1] = val;
             return;
          }
-         
+      
+         __host__
+         void shrink_to_fit(){
+            size_t curr_cap =*_capacity;
+            size_t curr_size=*_size;
 
+            if (curr_cap == curr_size){
+               return;
+            }
+
+            // Allocate new Space
+            T* _new_data;
+            #ifdef CUDAVEC
+               cudaMallocManaged((void**)&_new_data, curr_size * sizeof(T));
+               //Here we also need to construct the objects manually
+               for (size_t i=0; i < curr_size; i++){
+                  new (&_new_data[i]) T(); 
+               }
+               CheckErrors("Reserve:: Managed Allocation");
+            #else
+               _new_data=new T[curr_size];
+               if (_new_data==nullptr){
+                  delete [] _new_data;
+                  this->_deallocate();
+                  throw std::bad_alloc();
+               }
+            #endif
+
+      
+            //Copy over
+            for (size_t i=0; i<size();i++){
+               _new_data[i] = _data[i];
+            }
+
+            //Deallocate old space
+            #ifdef CUDAVEC
+            for (size_t i=0; i<size();i++){
+               _data[i].~T();
+            }
+            cudaFree(_data);
+            #else
+            delete [] _data;
+            #endif
+
+
+            //Swap pointers & update capacity
+            //Size remains the same ofc
+            _data=_new_data;
+            *_capacity=size();
+            return;
+         }
+         
          /*Removes the last element of the vector*/
          __host__ __device__
          void pop_back(){
@@ -370,50 +428,36 @@ namespace split{
             return;
          }
 
+         __host__
+         void clear(){
+            *_size=0;
+            return;
+         }
+
          __host__ __device__
          size_t capacity(){
             return *_capacity;
          }
 
+         __host__ __device__
+         T& back(){ return _data[*_size-1]; }
 
-         //~Size modifiers
-         /*Host side operator += */
-         __host__  SplitVector<T>& operator+=(const SplitVector<T>& rhs) {
-            assert(this->size()==rhs.size());
-            for (size_t i=0; i< this->size(); i++){
-               this->_data[i] = this->_data[i]+rhs[i];
-            }
-            return *this;
+         __host__ __device__
+         const T& back() const{return _data[*_size-1];}
+         
+         __host__ __device__
+         T& front(){return _data[0];}
+         
+         __host__ __device__
+         const T& front() const{ return _data[0]; }
+
+         __host__ 
+         bool empty() const{
+            bool retval = (*_size==0) ? true : false;
+            return retval;
          }
 
-
-         /*Host side operator /= */
-         __host__ SplitVector<T>& operator/=(const SplitVector<T>& rhs) {
-            assert(this->size()==rhs.size());
-            for (size_t i=0; i< this->size(); i++){
-               this->_data[i] = this->_data[i]/rhs[i];
-            }
-            return *this;
-         }
-
-         /*Host side operator -= */
-         __host__ SplitVector<T>& operator-=(const SplitVector<T>& rhs) {
-            assert(this->size()==rhs.size());
-            for (size_t i=0; i< this->size(); i++){
-               this->_data[i] = this->_data[i]-rhs[i];
-            }
-            return *this;
-         }
-
-         /*Host side operator *= */
-         __host__ SplitVector<T>& operator*=(const SplitVector<T>& rhs) {
-            assert(this->size()==rhs.size());
-            for (size_t i=0; i< this->size(); i++){
-               this->_data[i] = this->_data[i]*rhs[i];
-            }
-            return *this;
-         }
-
+         /************STL compatibility***************/
 
          //Iterators
          class iterator{
@@ -480,16 +524,54 @@ namespace split{
          iterator begin(){
             return iterator(_data);
          }
-         
-        const_iterator begin()const{
+
+         const_iterator begin()const{
             return const_iterator(_data);
          }
-         
-        iterator end(){
+
+         iterator end(){
             return iterator(_data+size());
          }
-        const_iterator end() const {
+         const_iterator end() const {
             return const_iterator(_data+size());
+         }
+
+
+         /*Host side operator += */
+         __host__  SplitVector<T>& operator+=(const SplitVector<T>& rhs) {
+            assert(this->size()==rhs.size());
+            for (size_t i=0; i< this->size(); i++){
+               this->_data[i] = this->_data[i]+rhs[i];
+            }
+            return *this;
+         }
+
+
+         /*Host side operator /= */
+         __host__ SplitVector<T>& operator/=(const SplitVector<T>& rhs) {
+            assert(this->size()==rhs.size());
+            for (size_t i=0; i< this->size(); i++){
+               this->_data[i] = this->_data[i]/rhs[i];
+            }
+            return *this;
+         }
+
+         /*Host side operator -= */
+         __host__ SplitVector<T>& operator-=(const SplitVector<T>& rhs) {
+            assert(this->size()==rhs.size());
+            for (size_t i=0; i< this->size(); i++){
+               this->_data[i] = this->_data[i]-rhs[i];
+            }
+            return *this;
+         }
+
+         /*Host side operator *= */
+         __host__ SplitVector<T>& operator*=(const SplitVector<T>& rhs) {
+            assert(this->size()==rhs.size());
+            for (size_t i=0; i< this->size(); i++){
+               this->_data[i] = this->_data[i]*rhs[i];
+            }
+            return *this;
          }
 
    };
