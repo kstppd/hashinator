@@ -101,6 +101,12 @@ public:
        : sizePower(4), fill(0), buckets(1 << sizePower, std::pair<GID, LID>(EMPTYBUCKET, LID())){
          preallocate_device_handles();
        };
+
+   __host__
+   Hashinator(int sizepower)
+       : sizePower(sizepower), fill(0), buckets(1 << sizepower, std::pair<GID, LID>(EMPTYBUCKET, LID())){
+         preallocate_device_handles();
+       };
    __host__
    Hashinator(const Hashinator<GID, LID>& other)
        : sizePower(other.sizePower), fill(other.fill), buckets(other.buckets){
