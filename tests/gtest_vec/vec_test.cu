@@ -13,6 +13,48 @@
 typedef split::SplitVector<int> vec ;
 typedef split::SplitVector<split::SplitVector<int>> vec2d ;
 
+__global__
+void add_vectors(vec* a , vec* b,vec* c){
+
+   int index = blockIdx.x * blockDim.x + threadIdx.x;
+   if (index< a->size()){
+      c->at(index)=a->at(index)+b->at(index);
+   }
+
+}
+
+
+TEST(Test_GPU,VectorAddition){
+   vec a(N,1);
+   vec b(N,2);
+   vec c(N,0);
+   
+   vec* d_a;
+   vec* d_b;
+   vec* d_c;
+
+   cudaMalloc((void **)&d_a, sizeof(vec));
+   cudaMalloc((void **)&d_b, sizeof(vec));
+   cudaMalloc((void **)&d_c, sizeof(vec));
+
+   cudaMemcpy(d_a, &a, sizeof(vec),cudaMemcpyHostToDevice);
+   cudaMemcpy(d_b, &b, sizeof(vec),cudaMemcpyHostToDevice);
+   cudaMemcpy(d_c, &c, sizeof(vec),cudaMemcpyHostToDevice);
+
+   add_vectors<<<N,32>>>(d_a,d_b,d_c);
+   cudaDeviceSynchronize();
+   cudaFree(d_a);
+   cudaFree(d_b);
+   cudaFree(d_c);
+
+
+   for (const auto& e:c){
+      expect_true(e==3);
+   }
+
+
+}
+
 TEST(Test_2D_Contruct,VecOfVec){
 
    vec inner_a(100,1);
