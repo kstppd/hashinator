@@ -98,6 +98,7 @@ int main(int argc, char* argv[]){
 
    //One more time
    dmap=hmap.upload();
+
    //And we remove the odd numbers
    gpu_delete_odd<<<blocks,threads>>> (dmap);
    cudaDeviceSynchronize();
@@ -108,7 +109,7 @@ int main(int argc, char* argv[]){
    //We now expect the map to have 0 fill as we deleted all the elemets
    std::cout<<"Map should have 0 fill:\n";
    std::cout<<"Map's fill is -->"<<hmap.size()<<std::endl;
-   assert(hmap.size()==0 && "Map should have zero 0 but that is not the case!");
+   assert(hmap.size()==0 && "Map should have zero size but that is not the case!");
 
 
 
