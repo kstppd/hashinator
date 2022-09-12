@@ -67,11 +67,12 @@ int main(int argc, char* argv[]){
 
    //We create an instance of hashinator and add elements to it on host
    Hashinator<val_type,val_type> hmap;
-   cpu_write_map(hmap,N);
+   hmap.resize(13);
+   //cpu_write_map(hmap,N);
 
    //Some magic numbers!( used to launch the kernels)
    size_t threads=32;
-   size_t blocks=1<<10;
+   size_t blocks=1<<14;
 
    //Declare a pointer for use in kernels
    Hashinator<val_type,val_type>* dmap;
@@ -83,9 +84,12 @@ int main(int argc, char* argv[]){
    gpu_write_map<<<blocks,threads>>> (dmap);
    cudaDeviceSynchronize();
    
+   
    //Always clean up after kernel
    hmap.clean_up_after_device(dmap);
 
+   hmap.print_all();
+   return 0  ;
    //Let's reupload the map
    dmap=hmap.upload();
 

@@ -58,7 +58,7 @@ void load_to_lf(Hashinator<val_type,val_type>& map ,float target_lf){
    cudaDeviceSynchronize();
    auto end = std::chrono::high_resolution_clock::now();
    map.clean_up_after_device(dmap);
-   //map.print_all();
+   map.print_all();
    auto total_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
    //printf("TIME: %.3f seconds for %zu elements at a load factor of %f\n", total_time.count() * 1e-9,map.size(),map.load_factor());
    
@@ -92,17 +92,12 @@ int main(){
    Hashinator<val_type,val_type> map;
    map.resize(28);
 
-
    int numel=1<<24;
-   for (int i=40; i<=85;i+=1){
+   for (int i=70; i<=70;i+=1){
       load_to_lf(map,i/100.0);
       addNelems(map,numel);
       map.clear();
 
    }
-
-
-
-
 }
 
