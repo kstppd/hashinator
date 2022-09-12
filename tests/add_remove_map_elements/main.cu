@@ -63,16 +63,14 @@ void gpu_delete_odd(Hashinator<val_type,val_type> *dmap){
 }
 
 
-int main(int argc, char* argv[]){
+void stress_test(int power,int threads){
 
    //We create an instance of hashinator and add elements to it on host
    Hashinator<val_type,val_type> hmap;
-   hmap.resize(13);
-   //cpu_write_map(hmap,N);
+   hmap.resize(power);
 
    //Some magic numbers!( used to launch the kernels)
-   size_t threads=32;
-   size_t blocks=1<<14;
+   size_t blocks=(1<<power)/threads;
 
    //Declare a pointer for use in kernels
    Hashinator<val_type,val_type>* dmap;
@@ -88,8 +86,6 @@ int main(int argc, char* argv[]){
    //Always clean up after kernel
    hmap.clean_up_after_device(dmap);
 
-   hmap.print_all();
-   return 0  ;
    //Let's reupload the map
    dmap=hmap.upload();
 
@@ -111,13 +107,22 @@ int main(int argc, char* argv[]){
    hmap.clean_up_after_device(dmap);
 
    //We now expect the map to have 0 fill as we deleted all the elemets
-   std::cout<<"Map should have 0 fill:\n";
-   std::cout<<"Map's fill is -->"<<hmap.size()<<std::endl;
-   assert(hmap.size()==0 && "Map should have zero size but that is not the case!");
-
-
-
-
-   return 0;
+   assert(hmap.size()==0);
+   //std::cout<<"Map should have 0 fill:\n";
+   //std::cout<<"Map's fil;l is -->"<<hmap.size()<<std::endl;
 }
 
+
+
+int main(){
+   
+   int threads=32;
+   for (int power=10; power<29; power++){
+      auto start = std::chrono::high_resolution_clock::now();
+      stress_test(power,threads);
+      auto end = std::chrono::high_resolution_clock::now();
+      auto total_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+      printf("TIME: %.5f Power: %d \n", total_time.count() * 1e-9,power);
+   }
+   return 0;
+}

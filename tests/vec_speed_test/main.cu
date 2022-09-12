@@ -6,7 +6,6 @@
 #include "/home/kostis/dev/profiny/Profiny.h"
 
 #define N 1
-#define elems 1<<29
 
 typedef split::SplitVector<int> splitvector ;
 typedef std::vector<int> stdvector ;
@@ -32,20 +31,20 @@ void change_if(splitvector*a){
    }
 }
 
-void gpu_stress_test(){
+void gpu_stress_test(size_t nelems,int threads){
 	PROFINY_SCOPE
 
-   splitvector a(elems,1);
-   splitvector b(elems,2);
-   splitvector c(elems,0);
+   splitvector a(nelems,1);
+   splitvector b(nelems,2);
+   splitvector c(nelems,0);
 
    splitvector* d_a=a.upload();
    splitvector* d_b=b.upload();
    splitvector* d_c=c.upload();
 
-   stress_kernel<<<elems,32>>>(d_a,d_b,d_c);
+   stress_kernel<<<nelems/threads,threads>>>(d_a,d_b,d_c);
    cudaDeviceSynchronize();
-   change_if<<<elems,32>>>(d_a);
+   change_if<<<nelems/threads,threads>>>(d_a);
    cudaDeviceSynchronize();
    
 
@@ -107,9 +106,13 @@ int main(int argc, char** argv){
    
 	PROFINY_SCOPE
 	profiny::Profiler::setOmitRecursiveCalls(false);
-   stress_test_split(a,1e9);
-   stress_test_std(b,1e9);
-
-   gpu_stress_test();
+   int threads=32;
+   for (int power=10; power<30; power++){
+      auto start = std::chrono::high_resolution_clock::now();
+      gpu_stress_test(1<<power,threads);
+      auto end = std::chrono::high_resolution_clock::now();
+      auto total_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+      printf("TIME: %.5f Power: %d \n", total_time.count() * 1e-9,power);
+   }
 
 }
