@@ -292,7 +292,7 @@ namespace split{
             }
             
             requested_space*=_alloc_multiplier;
-            _alloc_multiplier*=2;
+            _alloc_multiplier=2;
             // Allocate new Space
             T* _new_data;
             #ifdef CUDAVEC
@@ -367,7 +367,6 @@ namespace split{
             _data[size()-1] = val;
             return;
          }
-      
          __host__
          void shrink_to_fit(){
             size_t curr_cap =*_capacity;
