@@ -201,6 +201,18 @@ namespace split{
             return *this;
          }
 
+
+         //Method that return a pointer which can be passed to GPU kernels
+         //Has to be cudaFree'd after use otherwise memleak (small one but still)!
+         __host__
+         SplitVector* upload(cudaStream_t stream = 0 ){
+            SplitVector* d_vec;
+            optimizeGPU(stream);
+            cudaMalloc((void **)&d_vec, sizeof(SplitVector));
+            cudaMemcpyAsync(d_vec, this, sizeof(SplitVector),cudaMemcpyHostToDevice,stream);
+            return d_vec;
+         }
+
          /*Manually prefetch data on Device*/
          __host__ void optimizeGPU(cudaStream_t stream = 0){
             int device;
@@ -422,10 +434,21 @@ namespace split{
          __host__ __device__
          void pop_back(){
             if (size()>0){
-               *_size=*_size-1;
+               remove_from_back(1);
             }
             return;
          }
+
+         //Removes n elements from the back of the vector\
+         //and properly handles object destruction
+         __host__ __device__
+        void remove_from_back(size_t n){
+          const size_t end = size() - n;
+          for (auto i = size(); i > end;) {
+            (_data + --i)->~T();
+          }
+          *_size = end;
+        }
 
          __host__
          void clear(){

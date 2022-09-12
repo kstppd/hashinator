@@ -29,17 +29,9 @@ TEST(Test_GPU,VectorAddition){
    vec b(N,2);
    vec c(N,0);
    
-   vec* d_a;
-   vec* d_b;
-   vec* d_c;
-
-   cudaMalloc((void **)&d_a, sizeof(vec));
-   cudaMalloc((void **)&d_b, sizeof(vec));
-   cudaMalloc((void **)&d_c, sizeof(vec));
-
-   cudaMemcpy(d_a, &a, sizeof(vec),cudaMemcpyHostToDevice);
-   cudaMemcpy(d_b, &b, sizeof(vec),cudaMemcpyHostToDevice);
-   cudaMemcpy(d_c, &c, sizeof(vec),cudaMemcpyHostToDevice);
+   vec* d_a=a.upload();
+   vec* d_b=b.upload();
+   vec* d_c=c.upload();
 
    add_vectors<<<N,32>>>(d_a,d_b,d_c);
    cudaDeviceSynchronize();
