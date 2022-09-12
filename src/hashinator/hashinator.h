@@ -338,6 +338,7 @@ public:
          GID old = atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, key);
          if (old == EMPTYBUCKET || old == key){
             atomicExch(&buckets[vecindex].second,value);
+            atomicAdd((unsigned int*)d_fill, 1);
             thread_overflowLookup = i+1;
             return;
          }
