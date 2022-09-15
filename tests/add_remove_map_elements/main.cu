@@ -107,17 +107,26 @@ void stress_test(int power,int threads){
    hmap.clean_up_after_device(dmap);
 
    //We now expect the map to have 0 fill as we deleted all the elemets
-   assert(hmap.size()==0);
-   //std::cout<<"Map should have 0 fill:\n";
-   //std::cout<<"Map's fil;l is -->"<<hmap.size()<<std::endl;
+   assert(hmap.size()==0 && "Map fill should be zero but is not. Something is broken!");
 }
 
 
 
-int main(){
-   
+int main(int argc, char**argv){
+  
+   if (argc!=2){
+      std::cerr<<"Plase provide maximum number of max element power for this test!.."<<std::endl;
+      std::cerr<<"Usage.."<<std::endl;
+      std::cerr<<"\t "<<argv[0]<<"<max element power>(11-30)"<<std::endl;
+      exit(1);
+   }
+   int maxElements=atoi(argv[1]);
+   if (maxElements<11){
+      std::cerr<<"please enter something larger than 11 this is a simple test!"<<std::endl;
+      exit(1);
+   }
    int threads=32;
-   for (int power=10; power<29; power++){
+   for (int power=10; power<maxElements; power++){
       auto start = std::chrono::high_resolution_clock::now();
       stress_test(power,threads);
       auto end = std::chrono::high_resolution_clock::now();

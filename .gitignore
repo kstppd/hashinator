@@ -6,3 +6,6 @@
 */.*.swp
 */*/.*.swp
 .vscode/
+scripts/*
+tags
+tests/*tags
