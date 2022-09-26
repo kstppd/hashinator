@@ -186,17 +186,10 @@ namespace split{
          
          /*Custom Assignment operator*/
          __host__  SplitVector& operator=(const SplitVector& other){
-            if (size() == other.size()){
-               for (size_t i=0; i< size(); i++){
-                  _data[i]=other._data[i];
-               }
-            }else{
-               // we need to allocate a new block unfortunately
-               _deallocate();
-               _allocate(other.size());
-               for (size_t i=0; i< size(); i++){
-                  _data[i]=other._data[i];
-               }
+            //Match other's size prior to copying
+            resize(other.size());
+            for (size_t i=0; i< size(); i++){
+               _data[i]=other._data[i];
             }
             return *this;
          }
