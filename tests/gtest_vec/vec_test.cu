@@ -24,6 +24,14 @@ void add_vectors(vec* a , vec* b,vec* c){
 }
 
 
+TEST(Test_Dealloc_Pattern, Ctor_Dtor){
+
+   vec a;
+   a.resize(1024);
+
+}
+
+
 TEST(Test_GPU,VectorAddition){
    vec a(N,1);
    vec b(N,2);
@@ -167,7 +175,9 @@ TEST(Vector_Functionality , PopBack){
    size_t initial_cap=a.capacity();
    for (int i=9;i>=0;i--){
       a.pop_back();
-      expect_true(i==a[a.size()-1]);
+      if (a.size()>0){
+         expect_true(i==a.back());
+      }
    }
    expect_true(a.size()==0);
    expect_true(a.capacity()==initial_cap);

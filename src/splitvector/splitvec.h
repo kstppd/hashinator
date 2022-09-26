@@ -90,7 +90,7 @@ namespace split{
 
          void _deallocate(){
                if (_data!=nullptr){
-                  for (size_t i=0; i<size();i++){
+                  for (size_t i=0; i<capacity();i++){
                      _data[i].~T();
                   }
                   cudaFree(_data);
@@ -292,7 +292,7 @@ namespace split{
             size_t current_space=*_capacity;
 
             //Vector was default initialized
-            if (_data == nullptr && size()==0){
+            if (_data==nullptr){
                _allocate(requested_space);
                *_size=0;
                return;
@@ -330,7 +330,7 @@ namespace split{
 
             //Deallocate old space
             #ifdef CUDAVEC
-            for (size_t i=0; i<size();i++){
+            for (size_t i=0; i<capacity();i++){
                _data[i].~T();
             }
             cudaFree(_data);
@@ -414,7 +414,7 @@ namespace split{
 
             //Deallocate old space
             #ifdef CUDAVEC
-            for (size_t i=0; i<size();i++){
+            for (size_t i=0; i<capacity();i++){
                _data[i].~T();
             }
             cudaFree(_data);
