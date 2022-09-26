@@ -359,7 +359,9 @@ namespace split{
             *_size  =newSize; 
          }
 
-       /* 
+        
+         #ifndef __CUDA_ARCH__
+         /* 
             PushBack  method:
             Supports only host  pushbacks.
             Will never reduce the vector's size.
@@ -379,6 +381,8 @@ namespace split{
             _data[size()-1] = val;
             return;
          }
+         #endif
+
          __host__
          void shrink_to_fit(){
             size_t curr_cap =*_capacity;
@@ -482,8 +486,9 @@ namespace split{
          /************~STL compatibility***************/
 
          /*Danger Zone -- Device Size Modifiers*/
+         #ifdef __CUDA_ARCH__
          __device__ 
-         void dev_push_back(const T& val){
+         void push_back(const T& val){
             //We need at least capacity=size+1 otherwise this 
             //pushback cannot be done
             size_t old= atomicAdd((unsigned int*)_size, 1);
@@ -492,6 +497,7 @@ namespace split{
             }
             atomicCAS(&(_data[old]), _data[old],val);
          }
+          #endif
       
 
          //Iterators

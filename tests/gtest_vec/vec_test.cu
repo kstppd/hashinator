@@ -27,22 +27,21 @@ __global__
 void push_back_kernel(vec* a){
 
    int index = blockIdx.x * blockDim.x + threadIdx.x;
-   a->dev_push_back(index);
+   a->push_back(index);
 
 }
 
 TEST(Test_Dealloc_Pattern, Ctor_Dtor){
 
    vec a;
+   a.push_back(1);
+   a.clear();
    a.reserve(32);
    printf("Before kernel size = %zu , capacity = %zu \n",a.size(),a.capacity());
    vec* d_a=a.upload();
    push_back_kernel<<<4,8>>>(d_a);
    cudaDeviceSynchronize();
    cudaFree(d_a);
-   for (auto i:a ){
-      std::cout<<i<<std::endl;
-   }
    printf("After kernel size = %zu , capacity = %zu \n",a.size(),a.capacity());
 
 }
