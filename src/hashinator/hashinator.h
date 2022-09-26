@@ -683,23 +683,7 @@ public:
    };
       // More STL compatibility implementations
 #ifndef __CUDA_ARCH__
-   __host__
-   std::pair<iterator, bool> insert(std::pair<GID, LID> newEntry) {
-      bool found = find(newEntry.first) != end();
-      if (!found) {
-         at(newEntry.first) = newEntry.second;
-      }
-      return std::pair<iterator, bool>(find(newEntry.first), !found);
-   }
 #else
-   __device__
-   std::pair<d_iterator, bool> insert(std::pair<GID, LID> newEntry) {
-      bool found = d_find(newEntry.first) != d_end();
-      if (!found) {
-         set_element(newEntry.first,newEntry.second);
-      }
-      return std::pair<d_iterator, bool>(d_find(newEntry.first), !found);
-   }
 
 #endif
 
@@ -846,6 +830,15 @@ public:
    }
 
    __host__
+   std::pair<iterator, bool> insert(std::pair<GID, LID> newEntry) {
+      bool found = find(newEntry.first) != end();
+      if (!found) {
+         at(newEntry.first) = newEntry.second;
+      }
+      return std::pair<iterator, bool>(find(newEntry.first), !found);
+   }
+
+   __host__
    size_t erase(const GID& key) {
       iterator element = find(key);
       if(element == end()) {
@@ -974,6 +967,15 @@ public:
       // return the next valid bucket member
       ++keyPos;
       return keyPos;
+   }
+
+   __device__
+   std::pair<d_iterator, bool> insert(std::pair<GID, LID> newEntry) {
+      bool found = d_find(newEntry.first) != d_end();
+      if (!found) {
+         set_element(newEntry.first,newEntry.second);
+      }
+      return std::pair<d_iterator, bool>(d_find(newEntry.first), !found);
    }
 
    __device__
