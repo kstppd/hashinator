@@ -55,7 +55,7 @@ namespace split{
          T*      _data=nullptr; //actual pointer to our data      
          size_t* _size; // number of elements in vector.
          size_t* _capacity; // number of allocated elements
-         size_t  _alloc_multiplier = 2; //host variable; multiplier for  when reserving more space
+         size_t  _alloc_multiplier = 1; //host variable; multiplier for  when reserving more space
  
          void _check_ptr(void* ptr){
             if (ptr==nullptr){
@@ -297,6 +297,7 @@ namespace split{
             }
             
             requested_space*=_alloc_multiplier;
+            _alloc_multiplier=2;
             // Allocate new Space
             T* _new_data;
             #ifdef CUDAVEC
