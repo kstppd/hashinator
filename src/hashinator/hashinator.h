@@ -751,6 +751,7 @@ public:
    }
 
    // More STL compatibility implementations
+#ifndef __CUDA_ARCH__
    __host__
    std::pair<iterator, bool> insert(std::pair<GID, LID> newEntry) {
       bool found = find(newEntry.first) != end();
@@ -759,6 +760,17 @@ public:
       }
       return std::pair<iterator, bool>(find(newEntry.first), !found);
    }
+#else
+   __device__
+   std::pair<d_iterator, bool> insert(std::pair<GID, LID> newEntry) {
+      bool found = d_find(newEntry.first) != d_end();
+      if (!found) {
+         set_element(newEntry.first,newEntry.second);
+      }
+      return std::pair<d_iterator, bool>(d_find(newEntry.first), !found);
+   }
+
+#endif
 
    // Remove one element from the hash table.
    __host__

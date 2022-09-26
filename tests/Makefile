@@ -4,7 +4,7 @@ OPT= -O3
 CXXFLAGS= -g -G 
 EXTRA= -Xcompiler -rdynamic --std=c++14
 EXTRA+= -gencode arch=compute_60,code=sm_60 -rdc=true -L /usr/lib/x86_64-linux-gnu
-EXTRA+=-DCUDAVEC -DHASHMAPDEBUG
+EXTRA+=-DCUDAVEC -DHASHMAPDEBUG --expt-relaxed-constexpr
 
 GTEST=-lgtest -lgtest_main -lpthread
 OBJ= map_gpu_vs_cpu.o speed_test.o	  mempool_main.o	  gtest_vec.o	  gtest_hashmap.o	  map_add_remove.o 	  vecspeedtest
@@ -47,7 +47,6 @@ gtest_vec.o: gtest_vec/vec_test.cu
 
 vecspeedtest: vec_speed_test/main.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} -o vecspeedtest vec_speed_test/main.cu -DPROFINY_CALL_GRAPH_PROFILER -lboost_timer -lboost_chrono -lboost_system
-
 
 gtest_hashmap.o: gtest_hasmap/unit.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o gtesthashmap gtest_hasmap/unit.cu

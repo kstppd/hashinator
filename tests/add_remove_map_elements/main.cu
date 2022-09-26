@@ -18,7 +18,9 @@ __global__
 void gpu_write_map(Hashinator<val_type,val_type> *dmap){
    int index = blockIdx.x * blockDim.x + threadIdx.x;
    if (index<N){
-      dmap->set_element(index,index);
+      std::pair<val_type,val_type> p{index,index};
+      //dmap->set_element(index,index);
+      auto ret=dmap->insert(p);
    }
    return;
 }
