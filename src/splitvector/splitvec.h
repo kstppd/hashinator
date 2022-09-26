@@ -218,13 +218,13 @@ namespace split{
             int device;
             cudaGetDevice(&device);
             CheckErrors("Prefetch GPU-Device-ID");
-            cudaMemPrefetchAsync(_data ,size()*sizeof(T),device,stream);
+            cudaMemPrefetchAsync(_data ,capacity()*sizeof(T),device,stream);
             CheckErrors("Prefetch GPU");
          }
 
          /*Manually prefetch data on Host*/
          __host__ void optimizeCPU(cudaStream_t stream = 0){
-            cudaMemPrefetchAsync(_data ,size()*sizeof(T),cudaCpuDeviceId,stream);
+            cudaMemPrefetchAsync(_data ,capacity()*sizeof(T),cudaCpuDeviceId,stream);
             CheckErrors("Prefetch CPU");
          }
 
@@ -280,7 +280,7 @@ namespace split{
          }
 
 
-         /* Modifiers
+         /* Size Modifiers
             Reserve method:
             Supports only host reserving.
             Will never reduce the vector's size.
@@ -368,7 +368,7 @@ namespace split{
             Not thread safe
          */      
          __host__   
-         void push_back(T val){
+         void push_back(const T& val){
             // If we have no allocated memory because the default ctor was used then 
             // allocate one element, set it and return 
             if (_data==nullptr){
@@ -479,7 +479,20 @@ namespace split{
             return retval;
          }
 
-         /************STL compatibility***************/
+         /************~STL compatibility***************/
+
+         /*Danger Zone -- Device Size Modifiers*/
+         __device__ 
+         void dev_push_back(const T& val){
+            //We need at least capacity=size+1 otherwise this 
+            //pushback cannot be done
+            size_t old= atomicAdd((unsigned int*)_size, 1);
+            if (old>=capacity()){
+               assert(0 && "Splitvector has a catastrophic failure trying to pushback on device because the vector has no space available.");
+            }
+            atomicCAS(&(_data[old]), _data[old],val);
+         }
+      
 
          //Iterators
          class iterator{
