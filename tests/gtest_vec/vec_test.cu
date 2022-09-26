@@ -177,7 +177,6 @@ TEST(Vector_Functionality , Clear){
    size_t size =1<<20;
    a.resize(size);
    expect_true(a.size()==size);
-   expect_true(a.capacity()==a.size());
    auto cap=a.capacity();
    a.clear();
    expect_true(a.size()==0);
