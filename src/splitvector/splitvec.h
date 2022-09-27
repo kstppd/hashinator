@@ -52,9 +52,9 @@ namespace split{
    class SplitVector{
       
       private:
-         T*      _data=nullptr; //actual pointer to our data      
-         size_t* _size; // number of elements in vector.
-         size_t* _capacity; // number of allocated elements
+         T*      _data=nullptr;         //actual pointer to our data      
+         size_t* _size;                 // number of elements in vector.
+         size_t* _capacity;             // number of allocated elements
          size_t  _alloc_multiplier = 2; //host variable; multiplier for  when reserving more space
  
          void _check_ptr(void* ptr){
@@ -350,31 +350,7 @@ namespace split{
             reserve(newSize);
             *_size  =newSize; 
          }
-
-        
-         #ifndef __CUDA_ARCH__
-         /* 
-            PushBack  method:
-            Supports only host  pushbacks.
-            Will never reduce the vector's size.
-            Memory location will change so any old pointers/iterators
-            will be invalid from now on.
-            Not thread safe
-         */      
-         __host__   
-         void push_back(const T& val){
-            // If we have no allocated memory because the default ctor was used then 
-            // allocate one element, set it and return 
-            if (_data==nullptr){
-               *this=SplitVector<T>(1,val);
-               return;
-            }
-            resize(size()+1);
-            _data[size()-1] = val;
-            return;
-         }
-         #endif
-
+ 
          __host__
          void shrink_to_fit(){
             size_t curr_cap =*_capacity;
@@ -475,10 +451,30 @@ namespace split{
             return retval;
          }
 
-         /************~STL compatibility***************/
+         #ifndef __CUDA_ARCH__
+         /* 
+            PushBack  method:
+            Supports only host  pushbacks.
+            Will never reduce the vector's size.
+            Memory location will change so any old pointers/iterators
+            will be invalid from now on.
+            Not thread safe
+         */      
+         __host__   
+         void push_back(const T& val){
+            // If we have no allocated memory because the default ctor was used then 
+            // allocate one element, set it and return 
+            if (_data==nullptr){
+               *this=SplitVector<T>(1,val);
+               return;
+            }
+            resize(size()+1);
+            _data[size()-1] = val;
+            return;
+         }
+         
+         #else         
 
-         /*Danger Zone -- Device Size Modifiers*/
-         #ifdef __CUDA_ARCH__
          __device__ 
          void push_back(const T& val){
             //We need at least capacity=size+1 otherwise this 
@@ -489,8 +485,8 @@ namespace split{
             }
             atomicCAS(&(_data[old]), _data[old],val);
          }
-          #endif
-      
+         #endif
+
 
          //Iterators
          class iterator{
