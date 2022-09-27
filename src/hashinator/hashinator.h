@@ -20,7 +20,6 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 #pragma once
-
 #include <algorithm>
 #include <vector>
 #include <stdexcept>
@@ -68,7 +67,7 @@ private:
        return h ;
     }
 
-    // Generic h
+    // Wrapper over available hash functions 
    __host__ __device__
    uint32_t hash(GID in) const {
        static constexpr bool n = (std::is_arithmetic<GID>::value && sizeof(GID) <= sizeof(uint32_t));
@@ -79,6 +78,8 @@ private:
        }
     }
    
+   // Used by the constructors. Preallocates the device pointer and bookeepping info for later use on device. 
+   // This helps in reducing the number of calls to cudaMalloc
    __host__
    void preallocate_device_handles(){
       cudaMalloc((void **)&d_sizePower, sizeof(int));
@@ -87,6 +88,7 @@ private:
       cudaMalloc((void **)&device_map, sizeof(Hashinator));
    }
 
+   // Deallocates the bookeepping info and the device pointer
    __host__
    void deallocate_device_handles(){
       cudaFree(device_map);
@@ -96,6 +98,7 @@ private:
    }
 
 public:
+    
    __host__
    Hashinator()
        : sizePower(4), fill(0), buckets(1 << sizePower, std::pair<GID, LID>(EMPTYBUCKET, LID())){
@@ -117,8 +120,10 @@ public:
       deallocate_device_handles();
    };
 
+
+
    // Resize the table to fit more things. This is automatically invoked once
-   // maxBucketOverflow has triggered.
+   // maxBucketOverflow has triggered. This can only be done on host (so far)
    __host__
    void rehash(int newSizePower) {
 #ifdef HASHMAPDEBUG
@@ -210,36 +215,7 @@ public:
       throw std::out_of_range("Element not found in Hashinator.at");
    }
 
-   // Typical array-like access with [] operator
-   __host__
-   LID& operator[](const GID& key) {
-      return at(key); 
-   }
 
-   //------common operator wrappers---------
-   //Read only access with () operator on device
-   __device__
-   const LID& operator()(const GID& key) const {
-      return read_element(key); 
-   }
-
-   //See _at(key)
-   __host__
-   LID& at(const GID& key) {
-      return _at(key);
-   }
-   
-   //Read only  access to reference. Works on both host
-   //and device.
-   //See read_element() and (const) _at(key)
-   __host__  __device__
-   const LID& at(const GID& key) const {
-#ifdef __CUDA_ARCH__
-      return read_element(key);
-#else
-      return _at(key);
-#endif
-   }
    //---------------------------------------
 
    // For STL compatibility: size(), bucket_count(), count(GID), clear()
@@ -269,9 +245,9 @@ public:
       fill = 0;
    }
 
+   //Try to grow our buckets until we avhieve a targetLF load factor
    __host__
    void resize_to_lf(float targetLF=0.5){
-      
       while (load_factor() > targetLF){
          rehash(sizePower+1);
       }
@@ -282,7 +258,13 @@ public:
       rehash(newSizePower);     
    }
 
-   /************************Device Methods*********************************/
+
+   /**
+    * Host that return a device pointer that can be passed to CUDA kernels
+    * The pointer is internally cleaned up by the destructors.
+    * User must call clean_up_after_device() after exiting the kernel 
+    * otherwise the hasmap might end up in an ill state.
+    */
    __host__
    Hashinator* upload(cudaStream_t stream = 0 ){
       cpu_maxBucketOverflow=maxBucketOverflow;
@@ -294,6 +276,14 @@ public:
       return device_map;
    }
 
+
+   /**
+    * This must be called after exiting a CUDA kernel. This functions
+    * will do the following :
+    *  • handle communicating bookeepping info back to host. 
+    *  • If the hashmap has overflown on device it will try 
+    *     to get the overflow limits down to the default. 
+    * */ 
    __host__
    void clean_up_after_device(Hashinator* device_map ,cudaStream_t stream = 0){
       //Copy over fill as it might have changed
@@ -327,24 +317,37 @@ public:
       }
    }
 
-   // Device code for inserting elements. Nonexistent elements get created.
-   __device__
-   void insert_element(const GID& key,LID value, size_t &thread_overflowLookup) {
-      int bitMask = (1 <<(*d_sizePower )) - 1; // For efficient modulo of the array size
-      uint32_t hashIndex = hash(key);
-      size_t i =0;
-      while(i<buckets.size()){
-         uint32_t vecindex=(hashIndex + i) & bitMask;
-         GID old = atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, key);
-         if (old == EMPTYBUCKET || old == key){
-            atomicExch(&buckets[vecindex].second,value);
-            atomicAdd((unsigned int*)d_fill, 1);
-            thread_overflowLookup = i+1;
-            return;
-         }
-         i++;
-      }
-      assert(false && "Hashmap completely overflown");
+
+   __host__
+   void swap(Hashinator<GID, LID>& other) {
+      buckets.swap(other.buckets);
+      int tempSizePower = sizePower;
+      sizePower = other.sizePower;
+      other.sizePower = tempSizePower;
+
+      size_t tempFill = fill;
+      fill = other.fill;
+      other.fill = tempFill;
+   }
+
+
+
+   //Read only  access to reference. 
+   __host__
+   const LID& at(const GID& key) const {
+      return _at(key);
+   }
+
+   //See _at(key)
+   __host__
+   LID& at(const GID& key) {
+      return _at(key);
+   }
+
+   // Typical array-like access with [] operator
+   __host__
+   LID& operator[](const GID& key) {
+      return at(key); 
    }
 
 
@@ -355,7 +358,7 @@ public:
       atomicMax(d_maxBucketOverflow,thread_overflowLookup);
    }
 
-     __device__
+   __device__
    const LID& read_element(const GID& key) const {
       int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
       uint32_t hashIndex = hash(key);
@@ -374,227 +377,24 @@ public:
          }
       }
        assert(false && "Key does not exist");
+       return ; //to get the compiler not to yell
    }
    
 
-   // Device Iterator type. Iterates through all non-empty buckets.
-   __device__
-   class d_iterator  {
-   private:
-      size_t index;
-      Hashinator<GID, LID>* hashtable;
-   public:
-      __device__
-      d_iterator(Hashinator<GID, LID>& hashtable, size_t index) : hashtable(&hashtable), index(index) {}
-      
-      __device__
-      size_t getIndex() { return index; }
-     
-      __device__
-      d_iterator& operator++() {
-         index++;
-         while(index < hashtable->buckets.size()){
-            if (hashtable->buckets[index].first != EMPTYBUCKET){
-               break;
-            }
-            index++;
-         }
-         return *this;
-      }
-      
-      __device__
-      d_iterator operator++(int){
-         d_iterator temp = *this;
-         ++(*this);
-         return temp;
-      }
-      
-      __device__
-      bool operator==(d_iterator other) const {
-         return &hashtable->buckets[index] == &other.hashtable->buckets[other.index];
-      }
-      __device__
-      bool operator!=(d_iterator other) const {
-         return &hashtable->buckets[index] != &other.hashtable->buckets[other.index];
-      }
-      
-      __device__
-      std::pair<GID, LID>& operator*() const { return hashtable->buckets[index]; }
-      __device__
-      std::pair<GID, LID>* operator->() const { return &hashtable->buckets[index]; }
-
-   };
-
-
-   __device__
-   class d_const_iterator  {
-   private:
-      size_t index;
-      const Hashinator<GID, LID>* hashtable;
-   public:
-      __device__
-      explicit d_const_iterator(const Hashinator<GID, LID>& hashtable, size_t index) : hashtable(&hashtable), index(index) {}
-      
-      __device__
-      size_t getIndex() { return index; }
-     
-      __device__
-      d_const_iterator& operator++() {
-         index++;
-         while(index < hashtable->buckets.size()){
-            if (hashtable->buckets[index].first != EMPTYBUCKET){
-               break;
-            }
-            index++;
-         }
-         return *this;
-      }
-      
-      __device__
-      d_const_iterator operator++(int){
-         d_const_iterator temp = *this;
-         ++(*this);
-         return temp;
-      }
-      
-      __device__
-      bool operator==(d_const_iterator other) const {
-         return &hashtable->buckets[index] == &other.hashtable->buckets[other.index];
-      }
-      __device__
-      bool operator!=(d_const_iterator other) const {
-         return &hashtable->buckets[index] != &other.hashtable->buckets[other.index];
-      }
-      
-      __device__
-      const std::pair<GID, LID>& operator*() const { return hashtable->buckets[index]; }
-      __device__
-      const std::pair<GID, LID>* operator->() const { return &hashtable->buckets[index]; }
-   };
 
 
 
-   __device__
-   d_iterator d_end() { return d_iterator(*this, buckets.size()); }
-
-   __device__
-   d_const_iterator d_end()const  { return d_const_iterator(*this, buckets.size()); }
-
-   __device__
-   d_iterator d_begin() {
-      for (size_t i = 0; i < buckets.size(); i++) {
-         if (buckets[i].first != EMPTYBUCKET) {
-            return d_iterator(*this, i);
-         }
-      }
-      return d_end();
-   }
-    
-   // Element access by iterator
-   __device__ 
-   d_iterator d_find(GID key) {
-      int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
-      uint32_t hashIndex = hash(key);
-
-      // Try to find the matching bucket.
-      for (int i = 0; i < *d_maxBucketOverflow; i++) {
-         const std::pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
-         if (candidate.first == key) {
-            // Found a match, return that
-            return d_iterator(*this, (hashIndex + i) & bitMask);
-         }
-
-         if (candidate.first == EMPTYBUCKET) {
-            // Found an empty bucket. Return empty.
-            return d_end();
-         }
-      }
-
-      // Not found
-      return d_end();
-   }
-
-
-
-   __device__ 
-   const d_const_iterator d_find(GID key)const {
-      int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
-      uint32_t hashIndex = hash(key);
-
-      // Try to find the matching bucket.
-      for (int i = 0; i < *d_maxBucketOverflow; i++) {
-         const std::pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
-         if (candidate.first == key) {
-            // Found a match, return that
-            return d_const_iterator(*this, (hashIndex + i) & bitMask);
-         }
-
-         if (candidate.first == EMPTYBUCKET) {
-            // Found an empty bucket. Return empty.
-            return d_end();
-         }
-      }
-
-      // Not found
-      return d_end();
-   }
-
-   // Remove one element from the hash table.
-   __device__
-   d_iterator d_erase(d_iterator keyPos) {
-      // Due to overflowing buckets, this might require moving quite a bit of stuff around.
-      size_t index = keyPos.getIndex();
-
-      if (buckets[index].first != EMPTYBUCKET) {
-         // Decrease fill count
-         atomicSub((unsigned int*)d_fill, 1);
-
-         // Clear the element itself.
-         atomicExch(&buckets[index].first,EMPTYBUCKET);
-
-         int bitMask = (1 <<(*d_sizePower )) - 1; // For efficient modulo of the array size
-         size_t targetPos = index;
-         // Search ahead to verify items are in correct places (until empty bucket is found)
-         for (unsigned int i = 1; i < (*d_fill); i++) {
-            GID nextBucket = buckets[(index + i)&bitMask].first;
-            if (nextBucket == EMPTYBUCKET) {
-               // The next bucket is empty, we are done.
-               break;
-            }
-            // Found an entry: is it in the correct bucket?
-            uint32_t hashIndex = hash(nextBucket);
-            if ((hashIndex&bitMask) != ((index + i)&bitMask)) {
-               //// This entry has overflown. Now check if it should be moved:
-               uint32_t distance =  ((targetPos - hashIndex + (1<<(*d_sizePower)))&bitMask);
-               if (distance < *d_maxBucketOverflow) {
-                  //// Copy this entry to the current newly empty bucket, then continue with deleting
-                  //// this overflown entry and continue searching for overflown entries
-                  LID moveValue = buckets[(index+i)&bitMask].second;
-                  atomicExch(&buckets[targetPos].first,nextBucket);
-                  atomicExch(&buckets[targetPos].second,moveValue);
-                  targetPos = ((index+i)&bitMask);
-                  atomicExch(&buckets[targetPos].first,EMPTYBUCKET);
-               }
-            }
-         }
-      }
-      // return the next valid bucket member
-      ++keyPos;
-      return keyPos;
-   }
-
-   __device__
-   size_t d_erase(const GID& key) {
-      d_iterator element = d_find(key);
-      if(element == d_end()) {
-         return 0;
-      } else {
-         d_erase(element);
-         return 1;
-      }
-   }
-   /**************************device code*************************************************/
-
+//Host/Device Overloads
+/**
+                                         _   _  ___  ____ _____    ____ ___  ____  _____              
+                           __/\____/\__ | | | |/ _ \/ ___|_   _|  / ___/ _ \|  _ \| ____| __/\____/\__
+                           \    /\    / | |_| | | | \___ \ | |   | |  | | | | | | |  _|   \    /\    /
+                           /_  _\/_  _\ |  _  | |_| |___) || |   | |__| |_| | |_| | |___  /_  _\/_  _\
+                             \/    \/   |_| |_|\___/|____/ |_|    \____\___/|____/|_____|   \/    \/  
+                                                 
+*/
+#ifndef __CUDA_ARCH__
+   
    // Iterator type. Iterates through all non-empty buckets.
    __host__
    class iterator : public std::iterator<std::random_access_iterator_tag, std::pair<GID, LID>> {
@@ -681,38 +481,7 @@ public:
       __host__
       size_t getIndex() { return index; }
    };
-      // More STL compatibility implementations
-#ifndef __CUDA_ARCH__
-#else
 
-#endif
-
-   __host__
-   void swap(Hashinator<GID, LID>& other) {
-      buckets.swap(other.buckets);
-      int tempSizePower = sizePower;
-      sizePower = other.sizePower;
-      other.sizePower = tempSizePower;
-
-      size_t tempFill = fill;
-      fill = other.fill;
-      other.fill = tempFill;
-   }
-
-
-
-
-
-/*
-                                         _   _  ___  ____ _____    ____ ___  ____  _____              
-                           __/\____/\__ | | | |/ _ \/ ___|_   _|  / ___/ _ \|  _ \| ____| __/\____/\__
-                           \    /\    / | |_| | | | \___ \ | |   | |  | | | | | | |  _|   \    /\    /
-                           /_  _\/_  _\ |  _  | |_| |___) || |   | |__| |_| | |_| | |___  /_  _\/_  _\
-                             \/    \/   |_| |_|\___/|____/ |_|    \____\___/|____/|_____|   \/    \/  
-                                                 
-*/
-#ifndef __CUDA_ARCH__
-   
    // Element access by iterator
    __host__
    const const_iterator find(GID key) const {
@@ -849,11 +618,9 @@ public:
       }
    }
    
-
-
 #else
 
-/*
+/**
                                          ____  _______     _____ ____ _____    ____ ___  ____  _____ 
                            __/\____/\__ |  _ \| ____\ \   / /_ _/ ___| ____|  / ___/ _ \|  _ \| ____|  __/\____/\__
                            \    /\    / | | | |  _|  \ \ / / | | |   |  _|   | |  | | | | | | |  _|    \    /\    /
@@ -861,9 +628,106 @@ public:
                              \/    \/   |____/|_____|  \_/  |___\____|_____|  \____\___/|____/|_____|    \/    \/  
 */
 
+
+   // Device Iterator type. Iterates through all non-empty buckets.
+   __device__
+   class iterator  {
+   private:
+      size_t index;
+      Hashinator<GID, LID>* hashtable;
+   public:
+      __device__
+      iterator(Hashinator<GID, LID>& hashtable, size_t index) : hashtable(&hashtable), index(index) {}
+      
+      __device__
+      size_t getIndex() { return index; }
+     
+      __device__
+      iterator& operator++() {
+         index++;
+         while(index < hashtable->buckets.size()){
+            if (hashtable->buckets[index].first != EMPTYBUCKET){
+               break;
+            }
+            index++;
+         }
+         return *this;
+      }
+      
+      __device__
+      iterator operator++(int){
+         iterator temp = *this;
+         ++(*this);
+         return temp;
+      }
+      
+      __device__
+      bool operator==(iterator other) const {
+         return &hashtable->buckets[index] == &other.hashtable->buckets[other.index];
+      }
+      __device__
+      bool operator!=(iterator other) const {
+         return &hashtable->buckets[index] != &other.hashtable->buckets[other.index];
+      }
+      
+      __device__
+      std::pair<GID, LID>& operator*() const { return hashtable->buckets[index]; }
+      __device__
+      std::pair<GID, LID>* operator->() const { return &hashtable->buckets[index]; }
+
+   };
+
+
+   __device__
+   class const_iterator  {
+   private:
+      size_t index;
+      const Hashinator<GID, LID>* hashtable;
+   public:
+      __device__
+      explicit const_iterator(const Hashinator<GID, LID>& hashtable, size_t index) : hashtable(&hashtable), index(index) {}
+      
+      __device__
+      size_t getIndex() { return index; }
+     
+      __device__
+      const_iterator& operator++() {
+         index++;
+         while(index < hashtable->buckets.size()){
+            if (hashtable->buckets[index].first != EMPTYBUCKET){
+               break;
+            }
+            index++;
+         }
+         return *this;
+      }
+      
+      __device__
+      const_iterator operator++(int){
+         const_iterator temp = *this;
+         ++(*this);
+         return temp;
+      }
+      
+      __device__
+      bool operator==(const_iterator other) const {
+         return &hashtable->buckets[index] == &other.hashtable->buckets[other.index];
+      }
+      __device__
+      bool operator!=(const_iterator other) const {
+         return &hashtable->buckets[index] != &other.hashtable->buckets[other.index];
+      }
+      
+      __device__
+      const std::pair<GID, LID>& operator*() const { return hashtable->buckets[index]; }
+      __device__
+      const std::pair<GID, LID>* operator->() const { return &hashtable->buckets[index]; }
+   };
+
+
    // Element access by iterator
    __device__ 
-   d_iterator find(GID key) {
+   iterator find(GID key) {
       int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
       uint32_t hashIndex = hash(key);
 
@@ -872,21 +736,21 @@ public:
          const std::pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
          if (candidate.first == key) {
             // Found a match, return that
-            return d_iterator(*this, (hashIndex + i) & bitMask);
+            return iterator(*this, (hashIndex + i) & bitMask);
          }
 
          if (candidate.first == EMPTYBUCKET) {
             // Found an empty bucket. Return empty.
-            return d_end();
+            return end();
          }
       }
 
       // Not found
-      return d_end();
+      return end();
    }
 
    __device__ 
-   const d_const_iterator find(GID key)const {
+   const const_iterator find(GID key)const {
       int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
       uint32_t hashIndex = hash(key);
 
@@ -895,31 +759,31 @@ public:
          const std::pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
          if (candidate.first == key) {
             // Found a match, return that
-            return d_const_iterator(*this, (hashIndex + i) & bitMask);
+            return const_iterator(*this, (hashIndex + i) & bitMask);
          }
 
          if (candidate.first == EMPTYBUCKET) {
             // Found an empty bucket. Return empty.
-            return d_end();
+            return end();
          }
       }
 
       // Not found
-      return d_end();
+      return end();
    }
 
 
    __device__
-   d_iterator end() { return d_iterator(*this, buckets.size()); }
+   iterator end() { return iterator(*this, buckets.size()); }
 
    __device__
-   d_const_iterator end()const  { return d_const_iterator(*this, buckets.size()); }
+   const_iterator end()const  { return const_iterator(*this, buckets.size()); }
 
    __device__
-   d_iterator begin() {
+   iterator begin() {
       for (size_t i = 0; i < buckets.size(); i++) {
          if (buckets[i].first != EMPTYBUCKET) {
-            return d_iterator(*this, i);
+            return iterator(*this, i);
          }
       }
       return end();
@@ -927,7 +791,7 @@ public:
 
    // Remove one element from the hash table.
    __device__
-   d_iterator erase(d_iterator keyPos) {
+   iterator erase(iterator keyPos) {
       // Due to overflowing buckets, this might require moving quite a bit of stuff around.
       size_t index = keyPos.getIndex();
 
@@ -970,17 +834,17 @@ public:
    }
 
    __device__
-   std::pair<d_iterator, bool> insert(std::pair<GID, LID> newEntry) {
-      bool found = d_find(newEntry.first) != d_end();
+   std::pair<iterator, bool> insert(std::pair<GID, LID> newEntry) {
+      bool found = find(newEntry.first) != end();
       if (!found) {
          set_element(newEntry.first,newEntry.second);
       }
-      return std::pair<d_iterator, bool>(d_find(newEntry.first), !found);
+      return std::pair<iterator, bool>(find(newEntry.first), !found);
    }
 
    __device__
    size_t erase(const GID& key) {
-      d_iterator element = find(key);
+      iterator element = find(key);
       if(element == end()) {
          return 0;
       } else {
@@ -988,8 +852,27 @@ public:
          return 1;
       }
    }
+    
+   // Device code for inserting elements. Nonexistent elements get created.
+   __device__
+   void insert_element(const GID& key,LID value, size_t &thread_overflowLookup) {
+      int bitMask = (1 <<(*d_sizePower )) - 1; // For efficient modulo of the array size
+      uint32_t hashIndex = hash(key);
+      size_t i =0;
+      while(i<buckets.size()){
+         uint32_t vecindex=(hashIndex + i) & bitMask;
+         GID old = atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, key);
+         if (old == EMPTYBUCKET || old == key){
+            atomicExch(&buckets[vecindex].second,value);
+            atomicAdd((unsigned int*)d_fill, 1);
+            thread_overflowLookup = i+1;
+            return;
+         }
+         i++;
+      }
+      assert(false && "Hashmap completely overflown");
+   }
 
 #endif
-
 
 };

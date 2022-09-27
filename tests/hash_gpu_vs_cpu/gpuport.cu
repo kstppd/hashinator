@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <chrono>
 #include "../../src/hashinator/hashinator.h"
-#define N  1<<28
+#define N  1<<15
 
 typedef uint32_t val_type;
 
@@ -10,13 +10,17 @@ __global__
 void fillMap(Hashinator<val_type,val_type> *dmap){
    int index = blockIdx.x * blockDim.x + threadIdx.x;
     dmap->set_element(index, index);
+    dmap->read_element(index);
+    if (dmap->find(index)==dmap->end()){
+       assert(false && "Did not find element that was just inserted");
+    }
 }
 
 void cpuTest(){
    
    //timed block
    Hashinator<val_type,val_type> map;
-   map.resize(29);
+   map.resize(16);
    auto start = std::chrono::high_resolution_clock::now();
    for (val_type i=0; i<N;i++){
       map[i]=i;
@@ -30,7 +34,7 @@ void cpuTest(){
 void gpuTest(int threads){
    //timed block
    Hashinator<val_type,val_type> map;
-   map.resize(29);
+   map.resize(16);
    size_t total_keys=N;
    size_t total_threads=threads;
    size_t total_blocks= total_keys/total_threads;
