@@ -30,8 +30,8 @@ __global__
 void gpu_delete_all(Hashinator<val_type,val_type> *dmap){
    int index = blockIdx.x * blockDim.x + threadIdx.x;
    if (index<N ){
-      auto kpos=dmap->d_find(index);
-      dmap->d_erase(kpos);
+      auto kpos=dmap->find(index);
+      dmap->erase(kpos);
    }
    return;
 }
@@ -41,10 +41,10 @@ __global__
 void gpu_delete_even(Hashinator<val_type,val_type> *dmap){
    int index = blockIdx.x * blockDim.x + threadIdx.x;
    if (index<N ){
-      auto kpos=dmap->d_find(index);
-      if (kpos==dmap->d_end()){return;}
+      auto kpos=dmap->find(index);
+      if (kpos==dmap->end()){return;}
       if (kpos->second %2==0 ){
-         dmap->d_erase(kpos);
+         dmap->erase(kpos);
       }
    }
    return;
@@ -55,10 +55,10 @@ __global__
 void gpu_delete_odd(Hashinator<val_type,val_type> *dmap){
    int index = blockIdx.x * blockDim.x + threadIdx.x;
    if (index<N ){
-      auto kpos=dmap->d_find(index);
-      if (kpos==dmap->d_end()){return;}
+      auto kpos=dmap->find(index);
+      if (kpos==dmap->end()){return;}
       if (kpos->second %2==1){
-         dmap->d_erase(kpos);
+         dmap->erase(kpos);
       }
    }
    return;
