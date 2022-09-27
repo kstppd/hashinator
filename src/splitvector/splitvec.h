@@ -350,6 +350,11 @@ namespace split{
             reserve(newSize);
             *_size  =newSize; 
          }
+
+         __host__
+         void grow(){
+            reserve(capacity()+1);
+         }
  
          __host__
          void shrink_to_fit(){
@@ -429,7 +434,7 @@ namespace split{
          }
 
          __host__ __device__
-         size_t capacity(){
+         size_t capacity() const {
             return *_capacity;
          }
 
@@ -498,7 +503,7 @@ namespace split{
             
             using iterator_category = std::forward_iterator_tag;
             using value_type = T;
-            using difference_type = size_t;
+            using difference_type = int64_t;
             using pointer = T*;
             using reference = T&;
 
@@ -506,8 +511,13 @@ namespace split{
             iterator(pointer data) : _data(data) {}
 
             pointer data() { return _data; }
+            pointer operator->() { return _data; }
             reference operator*() { return *_data; }
-            bool operator!=(const iterator& other){
+
+            bool operator==(const iterator& other)const{
+              return _data == other._data;
+            }
+            bool operator!=(const iterator& other)const {
               return _data != other._data;
             }
             iterator& operator++(){
@@ -517,27 +527,34 @@ namespace split{
             iterator operator++(int){
               return iterator(_data + 1);
             }
+            iterator operator--(int){
+              return iterator(_data - 1);
+            }
          };
 
-
          class const_iterator{
-            private: 
-            T* _data;
+             
+            private:
+            const T* _data;
             
             public:
             
             using iterator_category = std::forward_iterator_tag;
             using value_type = T;
-            using difference_type = size_t;
-            using pointer = T*;
+            using difference_type = int64_t;
+            using pointer = const T*;
             using reference = T&;
 
-            //const_iterator(){}
-            explicit const_iterator(pointer data) : _data(data) {}
+            const_iterator(pointer data) : _data(data) {}
 
-            const pointer data() const { return _data; }
-            const reference operator*() const  { return *_data; }
-            bool operator!=(const const_iterator& other){
+            pointer data()const { return _data; }
+            pointer operator->()const  { return _data; }
+            reference operator*()const  { return *_data; }
+
+            bool operator==(const const_iterator& other)const{
+              return _data == other._data;
+            }
+            bool operator!=(const const_iterator& other)const {
               return _data != other._data;
             }
             const_iterator& operator++(){
@@ -547,8 +564,10 @@ namespace split{
             const_iterator operator++(int){
               return const_iterator(_data + 1);
             }
+            const_iterator operator--(int){
+              return const_iterator(_data - 1);
+            }
          };
-
          
          iterator begin(){
             return iterator(_data);
@@ -563,6 +582,33 @@ namespace split{
          }
          const_iterator end() const {
             return const_iterator(_data+size());
+         }
+
+         __host__
+         iterator insert (iterator& it, const T& val){
+            
+            //If empty or inserting at the end no relocating is needed
+            if (it==end()){
+               push_back(val);
+               return end()--;
+            }
+
+            int64_t index=it.data()-_data;
+            if (index<0 || index>size()){
+               throw std::out_of_range("Insert");
+            }
+            
+            //Do we do need to increase our capacity?
+            if (size()==capacity()){
+               grow();
+            }
+
+            for(int64_t  i = size() - 1; i >= index; i--){
+               _data[i+1] = _data[i];
+            }
+            _data[index] = val;
+            *_size=*_size+1;
+            return iterator(_data+index);
          }
 
 

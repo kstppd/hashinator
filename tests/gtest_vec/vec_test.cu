@@ -244,6 +244,58 @@ TEST(Vector_Functionality , Push_Back_2){
 
 }
 
+TEST(Vector_Functionality , Insert_0){
+   {
+      split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
+      auto s0=a.size(); auto c0=a.capacity();
+      auto it(a.begin());
+      auto it2=a.insert(it,-1);
+      expect_true(a[0]=-1);
+      expect_true(a.size()==s0+1);
+      expect_true(a.capacity()>c0);
+   }
+   {
+      vec a{1,2,3,4,5,6,7,8,9,10};
+      auto s0=a.size(); auto c0=a.capacity();
+      vec::iterator it(a.end());
+      auto it2=a.insert(it,-1);
+      expect_true(a.back()=-1);
+      expect_true(a[a.size()-1]=-1);
+      expect_true(a.size()==s0+1);
+      expect_true(a.capacity()>c0);
+   }
+   {
+      vec a{1,2,3,4,5,6,7,8,9,10};
+      auto s0=a.size(); auto c0=a.capacity();
+      vec::iterator it(&a[4]);
+      auto it2=a.insert(it,-1);
+      expect_true(a[4]=-1);
+      expect_true(a.size()==s0+1);
+      expect_true(a.capacity()>c0);
+   }
+   {
+     vec a{1,2,3,4,5,6,7,8,9,10};
+     auto s0=a.size(); auto c0=a.capacity();
+     try {
+      //hehe
+      vec::iterator it(nullptr);
+      auto it2=a.insert(it,-1);
+     }// this has to throw
+     catch (...) {
+        expect_true(true);
+        expect_true(a.capacity()==c0);
+        expect_true(a.size()==s0);
+           return;
+     }
+     //if we end up here it never threw so something's up
+     expect_true(false);
+   }
+}
+
+
+
+
+
 
 int main(int argc, char* argv[]){
    ::testing::InitGoogleTest(&argc, argv);
