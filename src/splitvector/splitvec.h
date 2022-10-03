@@ -52,9 +52,9 @@ namespace split{
    class SplitVector{
       
       private:
-         T*      _data=nullptr; //actual pointer to our data      
-         size_t* _size; // number of elements in vector.
-         size_t* _capacity; // number of allocated elements
+         T*      _data=nullptr;         //actual pointer to our data      
+         size_t* _size;                 // number of elements in vector.
+         size_t* _capacity;             // number of allocated elements
          size_t  _alloc_multiplier = 2; //host variable; multiplier for  when reserving more space
  
          void _check_ptr(void* ptr){
@@ -351,30 +351,11 @@ namespace split{
             *_size  =newSize; 
          }
 
-        
-         #ifndef __CUDA_ARCH__
-         /* 
-            PushBack  method:
-            Supports only host  pushbacks.
-            Will never reduce the vector's size.
-            Memory location will change so any old pointers/iterators
-            will be invalid from now on.
-            Not thread safe
-         */      
-         __host__   
-         void push_back(const T& val){
-            // If we have no allocated memory because the default ctor was used then 
-            // allocate one element, set it and return 
-            if (_data==nullptr){
-               *this=SplitVector<T>(1,val);
-               return;
-            }
-            resize(size()+1);
-            _data[size()-1] = val;
-            return;
+         __host__
+         void grow(){
+            reserve(capacity()+1);
          }
-         #endif
-
+ 
          __host__
          void shrink_to_fit(){
             size_t curr_cap =*_capacity;
@@ -453,7 +434,7 @@ namespace split{
          }
 
          __host__ __device__
-         size_t capacity(){
+         size_t capacity() const {
             return *_capacity;
          }
 
@@ -475,10 +456,30 @@ namespace split{
             return retval;
          }
 
-         /************~STL compatibility***************/
+         #ifndef __CUDA_ARCH__
+         /* 
+            PushBack  method:
+            Supports only host  pushbacks.
+            Will never reduce the vector's size.
+            Memory location will change so any old pointers/iterators
+            will be invalid from now on.
+            Not thread safe
+         */      
+         __host__   
+         void push_back(const T& val){
+            // If we have no allocated memory because the default ctor was used then 
+            // allocate one element, set it and return 
+            if (_data==nullptr){
+               *this=SplitVector<T>(1,val);
+               return;
+            }
+            resize(size()+1);
+            _data[size()-1] = val;
+            return;
+         }
+         
+         #else         
 
-         /*Danger Zone -- Device Size Modifiers*/
-         #ifdef __CUDA_ARCH__
          __device__ 
          void push_back(const T& val){
             //We need at least capacity=size+1 otherwise this 
@@ -489,8 +490,8 @@ namespace split{
             }
             atomicCAS(&(_data[old]), _data[old],val);
          }
-          #endif
-      
+         #endif
+
 
          //Iterators
          class iterator{
@@ -502,7 +503,7 @@ namespace split{
             
             using iterator_category = std::forward_iterator_tag;
             using value_type = T;
-            using difference_type = size_t;
+            using difference_type = int64_t;
             using pointer = T*;
             using reference = T&;
 
@@ -510,8 +511,13 @@ namespace split{
             iterator(pointer data) : _data(data) {}
 
             pointer data() { return _data; }
+            pointer operator->() { return _data; }
             reference operator*() { return *_data; }
-            bool operator!=(const iterator& other){
+
+            bool operator==(const iterator& other)const{
+              return _data == other._data;
+            }
+            bool operator!=(const iterator& other)const {
               return _data != other._data;
             }
             iterator& operator++(){
@@ -521,27 +527,34 @@ namespace split{
             iterator operator++(int){
               return iterator(_data + 1);
             }
+            iterator operator--(int){
+              return iterator(_data - 1);
+            }
          };
 
-
          class const_iterator{
-            private: 
-            T* _data;
+             
+            private:
+            const T* _data;
             
             public:
             
             using iterator_category = std::forward_iterator_tag;
             using value_type = T;
-            using difference_type = size_t;
-            using pointer = T*;
+            using difference_type = int64_t;
+            using pointer = const T*;
             using reference = T&;
 
-            //const_iterator(){}
-            explicit const_iterator(pointer data) : _data(data) {}
+            const_iterator(pointer data) : _data(data) {}
 
-            const pointer data() const { return _data; }
-            const reference operator*() const  { return *_data; }
-            bool operator!=(const const_iterator& other){
+            pointer data()const { return _data; }
+            pointer operator->()const  { return _data; }
+            reference operator*()const  { return *_data; }
+
+            bool operator==(const const_iterator& other)const{
+              return _data == other._data;
+            }
+            bool operator!=(const const_iterator& other)const {
               return _data != other._data;
             }
             const_iterator& operator++(){
@@ -551,8 +564,10 @@ namespace split{
             const_iterator operator++(int){
               return const_iterator(_data + 1);
             }
+            const_iterator operator--(int){
+              return const_iterator(_data - 1);
+            }
          };
-
          
          iterator begin(){
             return iterator(_data);
@@ -567,6 +582,109 @@ namespace split{
          }
          const_iterator end() const {
             return const_iterator(_data+size());
+         }
+
+         __host__
+         iterator insert (iterator& it, const T& val){
+            
+            //If empty or inserting at the end no relocating is needed
+            if (it==end()){
+               push_back(val);
+               return end()--;
+            }
+
+            int64_t index=it.data()-begin().data();
+            if (index<0 || index>size()){
+               throw std::out_of_range("Insert");
+            }
+            
+            //Do we do need to increase our capacity?
+            if (size()==capacity()){
+               grow();
+            }
+
+            for(int64_t  i = size() - 1; i >= index; i--){
+               _data[i+1] = _data[i];
+            }
+            _data[index] = val;
+            *_size=*_size+1;
+            return iterator(_data+index);
+         }
+
+         __host__
+         iterator insert(iterator& it,const size_t elements, const T& val){
+
+            int64_t index=it.data()-begin().data();
+            if (index<0 || index>size()){
+               throw std::out_of_range("Insert");
+            }
+            
+            //Do we do need to increase our capacity?
+            if (size()+elements>capacity()){
+               resize(capacity()+elements);
+            }
+
+            iterator retval = &_data[index];
+            std::move(retval, end(), retval.data() + elements);
+            std::fill_n(retval, elements, val);
+            return retval;
+         }
+
+
+         __host__
+         iterator insert(iterator& it, iterator p0, iterator p1) {
+         
+            const int64_t count = p1.data() - p0.data();
+            const int64_t index = it.data() - begin().data();
+      
+            if (index<0 || index>size()){
+               throw std::out_of_range("Insert");
+            }
+
+            if (size() + count > capacity()) {
+               resize(capacity() + count);
+            }
+
+            iterator retval = &_data[index];
+            std::move(retval, end(), retval.data() + count);
+            std::copy(p0, p1, retval);
+            return retval;
+         }
+         
+
+         iterator erase(iterator& it){
+         #pragma message ("#TODO VERIFY NEXT 3 LINES POSSIBLE ERROR!" );
+            if (it==end()){
+               pop_back();
+               return end();
+            }
+
+            const int64_t index = it.data() - begin().data();
+            _data[index].~T();
+
+            for (auto i = index; i < size() - 1; i++) {
+               new (&_data[i]) T(_data[i+1]); 
+               _data[i+1].~T();
+            }
+            *_size-=1;
+            iterator retval = &_data[index];
+            return retval;
+         }
+            
+
+         __host__ 
+         iterator erase(iterator& p0, iterator& p1) {
+            const int64_t start = p0.data() - begin().data();
+            const int64_t end   =  p1.data() - begin().data();
+
+            for (int64_t i = 0; i < end - start; i++) {
+               new (&_data[start+i]) T(_data[end+1]); 
+               _data[start+i].~T();
+            }
+
+            *_size -= end - start;
+            iterator it = &_data[start];
+            return it;
          }
 
 
