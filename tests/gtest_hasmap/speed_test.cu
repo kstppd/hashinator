@@ -31,7 +31,7 @@ void load_to_50_pc(Hashinator<val_type,val_type>& map ,int threads){
    fillMap<<<total_blocks,total_threads>>>(dmap);
    cudaDeviceSynchronize();
    auto end = std::chrono::high_resolution_clock::now();
-   map.clean_up_after_device(dmap);
+   map.download();
    map.print_all();
    auto total_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
    //printf("TIME: %.3f seconds for %zu elements at a load factor of %f\n", total_time.count() * 1e-9,map.size(),map.load_factor());
@@ -57,7 +57,7 @@ void load_to_lf(Hashinator<val_type,val_type>& map ,float target_lf){
    fillMap<<<blocks,threads>>>(dmap);
    cudaDeviceSynchronize();
    auto end = std::chrono::high_resolution_clock::now();
-   map.clean_up_after_device(dmap);
+   map.download();
    //map.print_all();
    auto total_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
    //printf("TIME: %.3f seconds for %zu elements at a load factor of %f\n", total_time.count() * 1e-9,map.size(),map.load_factor());
@@ -76,7 +76,7 @@ void addNelems(Hashinator<val_type,val_type>&map,int numel){
    fillMap_neg<<<blocks,threads>>>(dmap);
    cudaDeviceSynchronize();
    auto end = std::chrono::high_resolution_clock::now();
-   map.clean_up_after_device(dmap);
+   map.download();
    //map.print_all();
    auto total_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
    printf("--->TIME: %.3f seconds for %zu elements at a load factor of %f\n", total_time.count() * 1e-9,map.size(),initial_lf);

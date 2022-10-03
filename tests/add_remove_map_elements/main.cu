@@ -86,7 +86,7 @@ void stress_test(int power,int threads){
    
    
    //Always clean up after kernel
-   hmap.clean_up_after_device(dmap);
+   hmap.download();
 
    //Let's reupload the map
    dmap=hmap.upload();
@@ -96,7 +96,7 @@ void stress_test(int power,int threads){
    cudaDeviceSynchronize();
 
    //And we clean up again
-   hmap.clean_up_after_device(dmap);
+   hmap.download();
 
    //One more time
    dmap=hmap.upload();
@@ -106,7 +106,7 @@ void stress_test(int power,int threads){
    cudaDeviceSynchronize();
 
    //We clean up
-   hmap.clean_up_after_device(dmap);
+   hmap.download();
 
    //We now expect the map to have 0 fill as we deleted all the elemets
    assert(hmap.size()==0 && "Map fill should be zero but is not. Something is broken!");

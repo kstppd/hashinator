@@ -44,7 +44,7 @@ void gpuTest(int threads){
    fillMap<<<total_blocks,total_threads>>>(dmap);
    cudaDeviceSynchronize();
    auto end = std::chrono::high_resolution_clock::now();
-   map.clean_up_after_device(dmap);
+   map.download();
    map.print_all();
    auto total_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
    printf("TIME: %.3f seconds for %zu elements at a load factor of %f\n", total_time.count() * 1e-9,map.size(),map.load_factor());

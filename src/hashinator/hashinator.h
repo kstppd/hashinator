@@ -276,6 +276,12 @@ public:
       return device_map;
    }
 
+   //Just return the device pointer. Upload should be called fist 
+   //othewise map bookeepping info will not be updated on device.
+   __host__
+   Hashinator* get_device_pointer(){
+      return device_map;
+   }
 
    /**
     * This must be called after exiting a CUDA kernel. This functions
@@ -285,7 +291,7 @@ public:
     *     to get the overflow limits down to the default. 
     * */ 
    __host__
-   void clean_up_after_device(Hashinator* device_map ,cudaStream_t stream = 0){
+   void download(cudaStream_t stream = 0){
       //Copy over fill as it might have changed
       cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,stream);
       cudaMemcpyAsync(&postDevice_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,stream);
@@ -299,6 +305,7 @@ public:
       }
    }
 
+   #ifdef HASHMAPDEBUG
    __host__
    void print_all(){
       std::cout<<">>>>*********************************"<<std::endl;
@@ -316,7 +323,7 @@ public:
          std::cout<<it->first<<" "<<it->second<<std::endl;
       }
    }
-
+   #endif
 
    __host__
    void swap(Hashinator<GID, LID>& other) {

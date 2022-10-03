@@ -45,7 +45,7 @@ void addNelems(Hashinator<val_type,val_type>&map,int numel){
    addtoMap<<<blocks,threads>>>(dmap);
    cudaDeviceSynchronize();
    auto end = std::chrono::high_resolution_clock::now();
-   map.clean_up_after_device(dmap);
+   map.download();
    //map.print_all();
    auto total_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
    printf("--->TIME: %.3f seconds for %zu elements at a load factor of %f\n", total_time.count() * 1e-9,map.size(),initial_lf);
@@ -72,7 +72,7 @@ TEST(GPU_TEST,GPU_Read_Check){
    Hashinator<val_type,val_type>* dmap = map.upload();
    gpu_read_map<<<4,4>>>(dmap);
    cudaDeviceSynchronize();
-   map.clean_up_after_device(dmap);
+   map.download();
 }   
 
 
@@ -92,7 +92,7 @@ TEST(GPU_TEST,GPU_Write_Check){
    Hashinator<val_type,val_type>* dmap = map.upload();
    gpu_read_map<<<4,4>>>(dmap);
    cudaDeviceSynchronize();
-   map.clean_up_after_device(dmap);
+   map.download();
    map.print_all();
 
 }   
@@ -111,7 +111,7 @@ TEST(GPU_TEST,GPU_Read_Write_Check){
    cudaDeviceSynchronize();
    gpu_read_map<<<blocks,32>>>(dmap);
    cudaDeviceSynchronize();
-   map.clean_up_after_device(dmap);
+   map.download();
    map.print_all();
 
 }   
@@ -141,11 +141,11 @@ TEST(GPU_TEST,GPU_Iterator){
    size_t blocks=(1<<3)/4;
    gpu_write_map<<<blocks,4>>>(dmap);
    cudaDeviceSynchronize();
-   map.clean_up_after_device(dmap);
+   map.download();
    dmap=map.upload();
    gpu_delete_map<<<1,2>>>(dmap); 
    cudaDeviceSynchronize();
-   map.clean_up_after_device(dmap);
+   map.download();
    //cudaDeviceSynchronize();
    map.print_all();
    map.print_kvals();
