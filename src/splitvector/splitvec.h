@@ -593,7 +593,7 @@ namespace split{
                return end()--;
             }
 
-            int64_t index=it.data()-_data;
+            int64_t index=it.data()-begin().data();
             if (index<0 || index>size()){
                throw std::out_of_range("Insert");
             }
@@ -609,6 +609,82 @@ namespace split{
             _data[index] = val;
             *_size=*_size+1;
             return iterator(_data+index);
+         }
+
+         __host__
+         iterator insert(iterator& it,const size_t elements, const T& val){
+
+            int64_t index=it.data()-begin().data();
+            if (index<0 || index>size()){
+               throw std::out_of_range("Insert");
+            }
+            
+            //Do we do need to increase our capacity?
+            if (size()+elements>capacity()){
+               resize(capacity()+elements);
+            }
+
+            iterator retval = &_data[index];
+            std::move(retval, end(), retval.data() + elements);
+            std::fill_n(retval, elements, val);
+            return retval;
+         }
+
+
+         __host__
+         iterator insert(iterator& it, iterator p0, iterator p1) {
+         
+            const int64_t count = p1.data() - p0.data();
+            const int64_t index = it.data() - begin().data();
+      
+            if (index<0 || index>size()){
+               throw std::out_of_range("Insert");
+            }
+
+            if (size() + count > capacity()) {
+               resize(capacity() + count);
+            }
+
+            iterator retval = &_data[index];
+            std::move(retval, end(), retval.data() + count);
+            std::copy(p0, p1, retval);
+            return retval;
+         }
+         
+
+         iterator erase(iterator& it){
+         #pragma message ("#TODO VERIFY NEXT 3 LINES POSSIBLE ERROR!" );
+            if (it==end()){
+               pop_back();
+               return end();
+            }
+
+            const int64_t index = it.data() - begin().data();
+            _data[index].~T();
+
+            for (auto i = index; i < size() - 1; i++) {
+               new (&_data[i]) T(_data[i+1]); 
+               _data[i+1].~T();
+            }
+            *_size-=1;
+            iterator retval = &_data[index];
+            return retval;
+         }
+            
+
+         __host__ 
+         iterator erase(iterator& p0, iterator& p1) {
+            const int64_t start = p0.data() - begin().data();
+            const int64_t end   =  p1.data() - begin().data();
+
+            for (int64_t i = 0; i < end - start; i++) {
+               new (&_data[start+i]) T(_data[end+1]); 
+               _data[start+i].~T();
+            }
+
+            *_size -= end - start;
+            iterator it = &_data[start];
+            return it;
          }
 
 

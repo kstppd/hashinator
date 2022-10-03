@@ -244,7 +244,7 @@ TEST(Vector_Functionality , Push_Back_2){
 
 }
 
-TEST(Vector_Functionality , Insert_0){
+TEST(Vector_Functionality , Insert_1_Element){
    {
       split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
       auto s0=a.size(); auto c0=a.capacity();
@@ -293,8 +293,110 @@ TEST(Vector_Functionality , Insert_0){
 }
 
 
+TEST(Vector_Functionality , Insert_Many_Elements){
+
+   {
+      split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
+      auto s0=a.size(); auto c0=a.capacity();
+      auto it(a.begin());
+      auto it2=a.insert(it,10,-1);
+      for (int i =0 ; i<10 ; i++){
+         expect_true(a[i]=-1);
+      }
+      expect_true(a.front()==-1);
+      expect_true(a.size()==s0+10);
+   }
+   {
+      vec a{1,2,3,4,5,6,7,8,9,10};
+      auto s0=a.size(); auto c0=a.capacity();
+      vec::iterator it(a.end());
+      auto it2=a.insert(it,10,-1);
+      for (int i =s0 ; i<a.size() ; i++){
+         expect_true(a[i]=-1);
+      }
+      expect_true(a.back()=-1);
+      expect_true(a.size()==s0+10);
+   }
+
+   {
+     vec a{1,2,3,4,5,6,7,8,9,10};
+     auto s0=a.size(); auto c0=a.capacity();
+     try {
+      //hehe
+      vec::iterator it(nullptr);
+      auto it2=a.insert(it,10,-1);
+     }// this has to throw
+     catch (...) {
+        expect_true(true);
+        expect_true(a.capacity()==c0);
+        expect_true(a.size()==s0);
+           return;
+     }
+     //if we end up here it never threw so something's up
+     expect_true(false);
+   }
+}
 
 
+TEST(Vector_Functionality , Insert_Range_Based){
+
+   {
+      split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
+      auto backup=a;
+      split::SplitVector<int> b{-1,-2,-3,-4,-5,-6,-7,-8,-9,-10};
+      auto s0=a.size();
+      auto it(a.end());
+      auto it_b0(b.begin());
+      auto it_b1(b.end());
+      a.insert(it,it_b0,it_b1);
+      expect_true(a.size()==s0+b.size());
+      for (int i=0 ; i <10 ; i++){
+         expect_true(a[i]=backup[i]);
+
+      }
+      for (int i=10 ; i <20 ; i++){
+         expect_true(a[i]=b[i]);
+      }
+   }
+
+
+   {
+      split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
+      auto backup=a;
+      split::SplitVector<int> b{-1,-2,-3,-4,-5,-6,-7,-8,-9,-10};
+      auto s0=a.size();
+      auto it(a.end());
+      auto it_b0(b.begin());
+      auto it_b1(b.begin());
+      a.insert(it,it_b0,it_b1);
+      expect_true(a.size()==s0);
+      for (int i=0 ; i <10 ; i++){
+         expect_true(a[i]=backup[i]);
+
+      }
+   }
+
+}
+
+TEST(Vector_Functionality , Erase_Single){
+
+      split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
+      vec::iterator it(&a[4]);
+      auto backup=*it;
+      auto s0=a.size();
+      a.erase(it);
+      expect_true(backup!=*it);
+      expect_true(a.size()==s0-1);
+}
+
+
+TEST(Vector_Functionality , Erase_Range){
+      split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
+      auto it0(a.begin());
+      auto it1(a.end());
+      a.erase(it0,it1);
+      expect_true(a.size()==0);
+}
 
 
 int main(int argc, char* argv[]){
