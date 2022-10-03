@@ -324,10 +324,13 @@ public:
       int tempSizePower = sizePower;
       sizePower = other.sizePower;
       other.sizePower = tempSizePower;
-
       size_t tempFill = fill;
       fill = other.fill;
       other.fill = tempFill;
+      std::swap(d_sizePower,other.d_sizePower);
+      std::swap(d_maxBucketOverflow,other.d_maxBucketOverflow);
+      std::swap(d_fill,other.d_fill);
+      std::swap(device_map,other.device_map);
    }
 
 
