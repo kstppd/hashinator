@@ -429,6 +429,9 @@ namespace split{
 
          __host__
          void clear(){
+             for (size_t i = 0; i < size();i++) {
+               _data[i].~T();
+             }
             *_size=0;
             return;
          }
