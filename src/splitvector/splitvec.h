@@ -653,11 +653,6 @@ namespace split{
          
 
          iterator erase(iterator& it){
-         #pragma message ("#TODO VERIFY NEXT 3 LINES POSSIBLE ERROR!" );
-            if (it==end()){
-               pop_back();
-               return end();
-            }
 
             const int64_t index = it.data() - begin().data();
             _data[index].~T();
@@ -678,8 +673,8 @@ namespace split{
             const int64_t end   =  p1.data() - begin().data();
 
             for (int64_t i = 0; i < end - start; i++) {
-               new (&_data[start+i]) T(_data[end+1]); 
                _data[start+i].~T();
+               new (&_data[start+i]) T(_data[end+1]); 
             }
 
             *_size -= end - start;
