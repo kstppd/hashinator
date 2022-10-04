@@ -48,7 +48,7 @@
 
 
 template <typename T>
-class basic_host_allocator {
+class split_host_allocator {
 public:
     // naming tradition
     typedef T value_type;
@@ -59,18 +59,18 @@ public:
     typedef std::size_t size_type;
     typedef std::ptrdiff_t difference_type;
 
-    template <typename U> struct rebind {typedef basic_host_allocator<U> other;};
-    basic_host_allocator() = default;
-    basic_host_allocator(const basic_host_allocator &) {}
-    template <typename U> basic_host_allocator(const basic_host_allocator<U> &other) {}
-    basic_host_allocator &operator=(const basic_host_allocator &) = delete;
-    ~basic_host_allocator() = default;
+    template <typename U> struct rebind {typedef split_host_allocator<U> other;};
+    split_host_allocator() = default;
+    split_host_allocator(const split_host_allocator &) {}
+    template <typename U> split_host_allocator(const split_host_allocator<U> &other) {}
+    split_host_allocator &operator=(const split_host_allocator &) = delete;
+    ~split_host_allocator() = default;
     //Members
     pointer address(reference r) {return &r;}
     const_pointer address(const_reference cr) {return &cr;}
     size_type max_size() {return std::numeric_limits<size_type>::max();}
-    bool operator==(const basic_host_allocator &) const {return true;}
-    bool operator!=(const basic_host_allocator &) const {return false;}
+    bool operator==(const split_host_allocator &) const {return true;}
+    bool operator!=(const split_host_allocator &) const {return false;}
     pointer allocate(size_type n) {return static_cast<pointer>(operator new(sizeof(T) * n));}
     pointer allocate(size_type n, pointer ptr) {return allocate(n);}
     void deallocate(pointer ptr, size_type n) {operator delete(ptr);}
@@ -89,7 +89,7 @@ public:
 namespace split{
 
    template<typename T,
-class Allocator=basic_host_allocator<T>>
+class Allocator=split_host_allocator<T>>
    class SplitVector{
       
       private:
@@ -329,6 +329,7 @@ class Allocator=basic_host_allocator<T>>
 
             //Vector was default initialized
             if (_data==nullptr){
+               _deallocate();
                _allocate(requested_space);
                *_size=0;
                return;

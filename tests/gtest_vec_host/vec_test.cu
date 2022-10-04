@@ -334,13 +334,13 @@ TEST(Vector_Functionality , Erase_Single){
 }
 
 
-TEST(Vector_Functionality , Erase_Range){
-      split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
-      auto it0(a.begin());
-      auto it1(a.end());
-      a.erase(it0,it1);
-      expect_true(a.size()==0);
-}
+//TEST(Vector_Functionality , Erase_Range){
+      //split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
+      //auto it0(a.begin());
+      //auto it1(a.end());
+      //a.erase(it0,it1);
+      //expect_true(a.size()==0);
+//}
 
 
 int main(int argc, char* argv[]){
