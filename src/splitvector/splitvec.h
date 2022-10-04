@@ -22,161 +22,12 @@
  */
 #include <iostream>
 #include <cuda_runtime_api.h>
+#include "split_allocators.h"
 #include <cuda.h>
 #include <cassert>
 #include <cstring>
 #include <stdlib.h>
 
-#ifdef CUDAVEC
-   #define CheckErrors(msg) \
-      do { \
-         cudaError_t __err = cudaGetLastError(); \
-         if (__err != cudaSuccess) { \
-               fprintf(stderr, "Fatal error: %s (%s at %s:%d)\n", \
-                  msg, cudaGetErrorString(__err), \
-                  __FILE__, __LINE__); \
-               fprintf(stderr, "***** FAILED - ABORTING*****\n"); \
-               exit(1); \
-         } \
-      } while (0)
-#else
-//TODO--> make it do smth.
-#pragma message ("TODO-->Make this a no NOOP" )
-   #define CheckErrors(msg) \
-      do { }  while (0)
-#endif
-
-
-template <typename T>
-class split_host_allocator {
-public:
-    // naming tradition
-    typedef T value_type;
-    typedef T *pointer;
-    typedef const T *const_pointer;
-    typedef T &reference;
-    typedef const T &const_reference;
-    typedef std::size_t size_type;
-    typedef std::ptrdiff_t difference_type;
-
-    template <typename U> struct rebind {typedef split_host_allocator<U> other;};
-    split_host_allocator() = default;
-    split_host_allocator(const split_host_allocator &) {}
-    template <typename U> split_host_allocator(const split_host_allocator<U> &other) {}
-    split_host_allocator &operator=(const split_host_allocator &) = delete;
-    ~split_host_allocator() = default;
-    //Members
-    pointer address(reference r) {return &r;}
-    const_pointer address(const_reference cr) {return &cr;}
-    size_type max_size() {return std::numeric_limits<size_type>::max();}
-    bool operator==(const split_host_allocator &) const {return true;}
-    bool operator!=(const split_host_allocator &) const {return false;}
-    pointer allocate(size_type n) {return static_cast<pointer>(operator new(sizeof(T) * n));}
-    pointer allocate(size_type n, pointer ptr) {return allocate(n);}
-    void deallocate(pointer ptr, size_type n) {operator delete(ptr);}
-    void construct(pointer ptr, const value_type &t) {new(ptr) value_type(t);}
-    void destroy(pointer ptr) {ptr->~value_type();}
-    pointer allocate_and_construct(size_type n , const value_type &t){return new T[n]; }
-    void deallocate_array(size_type n, pointer ptr){
-       delete []ptr;
-    }
-    void* allocate_raw(size_t bytes){ return operator new(bytes);}
-    template<typename  C>
-    void deallocate_raw(C* ptr){delete ptr; }
-
-};
-
-template <typename T>
-class split_unified_allocator {
-public:
-    // naming tradition
-    typedef T value_type;
-    typedef T *pointer;
-    typedef const T *const_pointer;
-    typedef T &reference;
-    typedef const T &const_reference;
-    typedef std::size_t size_type;
-    typedef std::ptrdiff_t difference_type;
-
-    template <typename U> struct rebind {typedef split_unified_allocator<U> other;};
-    split_unified_allocator() = default;
-    split_unified_allocator(const split_unified_allocator &) {}
-    template <typename U> split_unified_allocator(const split_unified_allocator<U> &other) {}
-    split_unified_allocator &operator=(const split_unified_allocator &) = delete;
-    ~split_unified_allocator() = default;
-    //Members
-    pointer address(reference r) {return &r;}
-    const_pointer address(const_reference cr) {return &cr;}
-    size_type max_size() {return std::numeric_limits<size_type>::max();}
-    bool operator==(const split_unified_allocator &) const {return true;}
-    bool operator!=(const split_unified_allocator &) const {return false;}
-    pointer allocate(size_type n) {return static_cast<pointer>(operator new(sizeof(T) * n));}
-    pointer allocate(size_type n, pointer ptr) {return allocate(n);}
-    void deallocate(pointer ptr, size_type n) {operator delete(ptr);}
-    void construct(pointer ptr, const value_type &t) {new(ptr) value_type(t);}
-    void destroy(pointer ptr) {ptr->~value_type();}
-    pointer allocate_and_construct(size_type n , const value_type &t){return new T[n]; }
-    void deallocate_array(size_type n , pointer ptr){
-       delete []ptr;
-    }
-    void* allocate_raw(size_t bytes){ return operator new(bytes);}
-    template<typename  C>
-    void deallocate_raw(C* ptr){delete ptr; }
-
-};
-
-template <typename T>
-class split_unified_allocator_2 {
-public:
-    // naming tradition
-    typedef T value_type;
-    typedef T *pointer;
-    typedef const T *const_pointer;
-    typedef T &reference;
-    typedef const T &const_reference;
-    typedef std::size_t size_type;
-    typedef std::ptrdiff_t difference_type;
-
-    template <typename U> struct rebind {typedef split_unified_allocator_2<U> other;};
-    split_unified_allocator_2() = default;
-    split_unified_allocator_2(const split_unified_allocator_2 &) {}
-    template <typename U> split_unified_allocator_2(const split_unified_allocator_2<U> &other) {}
-    split_unified_allocator_2 &operator=(const split_unified_allocator_2 &) = delete;
-    ~split_unified_allocator_2() = default;
-    //Members
-    pointer address(reference r) {return &r;}
-    const_pointer address(const_reference cr) {return &cr;}
-    size_type max_size() {return std::numeric_limits<size_type>::max();}
-    bool operator==(const split_unified_allocator_2 &) const {return true;}
-    bool operator!=(const split_unified_allocator_2 &) const {return false;}
-
-
-    pointer allocate_and_construct(size_type n , const value_type &t){
-       T* ptr;
-       cudaMallocManaged((void**)&ptr, n * sizeof(T));
-       for (size_t i=0; i < n; i++){
-          new (&ptr[i]) T(); 
-       }
-       return ptr;
-    }
-
-    void deallocate_array(size_type n, pointer ptr){
-       for (size_type i=0; i<n;i++){
-          ptr[i].~T();
-       }
-       cudaFree(ptr);
-    }
-    void* allocate_raw(size_t bytes){
-       void *ptr;
-       cudaMallocManaged((void**)&ptr,bytes);
-       return ptr;
-    }
-    template<typename  C>
-    void deallocate_raw(C* ptr){
-       cudaFree(ptr);
-    }
-
-};
 
 
 namespace split{
@@ -202,42 +53,6 @@ namespace split{
             assert(index<size() &&  "out of range");
          }
 
-#ifdef CUDAVEC
-         /*Allocation/Deallocation with unified memory*/
-         void _allocate(size_t size){
-               cudaMallocManaged((void**)&_size,sizeof(size_t));
-               cudaMallocManaged((void**)&_capacity,sizeof(size_t));
-               _check_ptr(_size);
-               _check_ptr(_capacity);
-               *_size = size;
-               *_capacity = size;
-               if (size==0){return;}
-               cudaMallocManaged((void**)&_data, size * sizeof(T));
-               _check_ptr(_data);
-               //Here we also need to construct the object
-               for (size_t i=0; i < size; i++){
-                  new (&_data[i]) T(); 
-               }
-               CheckErrors("Managed Allocation");
-               cudaDeviceSynchronize();
-         }
-
-         void _deallocate(){
-               if (_data!=nullptr){
-                  for (size_t i=0; i<capacity();i++){
-                     _data[i].~T();
-                  }
-                  cudaFree(_data);
-                  _data=nullptr;
-                  CheckErrors("Managed Deallocation");
-               }
-               cudaFree(_size);
-               cudaFree(_capacity);
-               CheckErrors("Managed Deallocation");
-               cudaDeviceSynchronize();
-         }
-
-#else
          /*Allocation/Deallocation only on host*/
          void _allocate(size_t size){
             _size=new (_allocator.allocate_raw(sizeof(size_t))) size_t(size); 
@@ -263,7 +78,6 @@ namespace split{
                _allocator.deallocate_raw(_size);
                _allocator.deallocate_raw(_capacity);
          }
-#endif
 
       public:
          /* Available Constructors :
@@ -435,21 +249,12 @@ namespace split{
             requested_space*=_alloc_multiplier;
             // Allocate new Space
             T* _new_data;
-            #ifdef CUDAVEC
-               cudaMallocManaged((void**)&_new_data, requested_space * sizeof(T));
-               //Here we also need to construct the objects manually
-               for (size_t i=0; i < requested_space; i++){
-                  new (&_new_data[i]) T(); 
-               }
-               CheckErrors("Reserve:: Managed Allocation");
-            #else
-               _new_data= _allocator.allocate_and_construct(requested_space,T());
-               if (_new_data==nullptr){
-                  _allocator.deallocate_array(requested_space,_new_data);
-                  this->_deallocate();
-                  throw std::bad_alloc();
-               }
-            #endif
+            _new_data= _allocator.allocate_and_construct(requested_space,T());
+            if (_new_data==nullptr){
+               _allocator.deallocate_array(requested_space,_new_data);
+               this->_deallocate();
+               throw std::bad_alloc();
+            }
             
             //Copy over
             for (size_t i=0; i<size();i++){
@@ -457,14 +262,7 @@ namespace split{
             }
 
             //Deallocate old space
-            #ifdef CUDAVEC
-            for (size_t i=0; i<capacity();i++){
-               _data[i].~T();
-            }
-            cudaFree(_data);
-            #else
             _allocator.deallocate_array(capacity(),_data);
-            #endif
 
             //Swap pointers & update capacity
             //Size remains the same ofc
@@ -503,21 +301,12 @@ namespace split{
 
             // Allocate new Space
             T* _new_data;
-            #ifdef CUDAVEC
-               cudaMallocManaged((void**)&_new_data, curr_size * sizeof(T));
-               //Here we also need to construct the objects manually
-               for (size_t i=0; i < curr_size; i++){
-                  new (&_new_data[i]) T(); 
-               }
-               CheckErrors("Reserve:: Managed Allocation");
-            #else
-               _new_data=_allocator.allocate_and_construct(curr_size,T());
-               if (_new_data==nullptr){
-                  _allocator.deallocate_array(curr_size,_new_data);
-                  this->_deallocate();
-                  throw std::bad_alloc();
-               }
-            #endif
+            _new_data=_allocator.allocate_and_construct(curr_size,T());
+            if (_new_data==nullptr){
+               _allocator.deallocate_array(curr_size,_new_data);
+               this->_deallocate();
+               throw std::bad_alloc();
+            }
 
       
             //Copy over
@@ -526,15 +315,7 @@ namespace split{
             }
 
             //Deallocate old space
-            #ifdef CUDAVEC
-            for (size_t i=0; i<capacity();i++){
-               _data[i].~T();
-            }
-            cudaFree(_data);
-            #else
             _allocator.deallocate_array(capacity(),_data);
-            #endif
-
 
             //Swap pointers & update capacity
             //Size remains the same ofc

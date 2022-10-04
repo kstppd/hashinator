@@ -10,7 +10,8 @@
 #define expect_eq EXPECT_EQ
 #define N 1<<12
 
-typedef split::SplitVector<int,split_unified_allocator_2<int>> vec ;
+typedef split::SplitVector<int,split::split_unified_allocator<int>> vec ;
+//typedef split::SplitVector<int,split_host_allocator<int>> vec ;
 
 
 TEST(Constructors,Default){
