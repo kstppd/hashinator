@@ -77,7 +77,7 @@ public:
     void construct(pointer ptr, const value_type &t) {new(ptr) value_type(t);}
     void destroy(pointer ptr) {ptr->~value_type();}
     pointer allocate_and_construct(size_type n , const value_type &t){return new T[n]; }
-    void deallocate_array(pointer ptr){
+    void deallocate_array(size_type n, pointer ptr){
        delete []ptr;
     }
     void* allocate_raw(size_t bytes){ return operator new(bytes);}
@@ -86,10 +86,102 @@ public:
 
 };
 
+template <typename T>
+class split_unified_allocator {
+public:
+    // naming tradition
+    typedef T value_type;
+    typedef T *pointer;
+    typedef const T *const_pointer;
+    typedef T &reference;
+    typedef const T &const_reference;
+    typedef std::size_t size_type;
+    typedef std::ptrdiff_t difference_type;
+
+    template <typename U> struct rebind {typedef split_unified_allocator<U> other;};
+    split_unified_allocator() = default;
+    split_unified_allocator(const split_unified_allocator &) {}
+    template <typename U> split_unified_allocator(const split_unified_allocator<U> &other) {}
+    split_unified_allocator &operator=(const split_unified_allocator &) = delete;
+    ~split_unified_allocator() = default;
+    //Members
+    pointer address(reference r) {return &r;}
+    const_pointer address(const_reference cr) {return &cr;}
+    size_type max_size() {return std::numeric_limits<size_type>::max();}
+    bool operator==(const split_unified_allocator &) const {return true;}
+    bool operator!=(const split_unified_allocator &) const {return false;}
+    pointer allocate(size_type n) {return static_cast<pointer>(operator new(sizeof(T) * n));}
+    pointer allocate(size_type n, pointer ptr) {return allocate(n);}
+    void deallocate(pointer ptr, size_type n) {operator delete(ptr);}
+    void construct(pointer ptr, const value_type &t) {new(ptr) value_type(t);}
+    void destroy(pointer ptr) {ptr->~value_type();}
+    pointer allocate_and_construct(size_type n , const value_type &t){return new T[n]; }
+    void deallocate_array(size_type n , pointer ptr){
+       delete []ptr;
+    }
+    void* allocate_raw(size_t bytes){ return operator new(bytes);}
+    template<typename  C>
+    void deallocate_raw(C* ptr){delete ptr; }
+
+};
+
+template <typename T>
+class split_unified_allocator_2 {
+public:
+    // naming tradition
+    typedef T value_type;
+    typedef T *pointer;
+    typedef const T *const_pointer;
+    typedef T &reference;
+    typedef const T &const_reference;
+    typedef std::size_t size_type;
+    typedef std::ptrdiff_t difference_type;
+
+    template <typename U> struct rebind {typedef split_unified_allocator_2<U> other;};
+    split_unified_allocator_2() = default;
+    split_unified_allocator_2(const split_unified_allocator_2 &) {}
+    template <typename U> split_unified_allocator_2(const split_unified_allocator_2<U> &other) {}
+    split_unified_allocator_2 &operator=(const split_unified_allocator_2 &) = delete;
+    ~split_unified_allocator_2() = default;
+    //Members
+    pointer address(reference r) {return &r;}
+    const_pointer address(const_reference cr) {return &cr;}
+    size_type max_size() {return std::numeric_limits<size_type>::max();}
+    bool operator==(const split_unified_allocator_2 &) const {return true;}
+    bool operator!=(const split_unified_allocator_2 &) const {return false;}
+
+
+    pointer allocate_and_construct(size_type n , const value_type &t){
+       T* ptr;
+       cudaMallocManaged((void**)&ptr, n * sizeof(T));
+       for (size_t i=0; i < n; i++){
+          new (&ptr[i]) T(); 
+       }
+       return ptr;
+    }
+
+    void deallocate_array(size_type n, pointer ptr){
+       for (size_type i=0; i<n;i++){
+          ptr[i].~T();
+       }
+       cudaFree(ptr);
+    }
+    void* allocate_raw(size_t bytes){
+       void *ptr;
+       cudaMallocManaged((void**)&ptr,bytes);
+       return ptr;
+    }
+    template<typename  C>
+    void deallocate_raw(C* ptr){
+       cudaFree(ptr);
+    }
+
+};
+
+
 namespace split{
 
-   template<typename T,
-class Allocator=split_host_allocator<T>>
+   template<typename T,class Allocator=split_host_allocator<T>>
    class SplitVector{
       
       private:
@@ -156,7 +248,7 @@ class Allocator=split_host_allocator<T>>
             _data=_allocator.allocate_and_construct(size,T());
             _check_ptr(_data);
             if (_data == nullptr){
-               _allocator.deallocate_array(_data);
+               _allocator.deallocate_array(capacity(),_data);
                _allocator.deallocate_raw(_size);
                _allocator.deallocate_raw(_capacity);
                throw std::bad_alloc();
@@ -164,12 +256,12 @@ class Allocator=split_host_allocator<T>>
          }
 
          void _deallocate(){
-               _allocator.deallocate_raw(_size);
-               _allocator.deallocate_raw(_capacity);
                if (_data!=nullptr){
-                  _allocator.deallocate_array(_data);
+                  _allocator.deallocate_array(capacity(),_data);
                   _data=nullptr;
                }
+               _allocator.deallocate_raw(_size);
+               _allocator.deallocate_raw(_capacity);
          }
 #endif
 
@@ -268,12 +360,12 @@ class Allocator=split_host_allocator<T>>
          * are pointing to the same container as 
          * before. 
          */
-         void swap(SplitVector<T>& other) noexcept{
+         void swap(SplitVector<T,Allocator>& other) noexcept{
 
             if (*this==other){ //no need to do any work
                return;
             }
-            SplitVector<T> temp(this->size());
+            SplitVector<T,Allocator> temp(this->size());
             temp=*this;
             *this=other;
             other=temp;
@@ -353,7 +445,7 @@ class Allocator=split_host_allocator<T>>
             #else
                _new_data= _allocator.allocate_and_construct(requested_space,T());
                if (_new_data==nullptr){
-                  _allocator.deallocate_array(_new_data);
+                  _allocator.deallocate_array(requested_space,_new_data);
                   this->_deallocate();
                   throw std::bad_alloc();
                }
@@ -371,7 +463,7 @@ class Allocator=split_host_allocator<T>>
             }
             cudaFree(_data);
             #else
-            _allocator.deallocate_array(_data);
+            _allocator.deallocate_array(capacity(),_data);
             #endif
 
             //Swap pointers & update capacity
@@ -421,7 +513,7 @@ class Allocator=split_host_allocator<T>>
             #else
                _new_data=_allocator.allocate_and_construct(curr_size,T());
                if (_new_data==nullptr){
-                  _allocator.deallocate_array(_new_data);
+                  _allocator.deallocate_array(curr_size,_new_data);
                   this->_deallocate();
                   throw std::bad_alloc();
                }
@@ -440,7 +532,7 @@ class Allocator=split_host_allocator<T>>
             }
             cudaFree(_data);
             #else
-            _allocator.deallocate_array(_data);
+            _allocator.deallocate_array(capacity(),_data);
             #endif
 
 
@@ -517,7 +609,7 @@ class Allocator=split_host_allocator<T>>
             // If we have no allocated memory because the default ctor was used then 
             // allocate one element, set it and return 
             if (_data==nullptr){
-               *this=SplitVector<T>(1,val);
+               *this=SplitVector<T,Allocator>(1,val);
                return;
             }
             resize(size()+1);
@@ -730,76 +822,11 @@ class Allocator=split_host_allocator<T>>
          }
 
 
-         /*Host side operator += */
-         __host__  SplitVector<T>& operator+=(const SplitVector<T>& rhs) {
-            assert(this->size()==rhs.size());
-            for (size_t i=0; i< this->size(); i++){
-               this->_data[i] = this->_data[i]+rhs[i];
-            }
-            return *this;
-         }
-
-
-         /*Host side operator /= */
-         __host__ SplitVector<T>& operator/=(const SplitVector<T>& rhs) {
-            assert(this->size()==rhs.size());
-            for (size_t i=0; i< this->size(); i++){
-               this->_data[i] = this->_data[i]/rhs[i];
-            }
-            return *this;
-         }
-
-         /*Host side operator -= */
-         __host__ SplitVector<T>& operator-=(const SplitVector<T>& rhs) {
-            assert(this->size()==rhs.size());
-            for (size_t i=0; i< this->size(); i++){
-               this->_data[i] = this->_data[i]-rhs[i];
-            }
-            return *this;
-         }
-
-         /*Host side operator *= */
-         __host__ SplitVector<T>& operator*=(const SplitVector<T>& rhs) {
-            assert(this->size()==rhs.size());
-            for (size_t i=0; i< this->size(); i++){
-               this->_data[i] = this->_data[i]*rhs[i];
-            }
-            return *this;
-         }
-
    };
     
-   template <typename  T,typename std::enable_if<std::is_arithmetic<T>::value>::type * = nullptr> 
-   static inline __host__  SplitVector<T> operator+(const  SplitVector<T> &lhs, const  SplitVector<T> &rhs){
-      SplitVector<T> child(lhs.size());
-      child=lhs;
-      return child+=rhs;
-   }
-
-   template <typename  T,typename std::enable_if<std::is_arithmetic<T>::value>::type * = nullptr> 
-   static inline __host__  SplitVector<T> operator-(const  SplitVector<T> &lhs, const  SplitVector<T> &rhs){
-      SplitVector<T> child(lhs.size());
-      child=lhs;
-      return child-=rhs;
-   }
-
-   template <typename  T,typename std::enable_if<std::is_arithmetic<T>::value>::type * = nullptr> 
-   static inline __host__  SplitVector<T> operator*(const  SplitVector<T> &lhs, const  SplitVector<T> &rhs){
-      SplitVector<T> child(lhs.size());
-      child=lhs;
-      return child*=rhs;
-   }
- 
-   template <typename  T,typename std::enable_if<std::is_arithmetic<T>::value>::type * = nullptr> 
-   static inline __host__  SplitVector<T> operator/(const  SplitVector<T> &lhs, const  SplitVector<T> &rhs){
-      SplitVector<T> child(lhs.size());
-      child=lhs;
-      return child/=rhs;
-   }
-	
 	/*Equal operator*/
-	template <typename  T>
-	static inline __host__  bool operator == (const  SplitVector<T> &lhs, const  SplitVector<T> &rhs){
+	template <typename  T,class Allocator>
+	static inline __host__  bool operator == (const  SplitVector<T,Allocator> &lhs, const  SplitVector<T,Allocator> &rhs){
 		if (lhs.size()!= rhs.size()){
 			return false;
 		}
@@ -813,8 +840,8 @@ class Allocator=split_host_allocator<T>>
 	}
 
 	/*Not-Equal operator*/
-	template <typename  T>
-	static inline __host__  bool operator != (const  SplitVector<T> &lhs, const  SplitVector<T> &rhs){
+	template <typename  T,class Allocator>
+	static inline __host__  bool operator != (const  SplitVector<T,Allocator> &lhs, const  SplitVector<T,Allocator> &rhs){
 		return !(rhs==lhs);
 	}
 }

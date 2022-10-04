@@ -7,7 +7,7 @@ EXTRA+= -gencode arch=compute_60,code=sm_60 -rdc=true -L /usr/lib/x86_64-linux-g
 EXTRA+=  -DHASHMAPDEBUG --expt-relaxed-constexpr
 
 GTEST=-lgtest -lgtest_main -lpthread
-OBJ= map_gpu_vs_cpu.o speed_test.o	  mempool_main.o	  gtest_vec.o	gtest_vec_host.o	  gtest_hashmap.o	  map_add_remove.o 	  vecspeedtest
+OBJ= map_gpu_vs_cpu.o speed_test.o	  mempool_main.o	  gtest_vec.o	gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o	  map_add_remove.o 	  vecspeedtest
 
 default: all
 all: ${OBJ}
@@ -21,6 +21,7 @@ allclean:
 	rm vec_of_vec &
 	rm gtestvec &
 	rm gtestvechost &
+	rm gtestvecdevice &
 	rm gtesthashmap &
 	rm mempool &
 	rm map_rw &
@@ -48,6 +49,9 @@ gtest_vec.o: gtest_vec/vec_test.cu
 
 gtest_vec_host.o: gtest_vec_host/vec_test.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o gtestvechost gtest_vec_host/vec_test.cu
+
+gtest_vec_device.o: gtest_vec_device/vec_test.cu
+	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o gtestvecdevice gtest_vec_device/vec_test.cu
 
 vecspeedtest: vec_speed_test/main.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} -o vecspeedtest vec_speed_test/main.cu -DPROFINY_CALL_GRAPH_PROFILER -lboost_timer -lboost_chrono -lboost_system
