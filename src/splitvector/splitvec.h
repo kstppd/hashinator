@@ -46,9 +46,50 @@
       do { }  while (0)
 #endif
 
+
+template <typename T>
+class basic_host_allocator {
+public:
+    // naming tradition
+    typedef T value_type;
+    typedef T *pointer;
+    typedef const T *const_pointer;
+    typedef T &reference;
+    typedef const T &const_reference;
+    typedef std::size_t size_type;
+    typedef std::ptrdiff_t difference_type;
+
+    template <typename U> struct rebind {typedef basic_host_allocator<U> other;};
+    basic_host_allocator() = default;
+    basic_host_allocator(const basic_host_allocator &) {}
+    template <typename U> basic_host_allocator(const basic_host_allocator<U> &other) {}
+    basic_host_allocator &operator=(const basic_host_allocator &) = delete;
+    ~basic_host_allocator() = default;
+    //Members
+    pointer address(reference r) {return &r;}
+    const_pointer address(const_reference cr) {return &cr;}
+    size_type max_size() {return std::numeric_limits<size_type>::max();}
+    bool operator==(const basic_host_allocator &) const {return true;}
+    bool operator!=(const basic_host_allocator &) const {return false;}
+    pointer allocate(size_type n) {return static_cast<pointer>(operator new(sizeof(T) * n));}
+    pointer allocate(size_type n, pointer ptr) {return allocate(n);}
+    void deallocate(pointer ptr, size_type n) {operator delete(ptr);}
+    void construct(pointer ptr, const value_type &t) {new(ptr) value_type(t);}
+    void destroy(pointer ptr) {ptr->~value_type();}
+    pointer allocate_and_construct(size_type n , const value_type &t){return new T[n]; }
+    void deallocate_array(pointer ptr){
+       delete []ptr;
+    }
+    void* allocate_raw(size_t bytes){ return operator new(bytes);}
+    template<typename  C>
+    void deallocate_raw(C* ptr){delete ptr; }
+
+};
+
 namespace split{
 
-   template<typename T>
+   template<typename T,
+class Allocator=basic_host_allocator<T>>
    class SplitVector{
       
       private:
@@ -56,6 +97,7 @@ namespace split{
          size_t* _size;                 // number of elements in vector.
          size_t* _capacity;             // number of allocated elements
          size_t  _alloc_multiplier = 2; //host variable; multiplier for  when reserving more space
+         Allocator  _allocator;
  
          void _check_ptr(void* ptr){
             if (ptr==nullptr){
@@ -106,25 +148,26 @@ namespace split{
 #else
          /*Allocation/Deallocation only on host*/
          void _allocate(size_t size){
-            _size=new size_t(size);
-            _capacity=new size_t(size);
+            _size=new (_allocator.allocate_raw(sizeof(size_t))) size_t(size); 
+            _capacity=new (_allocator.allocate_raw(sizeof(size_t))) size_t(size); 
             _check_ptr(_size);
             _check_ptr(_capacity);
             if (size==0){return;}
-            _data=new T[size];
+            _data=_allocator.allocate_and_construct(size,T());
             _check_ptr(_data);
             if (_data == nullptr){
-               delete [] _data;
-               delete _size;
+               _allocator.deallocate_array(_data);
+               _allocator.deallocate_raw(_size);
+               _allocator.deallocate_raw(_capacity);
                throw std::bad_alloc();
             }
          }
 
          void _deallocate(){
-               delete _size;
-               delete _capacity;
+               _allocator.deallocate_raw(_size);
+               _allocator.deallocate_raw(_capacity);
                if (_data!=nullptr){
-                  delete [] _data;
+                  _allocator.deallocate_array(_data);
                   _data=nullptr;
                }
          }
@@ -307,9 +350,9 @@ namespace split{
                }
                CheckErrors("Reserve:: Managed Allocation");
             #else
-               _new_data=new T[requested_space];
+               _new_data= _allocator.allocate_and_construct(requested_space,T());
                if (_new_data==nullptr){
-                  delete [] _new_data;
+                  _allocator.deallocate_array(_new_data);
                   this->_deallocate();
                   throw std::bad_alloc();
                }
@@ -327,7 +370,7 @@ namespace split{
             }
             cudaFree(_data);
             #else
-            delete [] _data;
+            _allocator.deallocate_array(_data);
             #endif
 
             //Swap pointers & update capacity
@@ -375,9 +418,9 @@ namespace split{
                }
                CheckErrors("Reserve:: Managed Allocation");
             #else
-               _new_data=new T[curr_size];
+               _new_data=_allocator.allocate_and_construct(curr_size,T());
                if (_new_data==nullptr){
-                  delete [] _new_data;
+                  _allocator.deallocate_array(_new_data);
                   this->_deallocate();
                   throw std::bad_alloc();
                }
@@ -396,7 +439,7 @@ namespace split{
             }
             cudaFree(_data);
             #else
-            delete [] _data;
+            _allocator.deallocate_array(_data);
             #endif
 
 
