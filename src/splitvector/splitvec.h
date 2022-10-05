@@ -136,7 +136,7 @@ namespace split{
                }
             }
 
-         __host__ SplitVector(const SplitVector &other){
+         __host__ SplitVector(const SplitVector<T,Allocator,Meta_Allocator> &other){
                const size_t size_to_allocate = other.size();
                this->_allocate(size_to_allocate);
                for (size_t i=0; i<size_to_allocate; i++){
@@ -165,7 +165,7 @@ namespace split{
 
          
          /*Custom Assignment operator*/
-         __host__  SplitVector& operator=(const SplitVector& other){
+         __host__  SplitVector<T,Allocator,Meta_Allocator>& operator=(const SplitVector<T,Allocator,Meta_Allocator>& other){
             //Match other's size prior to copying
             resize(other.size());
             for (size_t i=0; i< size(); i++){
@@ -178,7 +178,7 @@ namespace split{
          //Method that return a pointer which can be passed to GPU kernels
          //Has to be cudaFree'd after use otherwise memleak (small one but still)!
          __host__
-         SplitVector* upload(cudaStream_t stream = 0 ){
+         SplitVector<T,Allocator,Meta_Allocator>* upload(cudaStream_t stream = 0 ){
             SplitVector* d_vec;
             optimizeGPU(stream);
             cudaMalloc((void **)&d_vec, sizeof(SplitVector));
