@@ -27,12 +27,19 @@
 #include <cassert>
 #include <cstring>
 #include <stdlib.h>
-
+#include <algorithm>
+#include <memory>
 
 
 namespace split{
 
-   template<typename T,class Allocator=split_host_allocator<T>>
+   template <typename T> void swap(T& t1, T& t2) {
+       T tmp = std::move(t1);
+       t1 = std::move(t2);
+       t2 = std::move(tmp);
+   }
+
+   template<typename T,class Allocator=split::split_host_allocator<T>>
    class SplitVector{
       
       private:
@@ -40,7 +47,7 @@ namespace split{
          size_t* _size;                 // number of elements in vector.
          size_t* _capacity;             // number of allocated elements
          size_t  _alloc_multiplier = 2; //host variable; multiplier for  when reserving more space
-         Allocator  _allocator;
+         Allocator  _allocator;         // Allocator used to allocate and deallocate memory;
  
          void _check_ptr(void* ptr){
             if (ptr==nullptr){
@@ -63,9 +70,7 @@ namespace split{
             _data=_allocator.allocate_and_construct(size,T());
             _check_ptr(_data);
             if (_data == nullptr){
-               _allocator.deallocate_array(capacity(),_data);
-               _allocator.deallocate_raw(_size);
-               _allocator.deallocate_raw(_capacity);
+               _deallocate();
                throw std::bad_alloc();
             }
          }
@@ -370,10 +375,9 @@ namespace split{
          __host__ __device__
          const T& front() const{ return _data[0]; }
 
-         __host__ 
+         __host__ __device__ 
          bool empty() const{
-            bool retval = (*_size==0) ? true : false;
-            return retval;
+            return  size()==0;
          }
 
          #ifndef __CUDA_ARCH__
@@ -600,6 +604,10 @@ namespace split{
             *_size -= end - start;
             iterator it = &_data[start];
             return it;
+         }
+
+         Allocator get_allocator() const {
+            return _allocator;
          }
 
 
