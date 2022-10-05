@@ -33,21 +33,23 @@
 
 namespace split{
 
+
    template <typename T> void swap(T& t1, T& t2) {
        T tmp = std::move(t1);
        t1 = std::move(t2);
        t2 = std::move(tmp);
    }
 
-   template<typename T,class Allocator=split::split_host_allocator<T>>
+   template<typename T,class Allocator=split::split_host_allocator<T>,class Meta_Allocator=split::split_host_allocator<size_t>>
    class SplitVector{
       
       private:
-         T*      _data=nullptr;         //actual pointer to our data      
-         size_t* _size;                 // number of elements in vector.
-         size_t* _capacity;             // number of allocated elements
-         size_t  _alloc_multiplier = 2; //host variable; multiplier for  when reserving more space
-         Allocator  _allocator;         // Allocator used to allocate and deallocate memory;
+         T* _data=nullptr;                   //actual pointer to our data      
+         size_t* _size;                      // number of elements in vector.
+         size_t* _capacity;                  // number of allocated elements
+         size_t  _alloc_multiplier = 2;      //host variable; multiplier for  when reserving more space
+         Allocator  _allocator;              // Allocator used to allocate and deallocate memory;
+         Meta_Allocator  _meta_allocator;    // Allocator used to allocate and deallocate memory for metadata;
  
          void _check_ptr(void* ptr){
             if (ptr==nullptr){
@@ -62,12 +64,12 @@ namespace split{
 
          /*Allocation/Deallocation only on host*/
          void _allocate(size_t size){
-            _size=new (_allocator.allocate_raw(sizeof(size_t))) size_t(size); 
-            _capacity=new (_allocator.allocate_raw(sizeof(size_t))) size_t(size); 
+            _size=_allocate_and_construct(size);
+            _capacity=_allocate_and_construct(size);
             _check_ptr(_size);
             _check_ptr(_capacity);
             if (size==0){return;}
-            _data=_allocator.allocate_and_construct(size,T());
+            _data=_allocate_and_construct(size,T());
             _check_ptr(_data);
             if (_data == nullptr){
                _deallocate();
@@ -77,11 +79,35 @@ namespace split{
 
          void _deallocate(){
                if (_data!=nullptr){
-                  _allocator.deallocate_array(capacity(),_data);
+                  _deallocate_and_destroy(capacity(),_data);
                   _data=nullptr;
                }
-               _allocator.deallocate_raw(_size);
-               _allocator.deallocate_raw(_capacity);
+               _deallocate_and_destroy(_capacity);
+               _deallocate_and_destroy(_size);
+         }
+
+         T* _allocate_and_construct(size_t n, const T &val){
+            T* _ptr=_allocator.allocate(n);
+            for (size_t i=0; i < n; i++){
+               _allocator.construct(&_ptr[i],val);
+            }
+            return _ptr;
+         }
+         size_t* _allocate_and_construct(const size_t &val){
+            size_t* _ptr=_meta_allocator.allocate(1);
+            _meta_allocator.construct(_ptr,val);
+            return _ptr;
+         }
+
+         void _deallocate_and_destroy(size_t n,T* _ptr){
+            for (size_t i=0; i < n; i++){
+               _allocator.destroy(&_ptr[i]);
+            }
+            _allocator.deallocate(_ptr,n);
+         }
+
+         void _deallocate_and_destroy(size_t* ptr){
+            _meta_allocator.deallocate(ptr,1);
          }
 
       public:
@@ -175,19 +201,17 @@ namespace split{
             CheckErrors("Prefetch CPU");
          }
 
-         /*Custom swap mehtod. Pointers after swap 
-         * are pointing to the same container as 
-         * before. 
+         /*Custom swap mehtod. Pointers invalidated afters swap. 
          */
-         void swap(SplitVector<T,Allocator>& other) noexcept{
+         void swap(SplitVector<T,Allocator,Meta_Allocator>& other) noexcept{
 
             if (*this==other){ //no need to do any work
                return;
             }
-            SplitVector<T,Allocator> temp(this->size());
-            temp=*this;
-            *this=other;
-            other=temp;
+            split::swap(_data,other._data);
+            split::swap(_size,other._size);
+            split::swap(_capacity,other._capacity);
+            split::swap(_allocator,other._allocator);
             return;
          }
 
@@ -254,9 +278,9 @@ namespace split{
             requested_space*=_alloc_multiplier;
             // Allocate new Space
             T* _new_data;
-            _new_data= _allocator.allocate_and_construct(requested_space,T());
+            _new_data=_allocate_and_construct(requested_space,T());
             if (_new_data==nullptr){
-               _allocator.deallocate_array(requested_space,_new_data);
+               _deallocate_and_destroy(requested_space,_new_data);
                this->_deallocate();
                throw std::bad_alloc();
             }
@@ -267,7 +291,7 @@ namespace split{
             }
 
             //Deallocate old space
-            _allocator.deallocate_array(capacity(),_data);
+            _deallocate_and_destroy(capacity(),_data);
 
             //Swap pointers & update capacity
             //Size remains the same ofc
@@ -306,9 +330,9 @@ namespace split{
 
             // Allocate new Space
             T* _new_data;
-            _new_data=_allocator.allocate_and_construct(curr_size,T());
+            _new_data=_allocate_and_construct(curr_size,T());
             if (_new_data==nullptr){
-               _allocator.deallocate_array(curr_size,_new_data);
+               _deallocate_and_destroy(curr_size,_new_data);
                this->_deallocate();
                throw std::bad_alloc();
             }
@@ -320,7 +344,7 @@ namespace split{
             }
 
             //Deallocate old space
-            _allocator.deallocate_array(capacity(),_data);
+            _deallocate_and_destroy(capacity(),_data);
 
             //Swap pointers & update capacity
             //Size remains the same ofc
@@ -394,7 +418,7 @@ namespace split{
             // If we have no allocated memory because the default ctor was used then 
             // allocate one element, set it and return 
             if (_data==nullptr){
-               *this=SplitVector<T,Allocator>(1,val);
+               *this=SplitVector<T,Allocator,Meta_Allocator>(1,val);
                return;
             }
             resize(size()+1);
@@ -614,8 +638,8 @@ namespace split{
    };
     
 	/*Equal operator*/
-	template <typename  T,class Allocator>
-	static inline __host__  bool operator == (const  SplitVector<T,Allocator> &lhs, const  SplitVector<T,Allocator> &rhs){
+	template <typename  T,class Allocator,class Meta_Allocator>
+	static inline __host__  bool operator == (const  SplitVector<T,Allocator,Meta_Allocator> &lhs, const  SplitVector<T,Allocator,Meta_Allocator> &rhs){
 		if (lhs.size()!= rhs.size()){
 			return false;
 		}
@@ -629,8 +653,8 @@ namespace split{
 	}
 
 	/*Not-Equal operator*/
-	template <typename  T,class Allocator>
-	static inline __host__  bool operator != (const  SplitVector<T,Allocator> &lhs, const  SplitVector<T,Allocator> &rhs){
+	template <typename  T,class Allocator,class Meta_Allocator>
+	static inline __host__  bool operator != (const  SplitVector<T,Allocator,Meta_Allocator> &lhs, const  SplitVector<T,Allocator,Meta_Allocator> &rhs){
 		return !(rhs==lhs);
 	}
 }

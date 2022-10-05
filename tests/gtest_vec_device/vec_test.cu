@@ -10,7 +10,7 @@
 #define expect_eq EXPECT_EQ
 #define N 1<<12
 
-typedef split::SplitVector<int,split::split_unified_allocator<int>> vec ;
+typedef split::SplitVector<int,split::split_unified_allocator<int>,split::split_unified_allocator<size_t>> vec ;
 //typedef split::SplitVector<int,split_host_allocator<int>> vec ;
 
 
@@ -62,7 +62,8 @@ TEST(Vector_Functionality , Resize){
 }
 
 TEST(Vector_Functionality , Swap){
-   vec a(10,2),b(10,2);
+   vec a(10,2);
+   vec b(10,2);
    a.swap(b);
    vec c(100,1);
    vec d (200,3);
