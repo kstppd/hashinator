@@ -14,6 +14,47 @@ typedef split::SplitVector<int,split::split_unified_allocator<int>,split::split_
 //typedef split::SplitVector<int,split_host_allocator<int>> vec ;
 
 
+__global__
+void add_vectors(vec* a , vec* b,vec* c){
+
+   int index = blockIdx.x * blockDim.x + threadIdx.x;
+   if (index< a->size()){
+      c->at(index)=a->at(index)+b->at(index);
+   }
+
+}
+
+__global__
+void push_back_kernel(vec* a){
+
+   int index = blockIdx.x * blockDim.x + threadIdx.x;
+  a->push_back(index);
+}
+
+
+TEST(Test_GPU,VectorAddition){
+   vec a(N,1);
+   vec b(N,2);
+   vec c(N,0);
+   
+   vec* d_a=a.upload();
+   vec* d_b=b.upload();
+   vec* d_c=c.upload();
+
+   add_vectors<<<N,32>>>(d_a,d_b,d_c);
+   cudaDeviceSynchronize();
+   cudaFree(d_a);
+   cudaFree(d_b);
+   cudaFree(d_c);
+
+
+   for (const auto& e:c){
+      expect_true(e==3);
+   }
+
+
+}
+
 TEST(Constructors,Default){
    vec a;
    expect_true(a.size()==0 && a.capacity()==0);
@@ -253,7 +294,7 @@ TEST(Vector_Functionality , Insert_Range_Based){
 
    {
       vec a{1,2,3,4,5,6,7,8,9,10};
-      auto backup=a;
+      auto backup(a);
       vec b{-1,-2,-3,-4,-5,-6,-7,-8,-9,-10};
       auto s0=a.size();
       auto it(a.end());
@@ -273,7 +314,7 @@ TEST(Vector_Functionality , Insert_Range_Based){
 
    {
       vec a{1,2,3,4,5,6,7,8,9,10};
-      auto backup=a;
+      auto backup(a);
       vec b{-1,-2,-3,-4,-5,-6,-7,-8,-9,-10};
       auto s0=a.size();
       auto it(a.end());

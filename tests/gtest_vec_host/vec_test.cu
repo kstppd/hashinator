@@ -14,6 +14,25 @@ typedef split::SplitVector<int> vec ;
 typedef split::SplitVector<split::SplitVector<int>> vec2d ;
 
 
+
+void print_vec_elements(vec& v){
+   std::cout<<"****Vector Contents********"<<std::endl;
+   std::cout<<"Size= "<<v.size()<<std::endl;
+   std::cout<<"Capacity= "<<v.capacity()<<std::endl;
+   for (auto i:v){
+      std::cout<<i<<std::endl;
+   }
+   std::cout<<"****~Vector Contents********"<<std::endl;
+}
+
+TEST(Constructors,Move){
+   vec b(vec(N,2));
+   for (size_t i=0 ; i<N; ++i){
+      expect_true(b[i]=2);
+   }
+}
+
+
 TEST(Test_2D_Contruct,VecOfVec){
 
    vec inner_a(100,1);
@@ -84,6 +103,18 @@ TEST(Vector_Functionality , Reserve){
    a.reserve(cap);
    expect_true(a.size()==0);
    expect_true(a.capacity()==cap);
+}
+
+TEST(Vector_Functionality , Reserve2){
+
+   for (int i =1; i<100; i++){
+      vec a(N,i);
+      vec b(a);
+
+      size_t cap =32*N;
+      a.reserve(cap);
+      expect_true(a==b);
+   }
 }
 
 TEST(Vector_Functionality , Resize){
@@ -286,7 +317,7 @@ TEST(Vector_Functionality , Insert_Range_Based){
 
    {
       split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
-      auto backup=a;
+      auto backup(a);
       split::SplitVector<int> b{-1,-2,-3,-4,-5,-6,-7,-8,-9,-10};
       auto s0=a.size();
       auto it(a.end());
@@ -306,7 +337,7 @@ TEST(Vector_Functionality , Insert_Range_Based){
 
    {
       split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
-      auto backup=a;
+      auto backup(a);
       split::SplitVector<int> b{-1,-2,-3,-4,-5,-6,-7,-8,-9,-10};
       auto s0=a.size();
       auto it(a.end());
@@ -322,16 +353,16 @@ TEST(Vector_Functionality , Insert_Range_Based){
 
 }
 
-TEST(Vector_Functionality , Erase_Single){
+//TEST(Vector_Functionality , Erase_Single){
 
-      split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
-      vec::iterator it(&a[4]);
-      auto backup=*it;
-      auto s0=a.size();
-      a.erase(it);
-      expect_true(backup!=*it);
-      expect_true(a.size()==s0-1);
-}
+      //split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
+      //vec::iterator it(&a[4]);
+      //auto backup=*it;
+      //auto s0=a.size();
+      //a.erase(it);
+      //expect_true(backup!=*it);
+      //expect_true(a.size()==s0-1);
+//}
 
 
 //TEST(Vector_Functionality , Erase_Range){
@@ -340,6 +371,33 @@ TEST(Vector_Functionality , Erase_Single){
       //auto it1(a.end());
       //a.erase(it0,it1);
       //expect_true(a.size()==0);
+//}
+
+//TEST(Vector_Functionality , Emplace_Back){
+   //vec a;
+   //for (auto i=a.begin(); i!=a.end();i++){
+      //expect_true(false);
+   //}
+   //size_t initial_size=a.size();
+   //size_t initial_cap=a.capacity();
+
+   //std::cout<<"--------------------Before\n";
+   //a.emplace_back(11);
+   //std::cout<<"--------------------After\n";
+   ////expect_true(11==a[a.size()-1]);
+   ////a.emplace_back(12);
+   ////expect_true(12==a[a.size()-1]);
+
+//}
+
+////TEST(Vector_Functionality , Emplace_Back_2){
+   //vec a{1,2,3,4,5,6,7,8,9,10};
+   //size_t initial_size=a.size();
+   //size_t initial_cap=a.capacity();
+   //a.emplace_back(11);
+   //expect_true(11==a[a.size()-1]);
+   //a.emplace_back(12);
+   //expect_true(12==a[a.size()-1]);
 //}
 
 

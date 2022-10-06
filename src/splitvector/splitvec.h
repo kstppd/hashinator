@@ -44,12 +44,12 @@ namespace split{
    class SplitVector{
       
       private:
-         T* _data=nullptr;                   //actual pointer to our data      
-         size_t* _size;                      // number of elements in vector.
-         size_t* _capacity;                  // number of allocated elements
-         size_t  _alloc_multiplier = 2;      //host variable; multiplier for  when reserving more space
-         Allocator  _allocator;              // Allocator used to allocate and deallocate memory;
-         Meta_Allocator  _meta_allocator;    // Allocator used to allocate and deallocate memory for metadata;
+         T* _data=nullptr;                  //actual pointer to our data      
+         size_t* _size;                     // number of elements in vector.
+         size_t* _capacity;                 // number of allocated elements
+         size_t  _alloc_multiplier = 2;     //host variable; multiplier for  when reserving more space
+         Allocator _allocator;              // Allocator used to allocate and deallocate memory;
+         Meta_Allocator _meta_allocator;    // Allocator used to allocate and deallocate memory for metadata;
  
          void _check_ptr(void* ptr){
             if (ptr==nullptr){
@@ -116,6 +116,7 @@ namespace split{
           *    -- SplitVector(size_t)                 --> Instantiates a splitvector with a specific size. (capacity == size)
           *    -- SplitVector(size_t,T)               --> Instantiates a splitvector with a specific size and sets all elements to T.(capacity == size)
           *    -- SplitVector(SplitVector&)           --> Copy constructor. 
+          *    -- SplitVector(SplitVector&&)          --> Move constructor. 
           *    -- SplitVector(std::initializer_list&) --> Creates a SplitVector and copies over the elemets of the init. list. 
           *    -- SplitVector(std::vector&)           --> Creates a SplitVector and copies over the elemets of the std vector
           * */
@@ -136,15 +137,22 @@ namespace split{
                }
             }
 
-         __host__ SplitVector(const SplitVector<T,Allocator,Meta_Allocator> &other){
+         __host__ explicit SplitVector(const SplitVector<T,Allocator,Meta_Allocator> &other){
                const size_t size_to_allocate = other.size();
                this->_allocate(size_to_allocate);
                for (size_t i=0; i<size_to_allocate; i++){
                   _data[i]=other._data[i];
                }
             }
+         
+         __host__ SplitVector(SplitVector<T,Allocator,Meta_Allocator> &&other)noexcept{
+               const size_t size_to_allocate = other.size();
+               this->_allocate(size_to_allocate);
+               std::move(other.begin().data(), other.end().data(), _data);
+               other.clear();
+            }
 
-         __host__ SplitVector(std::initializer_list<T> init_list){
+         __host__ explicit SplitVector(std::initializer_list<T> init_list){
                this->_allocate(init_list.size());
                for (size_t i =0 ; i< size();i++){
                   _data[i]=init_list.begin()[i];
@@ -174,6 +182,13 @@ namespace split{
             return *this;
          }
 
+         __host__  SplitVector<T,Allocator,Meta_Allocator>& operator=(SplitVector<T,Allocator,Meta_Allocator>&& other)noexcept{
+            if (this==&other){return *this;}
+            resize(other.size());
+            std::move(other.begin().data(), other.end().data(), _data);
+            other.clear();
+            return *this;
+         }
 
          //Method that return a pointer which can be passed to GPU kernels
          //Has to be cudaFree'd after use otherwise memleak (small one but still)!
@@ -201,10 +216,8 @@ namespace split{
             CheckErrors("Prefetch CPU");
          }
 
-         /*Custom swap mehtod. Pointers invalidated afters swap. 
-         */
+         /*Custom swap mehtod. Pointers invalidated afters swap. */
          void swap(SplitVector<T,Allocator,Meta_Allocator>& other) noexcept{
-
             if (*this==other){ //no need to do any work
                return;
             }
@@ -251,32 +264,11 @@ namespace split{
          }
 
 
-         /* Size Modifiers
-            Reserve method:
-            Supports only host reserving.
-            Will never reduce the vector's size.
-            Memory location will change so any old pointers/iterators
-            will be invalidated after a call.
-         */
-         __host__
-         void reserve(size_t requested_space){
-            size_t current_space=*_capacity;
+         /* Size Modifiers*/
 
-            //Vector was default initialized
-            if (_data==nullptr){
-               _deallocate();
-               _allocate(requested_space);
-               *_size=0;
-               return;
-            }
-            
-            //Nope.
-            if (requested_space <= current_space){
-               return ;
-            }
-            
-            requested_space*=_alloc_multiplier;
-            // Allocate new Space
+         /*Reallocates data to a bigeer chunk of memory. At some point
+          * this should be udpated to use move semantics*/
+         __host__ void reallocate(size_t requested_space){
             T* _new_data;
             _new_data=_allocate_and_construct(requested_space,T());
             if (_new_data==nullptr){
@@ -297,6 +289,33 @@ namespace split{
             //Size remains the same ofc
             _data=_new_data;
             *_capacity=requested_space;
+            return ;
+
+         }
+
+         /*Reserve method:
+          *Supports only host reserving.
+          *Will never reduce the vector's size.
+          *Memory location will change so any old pointers/iterators
+          *will be invalidated after a call.
+          */
+
+         __host__
+         void reserve(size_t requested_space){
+            size_t current_space=*_capacity;
+            //Vector was default initialized
+            if (_data==nullptr){
+               _deallocate();
+               _allocate(requested_space);
+               *_size=0;
+               return;
+            }
+            //Nope.
+            if (requested_space <= current_space){
+               return ;
+            }
+            requested_space*=_alloc_multiplier;
+            reallocate(requested_space);
             return;
          }
 
@@ -310,6 +329,7 @@ namespace split{
          __host__
          void resize(size_t newSize){
             //Let's reserve some space and change our size
+            if (newSize<=size()){return;}
             reserve(newSize);
             *_size  =newSize; 
          }
@@ -328,28 +348,7 @@ namespace split{
                return;
             }
 
-            // Allocate new Space
-            T* _new_data;
-            _new_data=_allocate_and_construct(curr_size,T());
-            if (_new_data==nullptr){
-               _deallocate_and_destroy(curr_size,_new_data);
-               this->_deallocate();
-               throw std::bad_alloc();
-            }
-
-      
-            //Copy over
-            for (size_t i=0; i<size();i++){
-               _new_data[i] = _data[i];
-            }
-
-            //Deallocate old space
-            _deallocate_and_destroy(capacity(),_data);
-
-            //Swap pointers & update capacity
-            //Size remains the same ofc
-            _data=_new_data;
-            *_capacity=size();
+            reallocate(curr_size);
             return;
          }
          
@@ -426,6 +425,19 @@ namespace split{
             return;
          }
          
+         __host__   
+         void push_back(const T&& val)noexcept{
+            // If we have no allocated memory because the default ctor was used then 
+            // allocate one element, set it and return 
+            if (_data==nullptr){
+               *this=SplitVector<T,Allocator,Meta_Allocator>(1,std::move(val));
+               return;
+            }
+            resize(size()+1);
+            _data[size()-1] = std::move(val);
+            return;
+         }
+
          #else         
 
          __device__ 
@@ -437,6 +449,17 @@ namespace split{
                assert(0 && "Splitvector has a catastrophic failure trying to pushback on device because the vector has no space available.");
             }
             atomicCAS(&(_data[old]), _data[old],val);
+         }
+
+         __device__ 
+         void push_back(const T&& val)noexcept{
+            //We need at least capacity=size+1 otherwise this 
+            //pushback cannot be done
+            size_t old= atomicAdd((unsigned int*)_size, 1);
+            if (old>=capacity()){
+               assert(0 && "Splitvector has a catastrophic failure trying to pushback on device because the vector has no space available.");
+            }
+            atomicCAS(&(_data[old]), _data[old],std::move(val));
          }
          #endif
 
@@ -630,13 +653,32 @@ namespace split{
             return it;
          }
 
+         __host__ 
          Allocator get_allocator() const {
             return _allocator;
          }
 
+         template< class... Args >
+         iterator emplace(iterator pos, Args&&... args) {
+            const int64_t index = pos.data() - begin().data();
+            if (index < 0 || index > size()) {
+               throw new std::out_of_range("Out of range");
+            }
+            resize(size() + 1);
+            iterator it = &_data[index];
+            std::move(it.data(), end().data(), it.data() + 1);
+            #pragma message ("TODO-->Not really sure whether we need to destroy first. If not then this is UB if yes then if we do not we end up with a small memleak" )
+            _allocator.destroy(it.data());
+            _allocator.construct(it.data(), args...);
+            return it;
+         }
 
-   };
-    
+         template< class... Args >
+         void emplace_back(Args&&... args) {
+            emplace(end(), std::forward<Args>(args)...);
+         }
+};
+
 	/*Equal operator*/
 	template <typename  T,class Allocator,class Meta_Allocator>
 	static inline __host__  bool operator == (const  SplitVector<T,Allocator,Meta_Allocator> &lhs, const  SplitVector<T,Allocator,Meta_Allocator> &rhs){
