@@ -40,7 +40,7 @@ namespace split{
        t2 = std::move(tmp);
    }
 
-   template<typename T,class Allocator=split::split_host_allocator<T>,class Meta_Allocator=split::split_host_allocator<size_t>>
+   template<typename T,class Allocator=split::split_unified_allocator<T>,class Meta_Allocator=split::split_unified_allocator<size_t>>
    class SplitVector{
       
       private:
