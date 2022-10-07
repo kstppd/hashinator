@@ -176,7 +176,7 @@ namespace split{
          __host__  SplitVector<T,Allocator,Meta_Allocator>& operator=(const SplitVector<T,Allocator,Meta_Allocator>& other){
             //Match other's size prior to copying
             resize(other.size());
-            for (size_t i=0; i< size(); i++){
+            for (size_t i=0; i< other.size(); i++){
                _data[i]=other._data[i];
             }
             return *this;
