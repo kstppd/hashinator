@@ -29,7 +29,7 @@
 
 
 // Open bucket power-of-two sized hash table with multiplicative fibonacci hashing
-template <typename GID, typename LID, int maxBucketOverflow = 32, GID EMPTYBUCKET = vmesh::INVALID_GLOBALID,GID TOMBSTONE = EMPTYBUCKET - 1 > 
+template <typename GID, typename LID, int maxBucketOverflow = 16, GID EMPTYBUCKET = vmesh::INVALID_GLOBALID,GID TOMBSTONE = EMPTYBUCKET - 1 > 
 class Hashinator {
 private:
    //CUDA device handles
@@ -319,9 +319,16 @@ public:
 
    __host__
    void print_kvals(){
+      size_t cnt=0;
       for (auto it=begin(); it!=end();it++){
+         if (it->first==TOMBSTONE){
+            std::cout<<"TOMBSTONE "<<" "<<it->second<<std::endl;
+            cnt++;
+            continue;
+         }
          std::cout<<it->first<<" "<<it->second<<std::endl;
       }
+      std::cout<<"Total Tombstones= "<<cnt<<std::endl;
    }
    #endif
 
@@ -363,6 +370,12 @@ public:
 
    __device__
    void set_element(const GID& key,LID val){
+      size_t thread_overflowLookup;
+      insert_element(key,val,thread_overflowLookup);
+      atomicMax(d_maxBucketOverflow,thread_overflowLookup);
+   }
+   __device__
+   void set_element_tombstone(const GID& key,LID val){
       size_t thread_overflowLookup;
       insert_element(key,val,thread_overflowLookup);
       atomicMax(d_maxBucketOverflow,thread_overflowLookup);
@@ -656,7 +669,8 @@ public:
       iterator& operator++() {
          index++;
          while(index < hashtable->buckets.size()){
-            if (hashtable->buckets[index].first != EMPTYBUCKET){
+            if (hashtable->buckets[index].first != EMPTYBUCKET&&
+                hashtable->buckets[index].first != TOMBSTONE){
                break;
             }
             index++;
@@ -704,7 +718,8 @@ public:
       const_iterator& operator++() {
          index++;
          while(index < hashtable->buckets.size()){
-            if (hashtable->buckets[index].first != EMPTYBUCKET){
+            if (hashtable->buckets[index].first != EMPTYBUCKET &&
+                hashtable->buckets[index].first != TOMBSTONE ){
                break;
             }
             index++;
@@ -799,58 +814,6 @@ public:
       return end();
    }
 
-   // Remove one element from the hash table.
-   __device__
-   iterator erase(iterator keyPos) {
-      // Due to overflowing buckets, this might require moving quite a bit of stuff around.
-      size_t index = keyPos.getIndex();
-
-      if (buckets[index].first != EMPTYBUCKET) {
-         // Decrease fill count
-         atomicSub((unsigned int*)d_fill, 1);
-
-         // Clear the element itself.
-         atomicExch(&buckets[index].first,EMPTYBUCKET);
-
-         int bitMask = (1 <<(*d_sizePower )) - 1; // For efficient modulo of the array size
-         size_t targetPos = index;
-         // Search ahead to verify items are in correct places (until empty bucket is found)
-         for (unsigned int i = 1; i < (*d_fill); i++) {
-            GID nextBucket = buckets[(index + i)&bitMask].first;
-            if (nextBucket == EMPTYBUCKET) {
-               // The next bucket is empty, we are done.
-               break;
-            }
-            // Found an entry: is it in the correct bucket?
-            uint32_t hashIndex = hash(nextBucket);
-            if ((hashIndex&bitMask) != ((index + i)&bitMask)) {
-               //// This entry has overflown. Now check if it should be moved:
-               uint32_t distance =  ((targetPos - hashIndex + (1<<(*d_sizePower)))&bitMask);
-               if (distance < *d_maxBucketOverflow) {
-                  //// Copy this entry to the current newly empty bucket, then continue with deleting
-                  //// this overflown entry and continue searching for overflown entries
-                  LID moveValue = buckets[(index+i)&bitMask].second;
-                  atomicExch(&buckets[targetPos].first,nextBucket);
-                  atomicExch(&buckets[targetPos].second,moveValue);
-                  targetPos = ((index+i)&bitMask);
-                  atomicExch(&buckets[targetPos].first,EMPTYBUCKET);
-               }
-            }
-         }
-      }
-      // return the next valid bucket member
-      ++keyPos;
-      return keyPos;
-   }
-
-   __device__
-   std::pair<iterator, bool> insert(std::pair<GID, LID> newEntry) {
-      bool found = find(newEntry.first) != end();
-      if (!found) {
-         set_element(newEntry.first,newEntry.second);
-      }
-      return std::pair<iterator, bool>(find(newEntry.first), !found);
-   }
 
    __device__
    size_t erase(const GID& key) {
@@ -863,6 +826,24 @@ public:
       }
    }
     
+   //Remove with tombstones on device
+   __device__
+   iterator erase(iterator keyPos){
+
+      //Get the index of this entry
+      size_t index = keyPos.getIndex();
+      
+      //If this is an empty bucket or a tombstone we can return already
+      GID& item=buckets[index].first;
+      if (item==EMPTYBUCKET || item==TOMBSTONE){return ++keyPos;}
+
+      //Let's simply add a tombstone here
+      atomicExch(&buckets[index].first,TOMBSTONE);
+      atomicSub((unsigned int*)d_fill, 1);
+      ++keyPos;
+      return keyPos;
+   }
+
    // Device code for inserting elements. Nonexistent elements get created.
    __device__
    void insert_element(const GID& key,LID value, size_t &thread_overflowLookup) {
@@ -871,16 +852,43 @@ public:
       size_t i =0;
       while(i<buckets.size()){
          uint32_t vecindex=(hashIndex + i) & bitMask;
-         GID old = atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, key);
+         GID old;
+         old = atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, key);
          if (old == EMPTYBUCKET || old == key){
+            atomicExch(&buckets[vecindex].first,key);
             atomicExch(&buckets[vecindex].second,value);
             atomicAdd((unsigned int*)d_fill, 1);
             thread_overflowLookup = i+1;
             return;
          }
+         //Tombstone encounter
+         old = atomicCAS(&buckets[vecindex].first,TOMBSTONE,key);
+         if (old==TOMBSTONE){
+            atomicExch(&buckets[vecindex].first,key);
+            atomicExch(&buckets[vecindex].second,value);
+            atomicAdd((unsigned int*)d_fill, 1);
+            thread_overflowLookup = i+1;
+            //Need to look ahead to avoid duplicates
+            for (size_t j=i; j< thread_overflowLookup; j++){
+               uint32_t duplicate_index=(hashIndex + j) & bitMask;
+               GID duplicate = atomicCAS(&buckets[duplicate_index].first,key,EMPTYBUCKET);
+               if (duplicate == key){
+                  return ;
+               }
+            }
+         }
          i++;
       }
       assert(false && "Hashmap completely overflown");
+   }
+
+   __device__
+   std::pair<iterator, bool> insert(std::pair<GID, LID> newEntry) {
+      bool found = find(newEntry.first) != end();
+      if (!found) {
+         set_element_tombstone(newEntry.first,newEntry.second);
+      }
+      return std::pair<iterator, bool>(find(newEntry.first), !found);
    }
 
 #endif
