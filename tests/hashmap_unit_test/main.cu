@@ -28,7 +28,7 @@ void gpu_write_map(hashmap *dmap){
 __global__
 void gpu_delete_even(Hashinator<val_type,val_type> *dmap){
    int index = blockIdx.x * blockDim.x + threadIdx.x;
-   if (index>15){
+   if (index>5){
       auto kpos=dmap->find(index);
       dmap->erase(kpos);
    }
@@ -89,7 +89,7 @@ TEST(Benchmark_GPU, Million){
    cudaDeviceSynchronize();
    map.download();
    map.print_all();
-   map.print_kvals();
+   map.dump_buckets();
    
    //Delete
    dmap=map.upload();
@@ -97,7 +97,7 @@ TEST(Benchmark_GPU, Million){
    cudaDeviceSynchronize();
    map.download();
    map.print_all();
-   map.print_kvals();
+   map.dump_buckets();
 
 }
 

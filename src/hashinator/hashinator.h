@@ -283,6 +283,58 @@ public:
       return device_map;
    }
 
+
+
+
+
+/*
+         // Clear the element itself.
+         buckets[index].first = EMPTYBUCKET;
+
+         int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
+         size_t targetPos = index;
+         // Search ahead to verify items are in correct places (until empty bucket is found)
+         for (unsigned int i = 1; i < fill; i++) {
+            GID nextBucket = buckets[(index + i)&bitMask].first;
+            if (nextBucket == EMPTYBUCKET) {
+               // The next bucket is empty, we are done.
+               break;
+            }
+            // Found an entry: is it in the correct bucket?
+            uint32_t hashIndex = hash(nextBucket);
+            if ((hashIndex&bitMask) != ((index + i)&bitMask)) {
+               // This entry has overflown. Now check if it should be moved:
+               uint32_t distance =  ((targetPos - hashIndex + (1<<sizePower) )&bitMask);
+               if (distance < maxBucketOverflow && distance >0) {
+                  // Copy this entry to the current newly empty bucket, then continue with deleting
+                  // this overflown entry and continue searching for overflown entries
+                  LID moveValue = buckets[(index+i)&bitMask].second;
+                  buckets[targetPos] = std::pair<GID, LID>(nextBucket,moveValue);
+                  targetPos = ((index+i)&bitMask);
+                  buckets[targetPos].first = EMPTYBUCKET;
+               }
+            }
+         }
+      }
+      // return the next valid bucket member
+      ++keyPos;
+      return 
+ * */
+
+
+
+
+
+
+   /**
+    * This implements a host-side tombstone cleaning mechanism
+    * that is used by .download()
+    */
+   __host__ 
+   void clean_tombstones(){
+      return;
+   }
+
    /**
     * This must be called after exiting a CUDA kernel. This functions
     * will do the following :
@@ -302,6 +354,8 @@ public:
       this->buckets.optimizeCPU(stream);
       if (postDevice_maxBucketOverflow>maxBucketOverflow){
          rehash(sizePower+1);
+      }else{
+         clean_tombstones();
       }
    }
 
@@ -318,17 +372,42 @@ public:
    }
 
    __host__
+   void dump_buckets(){
+      std::cout<<"\n";
+      for  (auto i :buckets){
+         if (i.first==TOMBSTONE){
+            std::cout<<"╀ ";
+         }else if (i.first == EMPTYBUCKET){
+            std::cout<<"▢ ";
+         }
+         else{
+            std::cout<<"■ ";
+
+         }
+      }
+      std::cout<<std::endl;
+
+   }
+   __host__
    void print_kvals(){
-      size_t cnt=0;
       for (auto it=begin(); it!=end();it++){
          if (it->first==TOMBSTONE){
             std::cout<<"TOMBSTONE "<<" "<<it->second<<std::endl;
-            cnt++;
             continue;
          }
          std::cout<<it->first<<" "<<it->second<<std::endl;
       }
-      std::cout<<"Total Tombstones= "<<cnt<<std::endl;
+      std::cout<<"Total Tombstones= "<<tombstone_count()<<std::endl;
+   }
+   __host__
+   size_t tombstone_count(){
+      size_t cnt=0;
+      for (auto it=begin(); it!=end();it++){
+         if (it->first==TOMBSTONE){
+            cnt++;
+         }
+      }
+         return cnt;
    }
    #endif
 
@@ -605,7 +684,7 @@ public:
             if ((hashIndex&bitMask) != ((index + i)&bitMask)) {
                // This entry has overflown. Now check if it should be moved:
                uint32_t distance =  ((targetPos - hashIndex + (1<<sizePower) )&bitMask);
-               if (distance < maxBucketOverflow) {
+               if (distance < maxBucketOverflow && distance >0) {
                   // Copy this entry to the current newly empty bucket, then continue with deleting
                   // this overflown entry and continue searching for overflown entries
                   LID moveValue = buckets[(index+i)&bitMask].second;
