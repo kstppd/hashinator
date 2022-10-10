@@ -44,12 +44,13 @@ namespace split{
    class SplitVector{
       
       private:
-         T* _data=nullptr;                  //actual pointer to our data      
+         T* _data=nullptr;                  // actual pointer to our data      
          size_t* _size;                     // number of elements in vector.
          size_t* _capacity;                 // number of allocated elements
-         size_t  _alloc_multiplier = 2;     //host variable; multiplier for  when reserving more space
+         size_t  _alloc_multiplier = 2;     // host variable; multiplier for  when reserving more space
          Allocator _allocator;              // Allocator used to allocate and deallocate memory;
-         Meta_Allocator _meta_allocator;    // Allocator used to allocate and deallocate memory for metadata;
+         Meta_Allocator _meta_allocator;    // Allocator used to allocate and deallocate memory for metadata
+                                            //   (currently: _size, _capacity);
  
          void _check_ptr(void* ptr){
             if (ptr==nullptr){
@@ -216,7 +217,10 @@ namespace split{
             CheckErrors("Prefetch CPU");
          }
 
-         /*Custom swap mehtod. Pointers invalidated afters swap. */
+         /* Custom swap mehtod. 
+          * Pointers outside of splitvector's source
+          * are invalidated after swap is called.
+          */
          void swap(SplitVector<T,Allocator,Meta_Allocator>& other) noexcept{
             if (*this==other){ //no need to do any work
                return;
@@ -623,6 +627,7 @@ namespace split{
          }
          
 
+         __host__
          iterator erase(iterator& it){
 
             const int64_t index = it.data() - begin().data();
@@ -645,9 +650,8 @@ namespace split{
 
             for (int64_t i = 0; i < end - start; i++) {
                _data[start+i].~T();
-               new (&_data[start+i]) T(_data[end+1]); 
+               new (&_data[start+i]) T(_data[end+i]); 
             }
-
             *_size -= end - start;
             iterator it = &_data[start];
             return it;

@@ -12,6 +12,7 @@
 
 typedef split::SplitVector<int> vec ;
 typedef split::SplitVector<split::SplitVector<int>> vec2d ;
+typedef split::SplitVector<int>::iterator   split_iterator;
 
 
 
@@ -353,25 +354,22 @@ TEST(Vector_Functionality , Insert_Range_Based){
 
 }
 
-//TEST(Vector_Functionality , Erase_Single){
 
-      //split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
-      //vec::iterator it(&a[4]);
-      //auto backup=*it;
-      //auto s0=a.size();
-      //a.erase(it);
-      //expect_true(backup!=*it);
-      //expect_true(a.size()==s0-1);
-//}
-
-
-//TEST(Vector_Functionality , Erase_Range){
-      //split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
-      //auto it0(a.begin());
-      //auto it1(a.end());
-      //a.erase(it0,it1);
-      //expect_true(a.size()==0);
-//}
+TEST(Vector_Functionality , Erase_Single){
+      split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
+      split::SplitVector<int> b{1,2,3,5,6,7,8,9,10};
+      split_iterator it0=&a[3];
+      a.erase(it0);
+      expect_true(a==b);
+}
+TEST(Vector_Functionality , Erase_Range){
+      split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
+      split::SplitVector<int> b{1,2,3,8,9,10};
+      split_iterator it0=&a[3];
+      split_iterator it1=&a[7];
+      a.erase(it0,it1);
+      expect_true(a==b);
+}
 
 //TEST(Vector_Functionality , Emplace_Back){
    //vec a;
