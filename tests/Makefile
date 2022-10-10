@@ -7,7 +7,7 @@ EXTRA+= -gencode arch=compute_60,code=sm_60 -rdc=true -L /usr/lib/x86_64-linux-g
 EXTRA+=  -DHASHMAPDEBUG --expt-relaxed-constexpr 
 
 GTEST=-lgtest -lgtest_main -lpthread
-OBJ= map_gpu_vs_cpu.o speed_test.o	  mempool_main.o	  gtest_vec.o	gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o	  map_add_remove.o 	  vecspeedtest
+OBJ= map_gpu_vs_cpu.o speed_test.o	  mempool_main.o	  gtest_vec.o	gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o	  map_add_remove.o 	  vecspeedtest hashmap_bench.o
 
 default: all
 all: ${OBJ}
@@ -26,6 +26,7 @@ allclean:
 	rm mempool &
 	rm map_rw &
 	rm map_add_remove & 
+	rm hashmap_bench &
 	rm vecspeedtest
 
 
@@ -59,3 +60,5 @@ vecspeedtest: vec_speed_test/main.cu
 gtest_hashmap.o: gtest_hasmap/unit.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o gtesthashmap gtest_hasmap/unit.cu
 
+hashmap_bench.o: hashmap_unit_test/main.cu
+	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o hashmap_bench hashmap_unit_test/main.cu

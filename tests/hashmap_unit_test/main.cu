@@ -12,7 +12,7 @@
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
 
-typedef int val_type;
+typedef uint32_t val_type;
 typedef Hashinator<val_type,val_type> hashmap;
 //typedef std::unordered_map<val_type,val_type> hashmap;
 
@@ -41,16 +41,16 @@ void deleteN(hashmap& map, size_t N){
 }
 TEST(Benchmark_CPU, Million){
    
-   size_t totalKeys=100e6;
+   size_t totalKeys=1e6;
    hashmap map;
    insertN(map,totalKeys);
-   //map.print_all();
+   map.print_all();
    map.clear();
-   //map.print_all();
+   map.print_all();
    insertN(map,totalKeys);
-   //map.print_all();
+   map.print_all();
    deleteN(map,totalKeys);
-   //map.print_all();
+   map.print_all();
 }
 
 

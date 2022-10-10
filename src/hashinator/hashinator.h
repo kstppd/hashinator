@@ -29,7 +29,7 @@
 
 
 // Open bucket power-of-two sized hash table with multiplicative fibonacci hashing
-template <typename GID, typename LID, int maxBucketOverflow = 8, GID EMPTYBUCKET = vmesh::INVALID_GLOBALID > 
+template <typename GID, typename LID, int maxBucketOverflow = 32, GID EMPTYBUCKET = vmesh::INVALID_GLOBALID,GID TOMBSTONE = EMPTYBUCKET - 1 > 
 class Hashinator {
 private:
    //CUDA device handles
