@@ -28,9 +28,27 @@ __global__
 void push_back_kernel(vec* a){
 
    int index = blockIdx.x * blockDim.x + threadIdx.x;
-  a->push_back(index);
+   a->push_back(index);
 }
 
+__global__
+void erase_kernel(vec* a){
+   auto it=a->begin();
+   a->erase(it);
+
+}
+
+
+
+void print_vec_elements(vec& v){
+   std::cout<<"****Vector Contents********"<<std::endl;
+   std::cout<<"Size= "<<v.size()<<std::endl;
+   std::cout<<"Capacity= "<<v.capacity()<<std::endl;
+   for (auto i:v){
+      std::cout<<i<<std::endl;
+   }
+   std::cout<<"****~Vector Contents********"<<std::endl;
+}
 
 TEST(Test_GPU,VectorAddition){
    vec a(N,1);
@@ -331,7 +349,6 @@ TEST(Vector_Functionality , Insert_Range_Based){
 }
 
 TEST(Vector_Functionality , Erase_Single){
-
       vec a{1,2,3,4,5,6,7,8,9,10};
       vec::iterator it(&a[4]);
       auto backup=*it;
@@ -341,14 +358,21 @@ TEST(Vector_Functionality , Erase_Single){
       expect_true(a.size()==s0-1);
 }
 
+TEST(Vector_Functionality , PushBack_And_Erase_Device){
+      vec a;
+      a.reserve(100);
+      vec* d_a=a.upload();
+      push_back_kernel<<<4,8>>>(d_a);
+      cudaDeviceSynchronize();
+      print_vec_elements(a);
+      cudaFree(d_a);
+      vec* d_b=a.upload();
+      erase_kernel<<<1,1>>>(d_b);
+      cudaDeviceSynchronize();
+      cudaFree(d_b);
+      print_vec_elements(a);
+}
 
-//TEST(Vector_Functionality , Erase_Range){
-      //split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
-      //auto it0(a.begin());
-      //auto it1(a.end());
-      //a.erase(it0,it1);
-      //expect_true(a.size()==0);
-//}
 
 
 int main(int argc, char* argv[]){

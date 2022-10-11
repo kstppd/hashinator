@@ -483,25 +483,34 @@ namespace split{
             using reference = T&;
 
             //iterator(){}
+            __host__ __device__
             iterator(pointer data) : _data(data) {}
 
+            __host__ __device__
             pointer data() { return _data; }
+            __host__ __device__
             pointer operator->() { return _data; }
+            __host__ __device__
             reference operator*() { return *_data; }
 
+            __host__ __device__
             bool operator==(const iterator& other)const{
               return _data == other._data;
             }
+            __host__ __device__
             bool operator!=(const iterator& other)const {
               return _data != other._data;
             }
+            __host__ __device__
             iterator& operator++(){
               _data += 1;
               return *this;
             }
+            __host__ __device__
             iterator operator++(int){
               return iterator(_data + 1);
             }
+            __host__ __device__
             iterator operator--(int){
               return iterator(_data - 1);
             }
@@ -520,41 +529,54 @@ namespace split{
             using pointer = const T*;
             using reference = T&;
 
+            __host__ __device__
             const_iterator(pointer data) : _data(data) {}
 
+            __host__ __device__
             pointer data()const { return _data; }
+            __host__ __device__
             pointer operator->()const  { return _data; }
+            __host__ __device__
             reference operator*()const  { return *_data; }
 
+            __host__ __device__
             bool operator==(const const_iterator& other)const{
               return _data == other._data;
             }
+            __host__ __device__
             bool operator!=(const const_iterator& other)const {
               return _data != other._data;
             }
+            __host__ __device__
             const_iterator& operator++(){
               _data += 1;
               return *this;
             }
+            __host__ __device__
             const_iterator operator++(int){
               return const_iterator(_data + 1);
             }
+            __host__ __device__
             const_iterator operator--(int){
               return const_iterator(_data - 1);
             }
          };
          
+         __host__ __device__
          iterator begin(){
             return iterator(_data);
          }
 
+         __host__ __device__
          const_iterator begin()const{
             return const_iterator(_data);
          }
 
+         __host__ __device__
          iterator end(){
             return iterator(_data+size());
          }
+         __host__ __device__
          const_iterator end() const {
             return const_iterator(_data+size());
          }
@@ -627,6 +649,7 @@ namespace split{
          }
          
 
+         #ifndef __CUDA_ARCH__
          __host__
          iterator erase(iterator& it){
 
@@ -656,6 +679,41 @@ namespace split{
             iterator it = &_data[start];
             return it;
          }
+         #else
+
+         /**
+          * Device side erase methods. 
+          *   **NOT THREAD SAFE**
+          */
+         __device__
+         iterator erase(iterator& it){
+
+            const int64_t index = it.data() - begin().data();
+            _data[index].~T();
+
+            for (auto i = index; i < size() - 1; i++) {
+               new (&_data[i]) T(_data[i+1]); 
+               _data[i+1].~T();
+            }
+            *_size-=1;
+            iterator retval = &_data[index];
+            return retval;
+         }
+
+         __device__ 
+         iterator erase(iterator& p0, iterator& p1) {
+            const int64_t start = p0.data() - begin().data();
+            const int64_t end   =  p1.data() - begin().data();
+
+            for (int64_t i = 0; i < end - start; i++) {
+               _data[start+i].~T();
+               new (&_data[start+i]) T(_data[end+i]); 
+            }
+            *_size -= end - start;
+            iterator it = &_data[start];
+            return it;
+         }
+         #endif
 
          __host__ 
          Allocator get_allocator() const {
