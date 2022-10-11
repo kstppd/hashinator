@@ -108,6 +108,8 @@ void stress_test(int power,int threads){
    //We clean up
    hmap.download();
 
+   hmap.print_kvals();
+   std::cout<<hmap.size()<<std::endl;
    //We now expect the map to have 0 fill as we deleted all the elemets
    assert(hmap.size()==0 && "Map fill should be zero but is not. Something is broken!");
 }
@@ -127,13 +129,14 @@ int main(int argc, char**argv){
       std::cerr<<"please enter something larger than 11 this is a simple test!"<<std::endl;
       exit(1);
    }
-   int threads=32;
-   for (int power=10; power<maxElements; power++){
+   int threads=8;
+   for (int power=5; power<maxElements; power++){
       auto start = std::chrono::high_resolution_clock::now();
       stress_test(power,threads);
       auto end = std::chrono::high_resolution_clock::now();
       auto total_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
       printf("TIME: %.5f Power: %d \n", total_time.count() * 1e-9,power);
+      break;
    }
    return 0;
 }

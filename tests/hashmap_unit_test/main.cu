@@ -28,7 +28,7 @@ void gpu_write_map(hashmap *dmap){
 __global__
 void gpu_delete_even(Hashinator<val_type,val_type> *dmap){
    int index = blockIdx.x * blockDim.x + threadIdx.x;
-   if (index>5){
+   if (index>2){
       auto kpos=dmap->find(index);
       dmap->erase(kpos);
    }
