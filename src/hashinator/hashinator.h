@@ -44,7 +44,6 @@ private:
    int sizePower; // Logarithm (base two) of the size of the table
    int cpu_maxBucketOverflow;
    size_t fill;   // Number of filled buckets
-   split::SplitVector<std::pair<GID, LID>> buckets;
    //~Host members
    
    // Fibonacci hash function for 64bit values
@@ -98,6 +97,7 @@ private:
    }
 
 public:
+   split::SplitVector<std::pair<GID, LID>> buckets;
     
    __host__
    Hashinator()
@@ -139,8 +139,9 @@ public:
 
       // Iterate through all old elements and rehash them into the new array.
       for (auto& e : buckets) {
-         // Skip empty buckets
-         if (e.first == EMPTYBUCKET) {
+         // Skip empty buckets ; We also check for TOMBSTONE elements
+         // as we might be coming off a kernel that overflew the hashmap
+         if (e.first == EMPTYBUCKET || e.first==TOMBSTONE) {
             continue;
          }
 
@@ -284,57 +285,45 @@ public:
    }
 
 
-
-
-
-/*
-         // Clear the element itself.
-         buckets[index].first = EMPTYBUCKET;
-
-         int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
-         size_t targetPos = index;
-         // Search ahead to verify items are in correct places (until empty bucket is found)
-         for (unsigned int i = 1; i < fill; i++) {
-            GID nextBucket = buckets[(index + i)&bitMask].first;
-            if (nextBucket == EMPTYBUCKET) {
-               // The next bucket is empty, we are done.
-               break;
-            }
-            // Found an entry: is it in the correct bucket?
-            uint32_t hashIndex = hash(nextBucket);
-            if ((hashIndex&bitMask) != ((index + i)&bitMask)) {
-               // This entry has overflown. Now check if it should be moved:
-               uint32_t distance =  ((targetPos - hashIndex + (1<<sizePower) )&bitMask);
-               if (distance < maxBucketOverflow && distance >0) {
-                  // Copy this entry to the current newly empty bucket, then continue with deleting
-                  // this overflown entry and continue searching for overflown entries
-                  LID moveValue = buckets[(index+i)&bitMask].second;
-                  buckets[targetPos] = std::pair<GID, LID>(nextBucket,moveValue);
-                  targetPos = ((index+i)&bitMask);
-                  buckets[targetPos].first = EMPTYBUCKET;
-               }
-            }
-         }
-      }
-      // return the next valid bucket member
-      ++keyPos;
-      return 
- * */
-
-
-
-
-
-
    /**
-    * This implements a host-side tombstone cleaning mechanism
-    * that is used by .download()
+    * This implements a slow & naive host-side tombstone cleaning mechanism
+    * that is used by .download(). It is very similar to the backward shifting done 
+    * in host's erase method.
     */
    __host__ 
    void clean_tombstones(){
+
+      int bitMask = (1 << sizePower) - 1; 
+      for (size_t i=0; i< buckets.size(); ++i){
+
+         std::pair<GID,LID>& bucket = buckets[i];
+         if (bucket.first!=TOMBSTONE){continue;}
+
+         for (size_t offset=1; offset < buckets.size(); ++offset){
+
+            std::pair<GID,LID>& nextBucket = buckets[(i + offset)&bitMask];
+            if (nextBucket.first == EMPTYBUCKET) {
+               bucket.first=EMPTYBUCKET;
+               break;
+            }
+            //uint32_t ideal=
+            //uint32_t hashIndex = hash(nextBucket.first);
+            //uint32_t distance =  ((i+offset - hashIndex + (1<<sizePower) )&bitMask);
+            //if (distance < maxBucketOverflow && distance>0){
+               //LID moveValue = buckets[(i+offset)&bitMask].second;
+               //buckets[i] = std::pair<GID, LID>(nextBucket.first,moveValue);
+               //uint32_t targetPos = ((i+offset)&bitMask);
+               //buckets[targetPos].first = EMPTYBUCKET;
+            //}
+         }
+      }
       return;
    }
 
+                  //LID moveValue = buckets[(index+i)&bitMask].second;
+                  //buckets[targetPos] = std::pair<GID, LID>(nextBucket,moveValue);
+                  //targetPos = ((index+i)&bitMask);
+                  //buckets[targetPos].first = EMPTYBUCKET;
    /**
     * This must be called after exiting a CUDA kernel. This functions
     * will do the following :
@@ -355,7 +344,12 @@ public:
       if (postDevice_maxBucketOverflow>maxBucketOverflow){
          rehash(sizePower+1);
       }else{
+         std::cout<<"Cleaning TombStones"<<std::endl;
+         std::cout<<"Before : "<<tombstone_count()<<" tombstones\n";
+         dump_buckets();
          clean_tombstones();
+         dump_buckets();
+         std::cout<<"After : "<<tombstone_count()<<" tombstones\n";
       }
    }
 
@@ -381,8 +375,7 @@ public:
             std::cout<<"▢ ";
          }
          else{
-            std::cout<<"■ ";
-
+            std::cout<<i.first<<" " ;
          }
       }
       std::cout<<std::endl;
@@ -684,7 +677,7 @@ public:
             if ((hashIndex&bitMask) != ((index + i)&bitMask)) {
                // This entry has overflown. Now check if it should be moved:
                uint32_t distance =  ((targetPos - hashIndex + (1<<sizePower) )&bitMask);
-               if (distance < maxBucketOverflow && distance >0) {
+               if (distance < maxBucketOverflow) {
                   // Copy this entry to the current newly empty bucket, then continue with deleting
                   // this overflown entry and continue searching for overflown entries
                   LID moveValue = buckets[(index+i)&bitMask].second;
