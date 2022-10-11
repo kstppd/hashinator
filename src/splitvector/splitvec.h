@@ -673,8 +673,12 @@ namespace split{
 
             for (int64_t i = 0; i < end - start; i++) {
                _data[start+i].~T();
-               new (&_data[start+i]) T(_data[end+i]); 
             }
+
+            if (this->end().data()> p1.data()+1) {
+               std::move(p1.data() + 1, this->end().data(), p0.data() + 1);
+            }
+
             *_size -= end - start;
             iterator it = &_data[start];
             return it;
@@ -707,11 +711,16 @@ namespace split{
 
             for (int64_t i = 0; i < end - start; i++) {
                _data[start+i].~T();
-               new (&_data[start+i]) T(_data[end+i]); 
             }
+
+            if (this->end().data()> p1.data()+1) {
+               std::move(p1.data() + 1, this->end().data(), p0.data() + 1);
+            }
+
             *_size -= end - start;
             iterator it = &_data[start];
             return it;
+   
          }
          #endif
 
