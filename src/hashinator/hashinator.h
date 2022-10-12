@@ -284,46 +284,23 @@ public:
       return device_map;
    }
 
-
-   /**
-    * This implements a slow & naive host-side tombstone cleaning mechanism
-    * that is used by .download(). It is very similar to the backward shifting done 
-    * in host's erase method.
-    */
-   __host__ 
-   void clean_tombstones(){
-
-      int bitMask = (1 << sizePower) - 1; 
-      for (size_t i=0; i< buckets.size(); ++i){
-
-         std::pair<GID,LID>& bucket = buckets[i];
-         if (bucket.first!=TOMBSTONE){continue;}
-
-         for (size_t offset=1; offset < buckets.size(); ++offset){
-
-            std::pair<GID,LID>& nextBucket = buckets[(i + offset)&bitMask];
-            if (nextBucket.first == EMPTYBUCKET) {
-               bucket.first=EMPTYBUCKET;
-               break;
-            }
-            //uint32_t ideal=
-            //uint32_t hashIndex = hash(nextBucket.first);
-            //uint32_t distance =  ((i+offset - hashIndex + (1<<sizePower) )&bitMask);
-            //if (distance < maxBucketOverflow && distance>0){
-               //LID moveValue = buckets[(i+offset)&bitMask].second;
-               //buckets[i] = std::pair<GID, LID>(nextBucket.first,moveValue);
-               //uint32_t targetPos = ((i+offset)&bitMask);
-               //buckets[targetPos].first = EMPTYBUCKET;
-            //}
-         }
-      }
-      return;
+   __host__
+   inline bool isEmpty(const std::pair<GID,LID>& b ){
+      return b.first==EMPTYBUCKET;
    }
 
-                  //LID moveValue = buckets[(index+i)&bitMask].second;
-                  //buckets[targetPos] = std::pair<GID, LID>(nextBucket,moveValue);
-                  //targetPos = ((index+i)&bitMask);
-                  //buckets[targetPos].first = EMPTYBUCKET;
+   __host__
+   inline bool isTombStone(const std::pair<GID,LID>& b ){
+      return b.first==TOMBSTONE;
+   }
+
+   //Simply remove all tombstones on host by rehashing
+   __host__
+   void clean_tombstones(){
+      rehash(sizePower);
+      assert(tombstone_count()==0 && "Tombstones leaked into CPU hashmap!");
+   }
+
    /**
     * This must be called after exiting a CUDA kernel. This functions
     * will do the following :
@@ -346,9 +323,7 @@ public:
       }else{
          std::cout<<"Cleaning TombStones"<<std::endl;
          std::cout<<"Before : "<<tombstone_count()<<" tombstones\n";
-         dump_buckets();
          clean_tombstones();
-         dump_buckets();
          std::cout<<"After : "<<tombstone_count()<<" tombstones\n";
       }
    }

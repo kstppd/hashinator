@@ -84,7 +84,6 @@ void stress_test(int power,int threads){
    gpu_write_map<<<blocks,threads>>> (dmap);
    cudaDeviceSynchronize();
    
-   
    //Always clean up after kernel
    hmap.download();
 
@@ -136,7 +135,6 @@ int main(int argc, char**argv){
       auto end = std::chrono::high_resolution_clock::now();
       auto total_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
       printf("TIME: %.5f Power: %d \n", total_time.count() * 1e-9,power);
-      break;
    }
    return 0;
 }
