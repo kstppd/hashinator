@@ -649,10 +649,8 @@ namespace split{
          }
          
 
-         #ifndef __CUDA_ARCH__
-         __host__
-         iterator erase(iterator& it){
-
+         __host__ __device__ 
+         iterator erase(iterator it){
             const int64_t index = it.data() - begin().data();
             _data[index].~T();
 
@@ -662,67 +660,28 @@ namespace split{
             }
             *_size-=1;
             iterator retval = &_data[index];
-            return retval;
+            return retval;   
          }
             
 
-         __host__ 
-         iterator erase(iterator& p0, iterator& p1) {
+         __host__  __device__
+         iterator erase(iterator p0, iterator  p1) {
             const int64_t start = p0.data() - begin().data();
             const int64_t end   =  p1.data() - begin().data();
+            const int64_t offset= end- start;
 
             for (int64_t i = 0; i < end - start; i++) {
-               _data[start+i].~T();
+               _data[i].~T();
             }
-
-            if (this->end().data()> p1.data()+1) {
-               std::move(p1.data() + 1, this->end().data(), p0.data() + 1);
+            for (auto i =start; i < size()-offset; ++i){
+               new (&_data[i]) T(_data[i+offset]); 
+               _data[i+offset].~T();
             }
-
             *_size -= end - start;
             iterator it = &_data[start];
             return it;
          }
-         #else
 
-         /**
-          * Device side erase methods. 
-          *   **NOT THREAD SAFE**
-          */
-         __device__
-         iterator erase(iterator& it){
-
-            const int64_t index = it.data() - begin().data();
-            _data[index].~T();
-
-            for (auto i = index; i < size() - 1; i++) {
-               new (&_data[i]) T(_data[i+1]); 
-               _data[i+1].~T();
-            }
-            *_size-=1;
-            iterator retval = &_data[index];
-            return retval;
-         }
-
-         __device__ 
-         iterator erase(iterator& p0, iterator& p1) {
-            const int64_t start = p0.data() - begin().data();
-            const int64_t end   =  p1.data() - begin().data();
-
-            for (int64_t i = 0; i < end - start; i++) {
-               _data[start+i].~T();
-            }
-
-            if (this->end().data()> p1.data()+1) {
-               std::move(p1.data() + 1, this->end().data(), p0.data() + 1);
-            }
-
-            *_size -= end - start;
-            iterator it = &_data[start];
-            return it;
-   
-         }
-         #endif
 
          __host__ 
          Allocator get_allocator() const {

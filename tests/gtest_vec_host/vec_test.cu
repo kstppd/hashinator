@@ -362,10 +362,11 @@ TEST(Vector_Functionality , Erase_Single){
       a.erase(it0);
       expect_true(a==b);
 }
+
 TEST(Vector_Functionality , Erase_Range){
-      split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15};
-      split::SplitVector<int> b{1,2,3,4,9,10,11,12,13,14,15};
-      split_iterator it0=&a[3];
+      split::SplitVector<int> a{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14};
+      split::SplitVector<int> b{0,1,7,8,9,10,11,12,13,14};
+      split_iterator it0=&a[2];
       split_iterator it1=&a[7];
       a.erase(it0,it1);
       expect_true(a==b);
