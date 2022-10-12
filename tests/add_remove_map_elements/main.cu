@@ -108,7 +108,6 @@ void stress_test(int power,int threads){
    hmap.download();
 
    hmap.print_kvals();
-   std::cout<<hmap.size()<<std::endl;
    //We now expect the map to have 0 fill as we deleted all the elemets
    assert(hmap.size()==0 && "Map fill should be zero but is not. Something is broken!");
 }
