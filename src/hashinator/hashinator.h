@@ -314,6 +314,8 @@ public:
       cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,stream);
       cudaMemcpyAsync(&postDevice_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,stream);
 #ifdef HASHMAPDEBUG
+      dump_buckets();
+      std::cout<<"Cleaning TombStones"<<std::endl;
       std::cout<<"Overflow Limits Dev/Host "<<maxBucketOverflow<<"--> "<<postDevice_maxBucketOverflow<<std::endl;
       std::cout<<"Fill after device = "<<fill<<std::endl;
 #endif
@@ -321,7 +323,6 @@ public:
       if (postDevice_maxBucketOverflow>maxBucketOverflow){
          rehash(sizePower+1);
       }else{
-         std::cout<<"Cleaning TombStones"<<std::endl;
          std::cout<<"Before : "<<tombstone_count()<<" tombstones\n";
          clean_tombstones();
          std::cout<<"After : "<<tombstone_count()<<" tombstones\n";
@@ -417,12 +418,6 @@ public:
 
    __device__
    void set_element(const GID& key,LID val){
-      size_t thread_overflowLookup;
-      insert_element(key,val,thread_overflowLookup);
-      atomicMax(d_maxBucketOverflow,thread_overflowLookup);
-   }
-   __device__
-   void set_element_tombstone(const GID& key,LID val){
       size_t thread_overflowLookup;
       insert_element(key,val,thread_overflowLookup);
       atomicMax(d_maxBucketOverflow,thread_overflowLookup);
@@ -806,6 +801,9 @@ public:
       // Try to find the matching bucket.
       for (int i = 0; i < *d_maxBucketOverflow; i++) {
          const std::pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
+
+         if (candidate.first==TOMBSTONE){continue;}
+
          if (candidate.first == key) {
             // Found a match, return that
             return iterator(*this, (hashIndex + i) & bitMask);
@@ -829,6 +827,9 @@ public:
       // Try to find the matching bucket.
       for (int i = 0; i < *d_maxBucketOverflow; i++) {
          const std::pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
+
+         if (candidate.first==TOMBSTONE){continue;}
+
          if (candidate.first == key) {
             // Found a match, return that
             return const_iterator(*this, (hashIndex + i) & bitMask);
@@ -891,7 +892,9 @@ public:
       return keyPos;
    }
 
-   // Device code for inserting elements. Nonexistent elements get created.
+   /**Device code for inserting elements. Nonexistent elements get created.
+      Tombstones are accounted for.
+    */
    __device__
    void insert_element(const GID& key,LID value, size_t &thread_overflowLookup) {
       int bitMask = (1 <<(*d_sizePower )) - 1; // For efficient modulo of the array size
@@ -899,30 +902,45 @@ public:
       size_t i =0;
       while(i<buckets.size()){
          uint32_t vecindex=(hashIndex + i) & bitMask;
-         GID old;
-         old = atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, key);
-         if (old == EMPTYBUCKET || old == key){
+         GID old = atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, key);
+         //Key does not exist so we create it and incerement fill
+         if (old == EMPTYBUCKET){
             atomicExch(&buckets[vecindex].first,key);
             atomicExch(&buckets[vecindex].second,value);
             atomicAdd((unsigned int*)d_fill, 1);
             thread_overflowLookup = i+1;
             return;
          }
-         //Tombstone encounter
-         old = atomicCAS(&buckets[vecindex].first,TOMBSTONE,key);
-         if (old==TOMBSTONE){
-            atomicExch(&buckets[vecindex].first,key);
+
+         //Key exists so we overwrite it. Fill stays the same
+         if (old == key){
             atomicExch(&buckets[vecindex].second,value);
-            atomicAdd((unsigned int*)d_fill, 1);
             thread_overflowLookup = i+1;
-            //Need to look ahead to avoid duplicates
+            return;
+         }
+
+         //Tombstone encounter. Fill gets inceremented and we look ahead for 
+         //duplicates. If we find a duplicate we overwrite that otherwise we 
+         //replace the tombstone with the new element
+         if (old==TOMBSTONE){
             for (size_t j=i; j< thread_overflowLookup; j++){
-               uint32_t duplicate_index=(hashIndex + j) & bitMask;
-               GID duplicate = atomicCAS(&buckets[duplicate_index].first,key,EMPTYBUCKET);
-               if (duplicate == key){
-                  return ;
+               uint32_t next_index=(hashIndex + j) & bitMask;
+               GID candidate;
+               atomicExch(&candidate,buckets[next_index].first);
+               if (candidate == key){
+                  atomicExch(&buckets[vecindex].second,value);
+                  thread_overflowLookup = i+1;
+                  return;
+               }
+               if (candidate == EMPTYBUCKET){
+                  atomicExch(&buckets[vecindex].first,key);
+                  atomicExch(&buckets[vecindex].second,value);
+                  atomicAdd((unsigned int*)d_fill, 1);
+                  thread_overflowLookup = i+1;
+                  return;
                }
             }
+
          }
          i++;
       }
@@ -933,7 +951,7 @@ public:
    std::pair<iterator, bool> insert(std::pair<GID, LID> newEntry) {
       bool found = find(newEntry.first) != end();
       if (!found) {
-         set_element_tombstone(newEntry.first,newEntry.second);
+         set_element(newEntry.first,newEntry.second);
       }
       return std::pair<iterator, bool>(find(newEntry.first), !found);
    }
