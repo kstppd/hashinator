@@ -84,7 +84,6 @@ void stress_test(int power,int threads){
    gpu_write_map<<<blocks,threads>>> (dmap);
    cudaDeviceSynchronize();
    
-   
    //Always clean up after kernel
    hmap.download();
 
@@ -108,6 +107,7 @@ void stress_test(int power,int threads){
    //We clean up
    hmap.download();
 
+   hmap.print_kvals();
    //We now expect the map to have 0 fill as we deleted all the elemets
    assert(hmap.size()==0 && "Map fill should be zero but is not. Something is broken!");
 }
@@ -127,8 +127,8 @@ int main(int argc, char**argv){
       std::cerr<<"please enter something larger than 11 this is a simple test!"<<std::endl;
       exit(1);
    }
-   int threads=32;
-   for (int power=10; power<maxElements; power++){
+   int threads=8;
+   for (int power=5; power<maxElements; power++){
       auto start = std::chrono::high_resolution_clock::now();
       stress_test(power,threads);
       auto end = std::chrono::high_resolution_clock::now();
