@@ -4,17 +4,13 @@
 #include <gtest/gtest.h>
 #include "../../src/splitvector/splitvec.h"
 #include <cuda_profiler_api.h>
+#include "../../src/splitvector/split_tools.h"
 
 #define expect_true EXPECT_TRUE
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
 #define N 1<<12
-#define WARP 32
-#define BLOCKSIZE 32
-#define FULL_MASK 0xffffffff
-
 typedef split::SplitVector<int,split::split_unified_allocator<int>,split::split_unified_allocator<size_t>> vec ;
-//typedef split::SplitVector<int,split_host_allocator<int>> vec ;
 
 
 __global__
@@ -368,117 +364,11 @@ TEST(Vector_Functionality , PushBack_And_Erase_Device){
       vec* d_a=a.upload();
       push_back_kernel<<<4,8>>>(d_a);
       cudaDeviceSynchronize();
-      print_vec_elements(a);
       cudaFree(d_a);
       vec* d_b=a.upload();
       erase_kernel<<<1,1>>>(d_b);
       cudaDeviceSynchronize();
       cudaFree(d_b);
-      print_vec_elements(a);
-}
-
-
-struct Predicate{
-   __host__ __device__
-   bool operator ()(int i)const {
-      return i%2==0;
-   }
-};
-
-/*
- * Computes total numeber of valid elements in SIMD lane
- * */
-template<typename T,typename Rule>
-__global__
-void warpcount_reduction(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* input,
-                split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* output,
-                Rule rule)
-{
-   size_t size=input->size();
-	size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
-   if (tid<size){
-      int total_valid_elements=__syncthreads_count(rule(input->at(tid)));
-      if (threadIdx.x==0){
-         output->at(blockIdx.x)=total_valid_elements;
-      }
-   }
-}
-
-
-template <typename T>
-void naive_xScan(const split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
-                 split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>&  output)
-
-{
-	output[0] = 0; //exclusive
-	for(size_t i = 0; i < input.size()-1 ; i++) {
-		output[i+1] = output[i] + input[i];
-	}
-}
-
-
-template <typename T, typename Rule>
-__global__
-void split_compact(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* input,
-                   split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* counts,
-                   split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* offsets,
-                   split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* output,
-                   Rule rule)
-{
-
-   //extern __shared__ T buffer[];
-   size_t size=input->size();
-   size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
-   size_t wid = tid/WARP;
-   size_t w_tid=tid%WARP;
-   bool tres=rule(input->at(tid));
-   if (tid<input->size()){
-      unsigned int  mask= __ballot_sync(FULL_MASK,tres);
-      unsigned int n_neighbors= mask & ((1 << w_tid) - 1);
-      int total_valid_in_warp	= __popc(mask);
-      int private_index	= offsets->at(wid) + __popc(n_neighbors);
-
-      //TODO
-      //Maybe add an interim step where you push these into a shared memory block first
-      if (tres){
-         output->at(private_index) = input->at(tid);
-      }
-      
-      if (tid==0){
-         int actual_total_blocks=offsets->back()+counts->back();
-         printf("Total blocks = %d\n",actual_total_blocks);
-      }
-   }
-}
-
-TEST(Compaction,BlockCount){
-
-   const size_t sz=1024;
-   vec input(sz);
-   vec output(sz);
-   std::generate(input.begin(), input.end(), []{static int i=0 ; return i++;});
-   int nBlocks=input.size()/BLOCKSIZE; 
-   vec counts(nBlocks);
-   vec offsets(nBlocks);
-   vec* d_in=input.upload();
-   vec* d_out=counts.upload() ;
-   
-   //Step 1 -- Per wrap workload
-   warpcount_reduction<<<nBlocks,BLOCKSIZE>>>(d_in,d_out,Predicate());
-   cudaDeviceSynchronize();
-
-   //Step 2 -- Exclusive Prefix Scan on offsets
-   naive_xScan(counts,offsets);
-
-   //Step 3 -- Compaction
-   vec* d_input=input.upload();
-   vec* d_output=output.upload();
-   vec* d_offsets=offsets.upload();
-   vec* d_counts=counts.upload();
-   split_compact<<<nBlocks,BLOCKSIZE>>>(d_input,d_counts,d_offsets,d_output,Predicate());
-   cudaDeviceSynchronize();
-   expect_true(1);
-
 }
 
 
