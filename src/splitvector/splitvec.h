@@ -60,7 +60,8 @@ namespace split{
 
          /*Internal range check for use in .at()*/
          __host__ __device__ void _rangeCheck(size_t index){
-            assert(index<size() &&  "out of range");
+            if (index>=size()){printf("Tried indexing %d/%d\n",(int)index,(int)size());}
+            assert(index<size() &&  "out of range ");
          }
 
          /*Allocation/Deallocation only on host*/

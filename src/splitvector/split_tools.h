@@ -163,7 +163,7 @@ namespace split_tools{
       size_t size=input->size();
       size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
       if (tid<size){
-         int total_valid_elements=__syncthreads_count(rule(input->at(tid)));
+         size_t total_valid_elements=__syncthreads_count(rule(input->at(tid)));
          if (threadIdx.x==0){
             output->at(blockIdx.x)=total_valid_elements;
          }
