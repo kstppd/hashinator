@@ -9,22 +9,24 @@
 #define expect_true EXPECT_TRUE
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
-#define N 1<<24
+#define N 1<<14
+#define N2 1<<5
 #define WARP 32
-#define BLOCKSIZE 1024
-#define FULL_MASK 0xffffffff
+#define BLOCKSIZE 32
+#define FULL_MASK 0xFFFFFFFF //32-bit wide for cuda warps
 
-typedef int val_type;
+typedef uint32_t val_type;
 typedef split::SplitVector<val_type,split::split_unified_allocator<val_type>,split::split_unified_allocator<size_t>> vec ;
 
 void print_vec_elements(vec& v){
    std::cout<<"****Vector Contents********"<<std::endl;
    std::cout<<"Size= "<<v.size()<<std::endl;
    std::cout<<"Capacity= "<<v.capacity()<<std::endl;
+   size_t j=0;
    for (auto i:v){
-      std::cout<<i<<" ";
+      //printf("[%d,%d] ",j++,i);
+      printf("%d ",i);
    }
-
    std::cout<<"\n****~Vector Contents********"<<std::endl;
 }
 
@@ -32,11 +34,7 @@ void print_vec_elements(vec& v){
 struct Predicate{
    __host__ __device__
    bool operator ()(int i)const {
-      return i%2==0;
-      if (i>0 && i <10 ){return true;}
-      if (i>300 && i <350 ){return true;}
-      return false;
-
+      return i<100;
    }
 };
 
@@ -44,7 +42,6 @@ struct Predicate{
 template <typename T>
 void naive_xScan(const split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
                  split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>&  output)
-
 {
 	output[0] = 0; //exclusive
 	for(size_t i = 0; i < input.size()-1 ; i++) {
@@ -56,7 +53,10 @@ void split_prefix_scan(vec& input, vec& output){
 
    const int PREFIX_BLOCKSIZE=BLOCKSIZE/2;
    //Calculate how many blocks we need to split the array into.
-   assert(input.size()%BLOCKSIZE==0);
+   if (input.size()%BLOCKSIZE!=0){
+      std::cout<<"Input size= "<<input.size()<<std::endl;
+      assert(input.size()%BLOCKSIZE==0);
+   }
    const size_t n = input.size()/BLOCKSIZE;
    vec partial_sums(n);
    
@@ -66,6 +66,10 @@ void split_prefix_scan(vec& input, vec& output){
    cudaDeviceSynchronize();
 
    //Scan the partial sums in place this time
+   if (partial_sums.size()>=BLOCKSIZE){
+      std::cout<<"Partial Sums size= "<<partial_sums.size()<<std::endl;
+      assert(partial_sums.size()<BLOCKSIZE);
+   }
    split_tools::split_scan_block<val_type,PREFIX_BLOCKSIZE><<<1,PREFIX_BLOCKSIZE>>>(partial_sums.data(),partial_sums.data(),partial_sums.size());
    cudaDeviceSynchronize();
 
@@ -88,6 +92,8 @@ void compact(split::SplitVector<T,split::split_unified_allocator<T>,split::split
    extern __shared__ unsigned int buffer[];
    unsigned int size=input->size();
    unsigned int tid = threadIdx.x + blockIdx.x*blockDim.x;
+   if (tid>=size) {return;}
+   unsigned int offset = BLOCKSIZE/WARP;
    unsigned int wid = tid/WARP;
    unsigned int widb = threadIdx.x/WARP;
    unsigned int w_tid=tid%WARP;
@@ -101,19 +107,19 @@ void compact(split::SplitVector<T,split::split_unified_allocator<T>,split::split
       buffer[widb]=total_valid_in_warp;
    }
    __syncthreads();
-
    if (w_tid==0 && wid%warps_in_block==0){
-      buffer[widb]=0;
-      for (unsigned int i =1 ; i < warps_in_block;++i){
-         buffer[widb+i]+=buffer[widb+i-1];
+      buffer[offset+widb]=0;
+      for (unsigned int i =0 ; i < warps_in_block-1;++i){
+         buffer[offset+widb+i+1]=buffer[offset+widb+i] +buffer[widb+i];
       }
    }
    __syncthreads();
-   unsigned int private_index	= buffer[widb] + offsets->at(wid/warps_in_block) + __popc(n_neighbors);
-   //Maybe add an interim step where you push these into a shared memory block first
-   if (tres){
+   const unsigned int neighbor_count= __popc(n_neighbors);
+   unsigned int private_index	= buffer[offset+widb] + offsets->at(wid/warps_in_block) + neighbor_count ;
+   if (tres && widb!=warps_in_block){
       output->at(private_index) = input->at(tid);
    }
+   __syncthreads();
    if (tid==0){
       unsigned int actual_total_blocks=offsets->back()+counts->back();
       output->erase(&output->at(actual_total_blocks),output->end());
@@ -134,16 +140,16 @@ TEST(Compaction,GPU){
    cudaDeviceSynchronize();
 
    //Step 2 -- Exclusive Prefix Scan on offsets
-   //split_prefix_scan(counts,offsets);
-   //cudaDeviceSynchronize();
-   naive_xScan(counts,offsets);
+   split_prefix_scan(counts,offsets);
+   cudaDeviceSynchronize();
+   //naive_xScan(counts,offsets);
 
    ////Step 3 -- Compaction
    vec* d_input=input.upload();
    vec* d_output=output.upload();
    vec* d_offsets=offsets.upload();
    vec* d_counts=counts.upload();
-   compact<val_type,Predicate><<<nBlocks,BLOCKSIZE,(BLOCKSIZE/WARP)*sizeof(unsigned int)>>>(d_input,d_counts,d_offsets,d_output,Predicate());
+   compact<val_type,Predicate><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int)>>>(d_input,d_counts,d_offsets,d_output,Predicate());
    cudaDeviceSynchronize();
    std::cout<<"GPU compaction = "<<output.back()<<std::endl;
 }
@@ -167,8 +173,7 @@ TEST(Compaction,CPU){
 
 //TEST(Compaction_GPU,Exclusive_Scan_Large_Array){
 
-   //const size_t bl_size=1;
-   //const size_t sz=bl_size*64;
+   //const size_t sz=N2;
    //vec input(sz);
    //vec output(sz);
    //std::generate(input.begin(), input.end(), []{static int i=0 ; return i++;});
@@ -179,8 +184,7 @@ TEST(Compaction,CPU){
 
 //TEST(Compaction_CPU,Exclusive_Scan_Large_Array){
 
-   //const size_t bl_size=1;
-   //const size_t sz=bl_size*64;
+   //const size_t sz=N2;
    //vec input(sz);
    //vec output(sz);
    //std::generate(input.begin(), input.end(), []{static int i=0 ; return i++;});
