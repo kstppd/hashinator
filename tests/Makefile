@@ -1,8 +1,8 @@
 CC=nvcc  
 LNK=nvcc 
-OPT= -O3
-CXXFLAGS= 
-EXTRA= -Xcompiler -rdynamic --std=c++14
+OPT= 
+CXXFLAGS= -O3
+EXTRA=  -Xcompiler -rdynamic --std=c++14
 EXTRA+= -gencode arch=compute_60,code=sm_60 -rdc=true -L /usr/lib/x86_64-linux-gnu
 EXTRA+=  -DHASHMAPDEBUG --expt-relaxed-constexpr 
 

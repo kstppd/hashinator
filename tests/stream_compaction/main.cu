@@ -9,10 +9,9 @@
 #define expect_true EXPECT_TRUE
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
-#define N 1<<12
+#define N 1<<24
 #define WARP 32
-#define BLOCKSIZE 32
-//#define MAX_SIZE_PER_BLOCK 32
+#define BLOCKSIZE 1024
 #define FULL_MASK 0xffffffff
 
 typedef int val_type;
@@ -34,6 +33,10 @@ struct Predicate{
    __host__ __device__
    bool operator ()(int i)const {
       return i%2==0;
+      if (i>0 && i <10 ){return true;}
+      if (i>300 && i <350 ){return true;}
+      return false;
+
    }
 };
 
@@ -72,6 +75,8 @@ void split_prefix_scan(vec& input, vec& output){
 }
 
 
+
+
 template <typename T, typename Rule>
 __global__
 void compact(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* input,
@@ -80,35 +85,43 @@ void compact(split::SplitVector<T,split::split_unified_allocator<T>,split::split
                    split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* output,
                    Rule rule)
 {
-
-   //extern __shared__ T buffer[];
-   size_t size=input->size();
-   size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
-   size_t wid = tid/WARP;
-   size_t w_tid=tid%WARP;
+   extern __shared__ unsigned int buffer[];
+   unsigned int size=input->size();
+   unsigned int tid = threadIdx.x + blockIdx.x*blockDim.x;
+   unsigned int wid = tid/WARP;
+   unsigned int widb = threadIdx.x/WARP;
+   unsigned int w_tid=tid%WARP;
+   unsigned int warps_in_block = blockDim.x/WARP;
    bool tres=rule(input->at(tid));
-   if (tid<input->size()){
-      unsigned int  mask= __ballot_sync(FULL_MASK,tres);
-      unsigned int n_neighbors= mask & ((1 << w_tid) - 1);
-      int total_valid_in_warp	= __popc(mask);
-      int private_index	= offsets->at(wid) + __popc(n_neighbors);
 
-      //TODO
-      //Maybe add an interim step where you push these into a shared memory block first
-      if (tres){
-         output->at(private_index) = input->at(tid);
+   unsigned int  mask= __ballot_sync(FULL_MASK,tres);
+   unsigned int n_neighbors= mask & ((1 << w_tid) - 1);
+   unsigned int total_valid_in_warp	= __popc(mask);
+   if (w_tid==0 ){
+      buffer[widb]=total_valid_in_warp;
+   }
+   __syncthreads();
+
+   if (w_tid==0 && wid%warps_in_block==0){
+      buffer[widb]=0;
+      for (unsigned int i =1 ; i < warps_in_block;++i){
+         buffer[widb+i]+=buffer[widb+i-1];
       }
-      
-      if (tid==0){
-         size_t actual_total_blocks=offsets->back()+counts->back();
-         output->erase(&output->at(actual_total_blocks),output->end());
-      }
+   }
+   __syncthreads();
+   unsigned int private_index	= buffer[widb] + offsets->at(wid/warps_in_block) + __popc(n_neighbors);
+   //Maybe add an interim step where you push these into a shared memory block first
+   if (tres){
+      output->at(private_index) = input->at(tid);
+   }
+   if (tid==0){
+      unsigned int actual_total_blocks=offsets->back()+counts->back();
+      output->erase(&output->at(actual_total_blocks),output->end());
    }
 }
 
-TEST(Compaction,BlockCount){
-
-   const size_t sz=16*1024;
+TEST(Compaction,GPU){
+   const size_t sz=N;
    vec input(sz);
    vec output(sz);
    std::generate(input.begin(), input.end(), []{static int i=0 ; return i++;});
@@ -121,18 +134,35 @@ TEST(Compaction,BlockCount){
    cudaDeviceSynchronize();
 
    //Step 2 -- Exclusive Prefix Scan on offsets
-   split_prefix_scan(counts,offsets);
-   //naive_xScan(counts,offsets);
-   cudaDeviceSynchronize();
+   //split_prefix_scan(counts,offsets);
+   //cudaDeviceSynchronize();
+   naive_xScan(counts,offsets);
 
    ////Step 3 -- Compaction
    vec* d_input=input.upload();
    vec* d_output=output.upload();
    vec* d_offsets=offsets.upload();
    vec* d_counts=counts.upload();
-   compact<val_type,Predicate><<<nBlocks,BLOCKSIZE>>>(d_input,d_counts,d_offsets,d_output,Predicate());
+   compact<val_type,Predicate><<<nBlocks,BLOCKSIZE,(BLOCKSIZE/WARP)*sizeof(unsigned int)>>>(d_input,d_counts,d_offsets,d_output,Predicate());
    cudaDeviceSynchronize();
+   std::cout<<"GPU compaction = "<<output.back()<<std::endl;
 }
+
+
+TEST(Compaction,CPU){
+   const size_t sz=N;
+   vec input(sz);
+   vec output(sz);
+   std::generate(input.begin(), input.end(), []{static int i=0 ; return i++;});
+   
+   Predicate rule;size_t j =0;
+   for (const auto& e:input){
+      if (rule(e)){output[j++]=e;}
+   }
+   output.erase(&output.at(j),output.end());
+   std::cout<<"CPU compaction = "<<output.back()<<std::endl;
+}
+
 
 
 //TEST(Compaction_GPU,Exclusive_Scan_Large_Array){
