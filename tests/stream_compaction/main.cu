@@ -13,7 +13,6 @@
 #define N2 1000000
 #define WARP 32
 #define BLOCKSIZE 32
-#define FULL_MASK 0xFFFFFFFF //32-bit wide for cuda warps not sure what we do on AMD HW
 
 typedef uint32_t val_type;
 typedef split::SplitVector<val_type,split::split_unified_allocator<val_type>,split::split_unified_allocator<size_t>> vec ;
@@ -53,100 +52,6 @@ void naive_xScan(const split::SplitVector<T,split::split_unified_allocator<T>,sp
 	}
 }
 
-template <typename T, typename Rule>
-__global__
-void compact(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* input,
-                   split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* counts,
-                   split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* offsets,
-                   split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* output,
-                   Rule rule)
-{
-   extern __shared__ T buffer[];
-   unsigned int size=input->size();
-   unsigned int tid = threadIdx.x + blockIdx.x*blockDim.x;
-   if (tid>=size) {return;}
-   unsigned int offset = BLOCKSIZE/WARP;
-   unsigned int wid = tid/WARP;
-   unsigned int widb = threadIdx.x/WARP;
-   unsigned int w_tid=tid%WARP;
-   unsigned int warps_in_block = blockDim.x/WARP;
-   bool tres=rule(input->at(tid));
-
-   unsigned int  mask= __ballot_sync(FULL_MASK,tres);
-   unsigned int n_neighbors= mask & ((1 << w_tid) - 1);
-   unsigned int total_valid_in_warp	= __popc(mask);
-   if (w_tid==0 ){
-      buffer[widb]=total_valid_in_warp;
-   }
-   __syncthreads();
-   if (w_tid==0 && wid%warps_in_block==0){
-      buffer[offset+widb]=0;
-      for (unsigned int i =0 ; i < warps_in_block-1;++i){
-         buffer[offset+widb+i+1]=buffer[offset+widb+i] +buffer[widb+i];
-      }
-   }
-   __syncthreads();
-   const unsigned int neighbor_count= __popc(n_neighbors);
-   unsigned int private_index	= buffer[offset+widb] + offsets->at(wid/warps_in_block) + neighbor_count ;
-   if (tres && widb!=warps_in_block){
-      output->at(private_index) = input->at(tid);
-   }
-   __syncthreads();
-   if (tid==0){
-      unsigned int actual_total_blocks=offsets->back()+counts->back();
-      output->erase(&output->at(actual_total_blocks),output->end());
-   }
-}
-
-template <typename T>
-__global__
-void split_prescan(T* input,T* output,T* partial_sums, int n,size_t len){
-
-   extern __shared__ T buffer[];
-   int tid = threadIdx.x;
-   int offset=1;
-   size_t local_start=blockIdx.x*n;
-
-   //Load into shared memory 
-   if (local_start+2*tid+1<len){
-      buffer[2*tid]= input[local_start+ 2*tid];
-      buffer[2*tid+1]= input[local_start+ 2*tid+1];
-   }
-
-   //Reduce Phase
-   for (int d =n>>1; d>0; d>>=1){
-      __syncthreads();
-
-      if (tid<d){
-         int ai = offset*(2*tid+1)-1;
-         int bi = offset*(2*tid+2)-1;
-         buffer[bi]+=buffer[ai];
-      }
-      offset*=2;
-   }
-   
-   //Exclusive scan so zero out last element (will propagate to first)
-   if (tid==0){ partial_sums[blockIdx.x]=buffer[n-1] ;buffer[n-1]=0;}
-
-   //Downsweep Phase
-   for (int d =1; d<n; d*=2){
-
-      offset>>=1;
-      __syncthreads();
-      if (tid<d){
-         int ai = offset*(2*tid+1)-1;
-         int bi = offset*(2*tid+2)-1;
-         T tmp=buffer[ai];
-         buffer[ai]=buffer[bi];
-         buffer[bi]+=tmp;
-      }
-   }
-   __syncthreads();
-   if (local_start+2*tid+1<len){
-      output[local_start+2*tid]   = buffer[2*tid];
-      output[local_start+2*tid+1]= buffer[2*tid+1];
-   }
-}
 
 
 void split_prefix_scan(vec& input, vec& output){
@@ -170,14 +75,14 @@ void split_prefix_scan(vec& input, vec& output){
    //Allocate memory for partial sums
    vec partial_sums(gridSize); 
 
-   split_prescan<<<gridSize,scanBlocksize,scanElements*sizeof(val_type)>>>(input.data(),output.data(),partial_sums.data(),scanElements,input.size());
+   split_tools::split_prescan<<<gridSize,scanBlocksize,scanElements*sizeof(val_type)>>>(input.data(),output.data(),partial_sums.data(),scanElements,input.size());
    cudaDeviceSynchronize();
 
 
    if (gridSize>1){
       if (partial_sums.size()<scanElements){
          vec partial_sums_dummy(gridSize); 
-         split_prescan<<<1,scanBlocksize,scanElements*sizeof(val_type)>>>(partial_sums.data(),partial_sums.data(),partial_sums_dummy.data(),gridSize,partial_sums.size());
+         split_tools::split_prescan<<<1,scanBlocksize,scanElements*sizeof(val_type)>>>(partial_sums.data(),partial_sums.data(),partial_sums_dummy.data(),gridSize,partial_sums.size());
          cudaDeviceSynchronize();
       }else{
          vec partial_sums_clone(partial_sums);
@@ -192,8 +97,6 @@ void split_prefix_scan(vec& input, vec& output){
 }
 
 
-
-
 TEST(Compaction,GPU){
    const size_t sz=N;
    vec input(sz);
@@ -204,7 +107,7 @@ TEST(Compaction,GPU){
    vec offsets(nBlocks);
    
    //Step 1 -- Per wrap workload
-   split_tools::warpcount_reduction<<<nBlocks,BLOCKSIZE>>>(input.upload(),counts.upload(),Predicate());
+   split_tools::scan_reduce<<<nBlocks,BLOCKSIZE>>>(input.upload(),counts.upload(),Predicate());
    cudaDeviceSynchronize();
 
    //Step 2 -- Exclusive Prefix Scan on offsets
@@ -216,7 +119,7 @@ TEST(Compaction,GPU){
    vec* d_output=output.upload();
    vec* d_offsets=offsets.upload();
    vec* d_counts=counts.upload();
-   compact<val_type,Predicate><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int)>>>(d_input,d_counts,d_offsets,d_output,Predicate());
+   split_tools::split_compact<val_type,Predicate,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int)>>>(d_input,d_counts,d_offsets,d_output,Predicate());
    cudaDeviceSynchronize();
    std::cout<<"GPU compaction = "<<output.back()<<std::endl;
 }
