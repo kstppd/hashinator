@@ -10,10 +10,10 @@
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
 #define N 1<<20
-#define N2 1025
+#define N2 1000000
 #define WARP 32
-#define BLOCKSIZE 1024
-#define FULL_MASK 0xFFFFFFFF //32-bit wide for cuda warps
+#define BLOCKSIZE 32
+#define FULL_MASK 0xFFFFFFFF //32-bit wide for cuda warps not sure what we do on AMD HW
 
 typedef uint32_t val_type;
 typedef split::SplitVector<val_type,split::split_unified_allocator<val_type>,split::split_unified_allocator<size_t>> vec ;
@@ -29,7 +29,6 @@ void print_vec_elements(vec& v,const char*name=" "){
    std::cout<<"Capacity= "<<v.capacity()<<std::endl;
    size_t j=0;
    for (auto i:v){
-      //printf("[%d,%d] ",j++,i);
       printf("%d ",i);
    }
    std::cout<<"\n****~Vector Contents********"<<std::endl;
@@ -62,7 +61,7 @@ void compact(split::SplitVector<T,split::split_unified_allocator<T>,split::split
                    split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* output,
                    Rule rule)
 {
-   extern __shared__ unsigned int buffer[];
+   extern __shared__ T buffer[];
    unsigned int size=input->size();
    unsigned int tid = threadIdx.x + blockIdx.x*blockDim.x;
    if (tid>=size) {return;}
@@ -101,7 +100,7 @@ void compact(split::SplitVector<T,split::split_unified_allocator<T>,split::split
 
 template <typename T>
 __global__
-void split_prescan(T* input,T* output,T* partial_sums, size_t n,size_t len){
+void split_prescan(T* input,T* output,T* partial_sums, int n,size_t len){
 
    extern __shared__ T buffer[];
    int tid = threadIdx.x;
@@ -109,7 +108,7 @@ void split_prescan(T* input,T* output,T* partial_sums, size_t n,size_t len){
    size_t local_start=blockIdx.x*n;
 
    //Load into shared memory 
-   if (tid<len){
+   if (local_start+2*tid+1<len){
       buffer[2*tid]= input[local_start+ 2*tid];
       buffer[2*tid+1]= input[local_start+ 2*tid+1];
    }
@@ -143,7 +142,7 @@ void split_prescan(T* input,T* output,T* partial_sums, size_t n,size_t len){
       }
    }
    __syncthreads();
-   if (tid<len){
+   if (local_start+2*tid+1<len){
       output[local_start+2*tid]   = buffer[2*tid];
       output[local_start+2*tid+1]= buffer[2*tid+1];
    }
@@ -161,24 +160,30 @@ void split_prefix_scan(vec& input, vec& output){
 
    //If input is not exactly divisible by scanElements we launch an extra block
    //assert(isPow2(input_size) && "Using prefix scan with non powers of 2 as input size is not thought out yet :D");
-   if (input_size%scanElements!=0){gridSize+=1;}
+
+   if (input_size%scanElements!=0){
+      std::cout<<"Gridsize was"<<gridSize+1<<std::endl;
+      gridSize=1<<((int)ceil(log(++gridSize)/log(2)));
+      std::cout<<"Gridsize is"<<gridSize<<std::endl;
+   }
 
    //Allocate memory for partial sums
    vec partial_sums(gridSize); 
 
-   split_prescan<<<gridSize,scanBlocksize,scanElements*sizeof(val_type)>>>(input.data(),output.data(),partial_sums.data(),scanElements,input.size()/2);
+   split_prescan<<<gridSize,scanBlocksize,scanElements*sizeof(val_type)>>>(input.data(),output.data(),partial_sums.data(),scanElements,input.size());
    cudaDeviceSynchronize();
+
 
    if (gridSize>1){
       if (partial_sums.size()<scanElements){
          vec partial_sums_dummy(gridSize); 
-         split_prescan<<<1,scanBlocksize,scanElements*sizeof(val_type)>>>(partial_sums.data(),partial_sums.data(),partial_sums_dummy.data(),gridSize,partial_sums.size()/2);
+         split_prescan<<<1,scanBlocksize,scanElements*sizeof(val_type)>>>(partial_sums.data(),partial_sums.data(),partial_sums_dummy.data(),gridSize,partial_sums.size());
          cudaDeviceSynchronize();
       }else{
          vec partial_sums_clone(partial_sums);
          split_prefix_scan(partial_sums_clone,partial_sums);
       }
-      split_tools::scan_add<<<gridSize,scanBlocksize>>>(output.data(),partial_sums.data(),scanElements);
+      split_tools::scan_add<<<gridSize,scanBlocksize>>>(output.data(),partial_sums.data(),scanElements,output.size());
       cudaDeviceSynchronize();
    }
    vec gpu_out(output);

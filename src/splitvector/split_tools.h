@@ -14,14 +14,18 @@ namespace split_tools{
    }
 
 
-   template <typename T, int BLOCKSIZE>
+   template <typename T>
    __global__
-   void scan_add(T* input,T* partial_sums, size_t n){
-      size_t tid = threadIdx.x;
-      size_t local_start=(blockIdx.x)*BLOCKSIZE;
-      T val=partial_sums[blockIdx.x];
-      input[local_start+2*tid]+=val;
-      input[local_start+2*tid+1]+=val;
+   void scan_add(T* input,T* partial_sums, size_t blockSize,size_t len){
+      const T val=partial_sums[blockIdx.x];
+      const size_t target1 = 2*blockIdx.x*blockDim.x+threadIdx.x;
+      const size_t target2 = target1+blockDim.x;
+      if (target1<len){
+         input[target1]+=val;
+         if (target2<len){
+            input[target2]+=val;
+         }
+      }
    }
 
 
