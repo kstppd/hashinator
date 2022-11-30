@@ -9,17 +9,22 @@
 #define expect_true EXPECT_TRUE
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
-#define N 1<<14
-#define N2 1<<5
+#define N 1<<20
+#define N2 1025
 #define WARP 32
-#define BLOCKSIZE 32
+#define BLOCKSIZE 1024
 #define FULL_MASK 0xFFFFFFFF //32-bit wide for cuda warps
 
 typedef uint32_t val_type;
 typedef split::SplitVector<val_type,split::split_unified_allocator<val_type>,split::split_unified_allocator<size_t>> vec ;
 
-void print_vec_elements(vec& v){
-   std::cout<<"****Vector Contents********"<<std::endl;
+bool isPow2(size_t x ){
+   return (x&(x-1))==0;
+}
+
+
+void print_vec_elements(vec& v,const char*name=" "){
+   std::cout<<name <<"****Vector Contents********"<<std::endl;
    std::cout<<"Size= "<<v.size()<<std::endl;
    std::cout<<"Capacity= "<<v.capacity()<<std::endl;
    size_t j=0;
@@ -34,7 +39,7 @@ void print_vec_elements(vec& v){
 struct Predicate{
    __host__ __device__
    bool operator ()(int i)const {
-      return i<100;
+      return i%2==0;
    }
 };
 
@@ -48,38 +53,6 @@ void naive_xScan(const split::SplitVector<T,split::split_unified_allocator<T>,sp
 		output[i+1] = output[i] + input[i];
 	}
 }
-
-void split_prefix_scan(vec& input, vec& output){
-
-   const int PREFIX_BLOCKSIZE=BLOCKSIZE/2;
-   //Calculate how many blocks we need to split the array into.
-   if (input.size()%BLOCKSIZE!=0){
-      std::cout<<"Input size= "<<input.size()<<std::endl;
-      assert(input.size()%BLOCKSIZE==0);
-   }
-   const size_t n = input.size()/BLOCKSIZE;
-   vec partial_sums(n);
-   
-   //First scan the full input into its subparts
-   //Partial sums contains the partial sub sums after the call 
-   split_tools::split_scan<val_type,BLOCKSIZE,PREFIX_BLOCKSIZE><<<n,PREFIX_BLOCKSIZE>>>(input.data(),output.data(),partial_sums.data(),BLOCKSIZE);
-   cudaDeviceSynchronize();
-
-   //Scan the partial sums in place this time
-   if (partial_sums.size()>=BLOCKSIZE){
-      std::cout<<"Partial Sums size= "<<partial_sums.size()<<std::endl;
-      assert(partial_sums.size()<BLOCKSIZE);
-   }
-   split_tools::split_scan_block<val_type,PREFIX_BLOCKSIZE><<<1,PREFIX_BLOCKSIZE>>>(partial_sums.data(),partial_sums.data(),partial_sums.size());
-   cudaDeviceSynchronize();
-
-   //Finally add the prefix sums to the output
-   split_tools::scan_add<val_type,BLOCKSIZE><<<n,PREFIX_BLOCKSIZE>>>(output.data(),partial_sums.data(),BLOCKSIZE);
-   cudaDeviceSynchronize();
-}
-
-
-
 
 template <typename T, typename Rule>
 __global__
@@ -126,12 +99,102 @@ void compact(split::SplitVector<T,split::split_unified_allocator<T>,split::split
    }
 }
 
+template <typename T>
+__global__
+void split_prescan(T* input,T* output,T* partial_sums, size_t n,size_t len){
+
+   extern __shared__ T buffer[];
+   int tid = threadIdx.x;
+   int offset=1;
+   size_t local_start=blockIdx.x*n;
+
+   //Load into shared memory 
+   if (tid<len){
+      buffer[2*tid]= input[local_start+ 2*tid];
+      buffer[2*tid+1]= input[local_start+ 2*tid+1];
+   }
+
+   //Reduce Phase
+   for (int d =n>>1; d>0; d>>=1){
+      __syncthreads();
+
+      if (tid<d){
+         int ai = offset*(2*tid+1)-1;
+         int bi = offset*(2*tid+2)-1;
+         buffer[bi]+=buffer[ai];
+      }
+      offset*=2;
+   }
+   
+   //Exclusive scan so zero out last element (will propagate to first)
+   if (tid==0){ partial_sums[blockIdx.x]=buffer[n-1] ;buffer[n-1]=0;}
+
+   //Downsweep Phase
+   for (int d =1; d<n; d*=2){
+
+      offset>>=1;
+      __syncthreads();
+      if (tid<d){
+         int ai = offset*(2*tid+1)-1;
+         int bi = offset*(2*tid+2)-1;
+         T tmp=buffer[ai];
+         buffer[ai]=buffer[bi];
+         buffer[bi]+=tmp;
+      }
+   }
+   __syncthreads();
+   if (tid<len){
+      output[local_start+2*tid]   = buffer[2*tid];
+      output[local_start+2*tid+1]= buffer[2*tid+1];
+   }
+}
+
+
+void split_prefix_scan(vec& input, vec& output){
+   //Input size
+   const size_t input_size=input.size();
+
+   //Scan is performed in half Blocksizes
+   size_t scanBlocksize= BLOCKSIZE/2;
+   size_t scanElements=2*scanBlocksize;
+   size_t gridSize = input_size/scanElements;
+
+   //If input is not exactly divisible by scanElements we launch an extra block
+   //assert(isPow2(input_size) && "Using prefix scan with non powers of 2 as input size is not thought out yet :D");
+   if (input_size%scanElements!=0){gridSize+=1;}
+
+   //Allocate memory for partial sums
+   vec partial_sums(gridSize); 
+
+   split_prescan<<<gridSize,scanBlocksize,scanElements*sizeof(val_type)>>>(input.data(),output.data(),partial_sums.data(),scanElements,input.size()/2);
+   cudaDeviceSynchronize();
+
+   if (gridSize>1){
+      if (partial_sums.size()<scanElements){
+         vec partial_sums_dummy(gridSize); 
+         split_prescan<<<1,scanBlocksize,scanElements*sizeof(val_type)>>>(partial_sums.data(),partial_sums.data(),partial_sums_dummy.data(),gridSize,partial_sums.size()/2);
+         cudaDeviceSynchronize();
+      }else{
+         vec partial_sums_clone(partial_sums);
+         split_prefix_scan(partial_sums_clone,partial_sums);
+      }
+      split_tools::scan_add<<<gridSize,scanBlocksize>>>(output.data(),partial_sums.data(),scanElements);
+      cudaDeviceSynchronize();
+   }
+   vec gpu_out(output);
+   naive_xScan(input,output);
+   assert(gpu_out==output && "CPU did not match GPU scan so bailing out");
+}
+
+
+
+
 TEST(Compaction,GPU){
    const size_t sz=N;
    vec input(sz);
    vec output(sz);
-   std::generate(input.begin(), input.end(), []{static int i=0 ; return i++;});
-   int nBlocks=input.size()/BLOCKSIZE; 
+   std::generate(input.begin(), input.end(), []{static size_t i=0 ; return i++;});
+   size_t nBlocks=input.size()/BLOCKSIZE; 
    vec counts(nBlocks);
    vec offsets(nBlocks);
    
@@ -142,7 +205,6 @@ TEST(Compaction,GPU){
    //Step 2 -- Exclusive Prefix Scan on offsets
    split_prefix_scan(counts,offsets);
    cudaDeviceSynchronize();
-   //naive_xScan(counts,offsets);
 
    ////Step 3 -- Compaction
    vec* d_input=input.upload();
@@ -159,7 +221,7 @@ TEST(Compaction,CPU){
    const size_t sz=N;
    vec input(sz);
    vec output(sz);
-   std::generate(input.begin(), input.end(), []{static int i=0 ; return i++;});
+   std::generate(input.begin(), input.end(), []{static size_t i=0 ; return i++;});
    
    Predicate rule;size_t j =0;
    for (const auto& e:input){
@@ -169,28 +231,25 @@ TEST(Compaction,CPU){
    std::cout<<"CPU compaction = "<<output.back()<<std::endl;
 }
 
+TEST(PrefixScan,CPU){
+   const size_t sz=N2;
+   vec input(sz);
+   vec output(sz);
+   std::generate(input.begin(), input.end(), []{static size_t i=0 ; return i++;});
+   naive_xScan(input,output);
+   std::cout<<"CPU scan = "<<output.back()<<std::endl;
+}
 
 
-//TEST(Compaction_GPU,Exclusive_Scan_Large_Array){
+TEST(PrefixScan,GPU){
+   const size_t sz=N2;
+   vec input(sz);
+   vec output(sz);
+   std::generate(input.begin(), input.end(), []{static size_t i=0 ; return i++;});
+   split_prefix_scan(input,output);
+   std::cout<<"GPU scan = "<<output.back()<<std::endl;
+}
 
-   //const size_t sz=N2;
-   //vec input(sz);
-   //vec output(sz);
-   //std::generate(input.begin(), input.end(), []{static int i=0 ; return i++;});
-   //split_prefix_scan(input,output);
-   //std::cout<<output.back()<<std::endl;
-//}
-
-
-//TEST(Compaction_CPU,Exclusive_Scan_Large_Array){
-
-   //const size_t sz=N2;
-   //vec input(sz);
-   //vec output(sz);
-   //std::generate(input.begin(), input.end(), []{static int i=0 ; return i++;});
-   //split_tools::cpu_exclusive_scan(input,output);
-   //std::cout<<output.back()<<std::endl;
-//}
 
 
 
