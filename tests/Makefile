@@ -1,6 +1,6 @@
 CC=nvcc  
 LNK=nvcc 
-OPT=  -Xcompiler -rdynamic -lineinfo --use_fast_math 
+OPT=  -Xptxas -O3 
 CXXFLAGS=
 EXTRA=  --std=c++14
 EXTRA+= -gencode arch=compute_60,code=sm_60  -L /usr/lib/x86_64-linux-gnu
@@ -55,8 +55,8 @@ gtest_vec_host.o: gtest_vec_host/vec_test.cu
 gtest_vec_device.o: gtest_vec_device/vec_test.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o gtestvecdevice gtest_vec_device/vec_test.cu
 
-stream_compaction.o: stream_compaction/main.cu
-	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o compaction stream_compaction/main.cu
+stream_compaction.o: stream_compaction/race.cu
+	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o compaction stream_compaction/race.cu
 
 vecspeedtest: vec_speed_test/main.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} -o vecspeedtest vec_speed_test/main.cu -DPROFINY_CALL_GRAPH_PROFILER -lboost_timer -lboost_chrono -lboost_system
