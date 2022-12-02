@@ -228,7 +228,7 @@ namespace split_tools{
    
    template <typename T,typename Rule,size_t BLOCKSIZE=1024, size_t WARP=32>
    __global__
-   void split_compact_raw(T* input, T* counts, T* offsets, T* output, Rule rule,const size_t size,size_t nBlocks,T* retval){
+   void split_compact_raw(T* input, uint32_t* counts, uint32_t* offsets, T* output, Rule rule,const size_t size,size_t nBlocks,uint32_t* retval){
 
       extern __shared__ T buffer[];
       const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
@@ -259,7 +259,6 @@ namespace split_tools{
       if (tres && widb!=warps_in_block){
          output[private_index] = input[tid];
       }
-      __syncthreads();
       if (tid==0){
          //const unsigned int actual_total_blocks=offsets->back()+counts->back();
          *retval=offsets[nBlocks-1]+counts[nBlocks-1];
@@ -287,7 +286,7 @@ namespace split_tools{
          }
 
          void* allocate(const size_t bytes){
-            assert(bytes_used+bytes<=total_bytes && "Mempool run out of space and crashed!");
+            assert(bytes_used+bytes<total_bytes && "Mempool run out of space and crashed!");
             bytes_used+=bytes;
             return _data+bytes_used;
          };
@@ -308,7 +307,7 @@ namespace split_tools{
 
    template<typename T,typename Rule>
    __global__
-   void scan_reduce_raw(T* input, T* output, Rule rule,size_t size){
+   void scan_reduce_raw(T* input, uint32_t* output, Rule rule,size_t size){
 
       size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
       if (tid<size){
@@ -323,8 +322,6 @@ namespace split_tools{
    template <typename T, size_t BLOCKSIZE=1024,size_t WARP=32>
    void split_prefix_scan_raw(T* input, T* output ,Cuda_mempool& mPool, const size_t input_size){
 
-
-
       //Scan is performed in half Blocksizes
       size_t scanBlocksize= BLOCKSIZE/2;
       size_t scanElements=2*scanBlocksize;
@@ -332,7 +329,6 @@ namespace split_tools{
 
       //If input is not exactly divisible by scanElements we launch an extra block
       assert(isPow2(input_size) && "Using prefix scan with non powers of 2 as input size is not thought out yet :D");
-
       if (input_size%scanElements!=0){
          gridSize=1<<((int)ceil(log(++gridSize)/log(2)));
       }
@@ -351,7 +347,7 @@ namespace split_tools{
          }else{
             assert(0 && "NOT IMPLEMENTED YET");
             T* partial_sums_clone=(T*)mPool.allocate(gridSize*sizeof(T));
-            cudaMemcpy(partial_sums_clone, partial_sums_clone, gridSize*sizeof(T),cudaMemcpyDeviceToDevice);
+            cudaMemcpy(partial_sums_clone, partial_sums, gridSize*sizeof(T),cudaMemcpyDeviceToDevice);
             split_prefix_scan_raw(partial_sums_clone,partial_sums,mPool,gridSize);
             
          }
@@ -370,17 +366,17 @@ namespace split_tools{
       size_t nBlocks=input.size()/BLOCKSIZE; 
       
       //Allocate with Mempool
-      const size_t memory_for_pool = 3*nBlocks*sizeof(T)  ;
+      const size_t memory_for_pool = 8*nBlocks*sizeof(uint32_t) ;
       Cuda_mempool mPool(memory_for_pool);
 
-      T* d_counts;
-      T* d_offsets;
-      d_counts=(T*)mPool.allocate(nBlocks*sizeof(T));
+      uint32_t* d_counts;
+      uint32_t* d_offsets;
+      d_counts=(uint32_t*)mPool.allocate(nBlocks*sizeof(uint32_t));
 
             
       //Phase 1 -- Calculate per warp workload
       split_tools::scan_reduce_raw<<<nBlocks,BLOCKSIZE>>>(input.data(),d_counts,rule,input.size());
-      d_offsets=(T*)mPool.allocate(nBlocks*sizeof(T));
+      d_offsets=(uint32_t*)mPool.allocate(nBlocks*sizeof(uint32_t));
       cudaDeviceSynchronize();
 
 
@@ -390,12 +386,11 @@ namespace split_tools{
 
 
       //Step 3 -- Compaction
-      T* retval=(T*)mPool.allocate(sizeof(T));
+      uint32_t* retval=(uint32_t*)mPool.allocate(sizeof(uint32_t));
       split_tools::split_compact_raw<T,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int)>>>(input.data(),d_counts,d_offsets,output.data(),rule,input.size(),nBlocks,retval);
       cudaDeviceSynchronize();
       T numel;
-      cudaMemcpy(&numel,retval,sizeof(T),cudaMemcpyDeviceToHost);
+      cudaMemcpy(&numel,retval,sizeof(uint32_t),cudaMemcpyDeviceToHost);
       output.erase(&output[numel],output.end());
    }
-
 }
