@@ -225,9 +225,7 @@ namespace split_tools{
       cudaFree(d_offsets);
    }
 
-
-
-
+   
    template <typename T,typename Rule,size_t BLOCKSIZE=1024, size_t WARP=32>
    __global__
    void split_compact_raw(T* input, T* counts, T* offsets, T* output, Rule rule,const size_t size,size_t nBlocks,T* retval){
@@ -265,51 +263,8 @@ namespace split_tools{
       if (tid==0){
          //const unsigned int actual_total_blocks=offsets->back()+counts->back();
          *retval=offsets[nBlocks-1]+counts[nBlocks-1];
-         printf("---->%d\n",offsets[nBlocks-1]+counts[nBlocks-1]);
       }
    }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
    class Cuda_mempool{
@@ -369,7 +324,6 @@ namespace split_tools{
    void split_prefix_scan_raw(T* input, T* output ,Cuda_mempool& mPool, const size_t input_size){
 
 
-      //Input size
 
       //Scan is performed in half Blocksizes
       size_t scanBlocksize= BLOCKSIZE/2;
@@ -395,7 +349,7 @@ namespace split_tools{
             split_tools::split_prescan<<<1,scanBlocksize,scanElements*sizeof(T)>>>(partial_sums,partial_sums,partial_sums_dummy,gridSize,gridSize*sizeof(T));
             cudaDeviceSynchronize();
          }else{
-            //vector partial_sums_clone(partial_sums);
+            assert(0 && "NOT IMPLEMENTED YET");
             T* partial_sums_clone=(T*)mPool.allocate(gridSize*sizeof(T));
             cudaMemcpy(partial_sums_clone, partial_sums_clone, gridSize*sizeof(T),cudaMemcpyDeviceToDevice);
             split_prefix_scan_raw(partial_sums_clone,partial_sums,mPool,gridSize);
@@ -406,23 +360,11 @@ namespace split_tools{
       }
    }
 
- 
-
-
-
-
-
-
-
-
    template <typename T, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=32>
    void copy_if_raw(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
                 split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& output,
                 Rule rule)
    {
-
-
-      using vector=split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>;
       
       //Figure out Blocks to use
       size_t nBlocks=input.size()/BLOCKSIZE; 
@@ -454,8 +396,6 @@ namespace split_tools{
       T numel;
       cudaMemcpy(&numel,retval,sizeof(T),cudaMemcpyDeviceToHost);
       output.erase(&output[numel],output.end());
-      std::cout<<mPool.capacity()<<std::endl;
-      std::cout<<mPool.fill()<<std::endl;
    }
 
 }
