@@ -188,7 +188,7 @@ namespace split_tools{
    {
 
 
-      using vector=split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>;
+      using vector=split::SplitVector<uint32_t,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>;
       
       //Figure out Blocks to use
       size_t nBlocks=input.size()/BLOCKSIZE; 
@@ -215,7 +215,7 @@ namespace split_tools{
       vector* d_offsets=offsets.upload();
       d_input=input.upload();
       d_counts=counts.upload();
-      split_tools::split_compact<T,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int)>>>(d_input,d_counts,d_offsets,d_output,rule);
+      split_tools::split_compact<uint32_t,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int)>>>(d_input,d_counts,d_offsets,d_output,rule);
       cudaDeviceSynchronize();
 
       //Deallocate the handle pointers
