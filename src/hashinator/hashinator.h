@@ -26,10 +26,79 @@
 #include <cassert>
 #include "definitions.h"
 #include "../splitvector/splitvec.h"
+#include "../splitvector/split_tools.h"
+#include "hash_pair.h"
+
+
+template <typename T, typename U,T EMPTYBUCKET = vmesh::INVALID_GLOBALID,T TOMBSTONE = EMPTYBUCKET - 1>
+struct Tombstone_Predicate{
+   __host__ __device__
+   inline bool operator()( hash_pair<T,U>& element)const{
+      if (element.first==TOMBSTONE){element.first=EMPTYBUCKET;return false;}
+      return element.offset>0;
+   }
+};
+
+template<typename GID>
+__device__
+static inline uint32_t ext_fibonacci_hash(GID in,const int sizePower){
+   in ^= in >> (32 - sizePower);
+   uint32_t retval = (uint64_t)(in * 2654435769ul) >> (32 - sizePower);
+   return retval;
+}
+
+template<typename GID, typename LID,GID EMPTYBUCKET=vmesh::INVALID_GLOBALID,size_t BLOCKSIZE=1024, size_t WARP=32>
+__global__ 
+void hasher(hash_pair<GID, LID>* src, hash_pair<GID, LID>* dst, const int sizePower,int maxoverflow){
+
+   __shared__ int warp_exit_flag;
+   const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
+   const unsigned int wid = tid/WARP;
+   const unsigned int w_tid=tid%WARP;
+
+   hash_pair<GID,LID>&candidate=src[wid];
+   int bitMask = (1 <<(sizePower )) - 1; 
+   uint32_t hashIndex = ext_fibonacci_hash(candidate.first,sizePower);
+   uint32_t optimalindex=(hashIndex) & bitMask;
+   //Reset the element to EMPTYBUCKET
+   if (w_tid==0){
+      dst[optimalindex+candidate.offset].first=EMPTYBUCKET;
+      warp_exit_flag=0;
+   }
+
+   for (size_t warp_offset=0; warp_offset<(1<<sizePower); warp_offset+=WARP){
+      uint32_t vecindex=(hashIndex+ warp_offset+ w_tid) & bitMask;
+      //vote for available emptybuckets in warp region
+      uint32_t  mask= __ballot_sync(SPLIT_VOTING_MASK,dst[vecindex].first==EMPTYBUCKET);
+      while(mask!=0 && warp_exit_flag==0){
+         //LSB is the winner (little endian)--> smallest overflow
+         int winner =__ffs ( mask ) -1;
+         if (w_tid==winner){
+            GID old = atomicCAS(&dst[vecindex].first, EMPTYBUCKET, candidate.first);
+            if (old == EMPTYBUCKET){
+               atomicExch(&dst[vecindex].second,candidate.second);
+               //no need to commmunicate new overflow as it will be less than before...
+               int overflow = vecindex-optimalindex;
+               atomicExch(&dst[vecindex].offset,overflow);
+               assert(overflow<=maxoverflow && "Thread exceeded max overflow. This does eventually fail!");
+               warp_exit_flag=1;
+            }else{
+               mask &= ~(1<< winner);
+            }
+         }
+         __syncthreads();
+         if(warp_exit_flag==1){
+            return;
+         }
+      }
+   }
+}
+
+
 
 
 // Open bucket power-of-two sized hash table with multiplicative fibonacci hashing
-template <typename GID, typename LID, int maxBucketOverflow = 16, GID EMPTYBUCKET = vmesh::INVALID_GLOBALID,GID TOMBSTONE = EMPTYBUCKET - 1 > 
+template <typename GID, typename LID, int maxBucketOverflow = 32, GID EMPTYBUCKET = vmesh::INVALID_GLOBALID,GID TOMBSTONE = EMPTYBUCKET - 1 > 
 class Hashinator {
 private:
    //CUDA device handles
@@ -97,17 +166,17 @@ private:
    }
 
 public:
-   split::SplitVector<std::pair<GID, LID>> buckets;
+   split::SplitVector<hash_pair<GID, LID>> buckets;
     
    __host__
    Hashinator()
-       : sizePower(4), fill(0), buckets(1 << sizePower, std::pair<GID, LID>(EMPTYBUCKET, LID())){
+       : sizePower(4), fill(0), buckets(1 << sizePower, hash_pair<GID, LID>(EMPTYBUCKET, LID())){
          preallocate_device_handles();
        };
 
    __host__
    Hashinator(int sizepower)
-       : sizePower(sizepower), fill(0), buckets(1 << sizepower, std::pair<GID, LID>(EMPTYBUCKET, LID())){
+       : sizePower(sizepower), fill(0), buckets(1 << sizepower, hash_pair<GID, LID>(EMPTYBUCKET, LID())){
          preallocate_device_handles();
        };
    __host__
@@ -132,8 +201,8 @@ public:
       if (newSizePower > 32) {
          throw std::out_of_range("Hashinator ran into rehashing catastrophe and exceeded 32bit buckets.");
       }
-      split::SplitVector<std::pair<GID, LID>> newBuckets(1 << newSizePower,
-                                                  std::pair<GID, LID>(EMPTYBUCKET, LID()));
+      split::SplitVector<hash_pair<GID, LID>> newBuckets(1 << newSizePower,
+                                                  hash_pair<GID, LID>(EMPTYBUCKET, LID()));
       sizePower = newSizePower;
       int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
 
@@ -148,9 +217,10 @@ public:
          uint32_t newHash = hash(e.first);
          bool found = false;
          for (int i = 0; i < maxBucketOverflow; i++) {
-            std::pair<GID, LID>& candidate = newBuckets[(newHash + i) & bitMask];
+            hash_pair<GID, LID>& candidate = newBuckets[(newHash + i) & bitMask];
             if (candidate.first == EMPTYBUCKET) {
                // Found an empty bucket, assign that one.
+               e.offset=i;
                candidate = e;
                found = true;
                break;
@@ -176,7 +246,7 @@ public:
 
       // Try to find the matching bucket.
       for (int i = 0; i < maxBucketOverflow; i++) {
-         std::pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
+         hash_pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
          if (candidate.first == key) {
             // Found a match, return that
             return candidate.second;
@@ -185,6 +255,7 @@ public:
             // Found an empty bucket, assign and return that.
             candidate.first = key;
             fill++;
+            candidate.offset=i;
             return candidate.second;
          }
       }
@@ -201,7 +272,7 @@ public:
 
       // Try to find the matching bucket.
       for (int i = 0; i < maxBucketOverflow; i++) {
-         const std::pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
+         const hash_pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
          if (candidate.first == key) {
             // Found a match, return that
             return candidate.second;
@@ -242,7 +313,7 @@ public:
 
    __host__
    void clear() {
-      buckets = split::SplitVector<std::pair<GID, LID>>(1 << sizePower, {EMPTYBUCKET, LID()});
+      buckets = split::SplitVector<hash_pair<GID, LID>>(1 << sizePower, {EMPTYBUCKET, LID()});
       fill = 0;
    }
 
@@ -285,19 +356,29 @@ public:
    }
 
    __host__
-   inline bool isEmpty(const std::pair<GID,LID>& b ){
+   inline bool isEmpty(const hash_pair<GID,LID>& b ){
       return b.first==EMPTYBUCKET;
    }
 
    __host__
-   inline bool isTombStone(const std::pair<GID,LID>& b ){
+   inline bool isTombStone(const hash_pair<GID,LID>& b ){
       return b.first==TOMBSTONE;
+   }
+   
+   __host__
+   void clean_by_compaction(){
+
+      // TODO tune parameters based on output size
+      split::SplitVector<hash_pair<GID, LID>> overflownElements(1 << sizePower, {EMPTYBUCKET, LID()});
+      split_tools::copy_if<hash_pair<GID, LID>,Tombstone_Predicate<GID,LID>,32,32>(buckets,overflownElements,Tombstone_Predicate<GID,LID>());
+      hasher<GID,LID><<<1,32>>> (overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow);
+      cudaDeviceSynchronize();
    }
 
    //Simply remove all tombstones on host by rehashing
    __host__
    void clean_tombstones(){
-      rehash(sizePower);
+      clean_by_compaction();
       assert(tombstone_count()==0 && "Tombstones leaked into CPU hashmap!");
    }
 
@@ -324,7 +405,9 @@ public:
          rehash(sizePower+1);
       }else{
          std::cout<<"Before : "<<tombstone_count()<<" tombstones\n";
-         clean_tombstones();
+         if(tombstone_count()>0){
+            clean_tombstones();
+         }
          std::cout<<"After : "<<tombstone_count()<<" tombstones\n";
       }
    }
@@ -346,12 +429,13 @@ public:
       std::cout<<"\n";
       for  (auto i :buckets){
          if (i.first==TOMBSTONE){
-            std::cout<<"╀ ";
+            std::cout<<"[╀,-,-] ";
          }else if (i.first == EMPTYBUCKET){
-            std::cout<<"▢ ";
+            std::cout<<"[▢,-,-] ";
          }
          else{
-            std::cout<<i.first<<" " ;
+            printf("[%d,%d-%d] ",i.first,i.second,i.offset);
+            //std::cout<<i.first<<" " ;
          }
       }
       std::cout<<std::endl;
@@ -359,13 +443,7 @@ public:
    }
    __host__
    void print_kvals(){
-      for (auto it=begin(); it!=end();it++){
-         if (it->first==TOMBSTONE){
-            std::cout<<"TOMBSTONE "<<" "<<it->second<<std::endl;
-            continue;
-         }
-         std::cout<<it->first<<" "<<it->second<<std::endl;
-      }
+      dump_buckets();
       std::cout<<"Total Tombstones= "<<tombstone_count()<<std::endl;
    }
    __host__
@@ -431,7 +509,7 @@ public:
       // Try to find the matching bucket.
       for (int i = 0; i < *d_maxBucketOverflow; i++) {
          uint32_t vecindex=(hashIndex + i) & bitMask;
-         const std::pair<GID, LID>& candidate = buckets[vecindex];
+         const hash_pair<GID, LID>& candidate = buckets[vecindex];
          if (candidate.first == key) {
             // Found a match, return that
             return candidate.second;
@@ -462,7 +540,7 @@ public:
    
    // Iterator type. Iterates through all non-empty buckets.
    __host__
-   class iterator : public std::iterator<std::random_access_iterator_tag, std::pair<GID, LID>> {
+   class iterator : public std::iterator<std::random_access_iterator_tag, hash_pair<GID, LID>> {
       Hashinator<GID, LID>* hashtable;
       size_t index;
 
@@ -497,16 +575,16 @@ public:
          return &hashtable->buckets[index] != &other.hashtable->buckets[other.index];
       }
       __host__
-      std::pair<GID, LID>& operator*() const { return hashtable->buckets[index]; }
+      hash_pair<GID, LID>& operator*() const { return hashtable->buckets[index]; }
       __host__
-      std::pair<GID, LID>* operator->() const { return &hashtable->buckets[index]; }
+      hash_pair<GID, LID>* operator->() const { return &hashtable->buckets[index]; }
       __host__
       size_t getIndex() { return index; }
    };
 
    // Const iterator.
    __host__
-   class const_iterator : public std::iterator<std::random_access_iterator_tag, std::pair<GID, LID>> {
+   class const_iterator : public std::iterator<std::random_access_iterator_tag, hash_pair<GID, LID>> {
       const Hashinator<GID, LID>* hashtable;
       size_t index;
 
@@ -540,9 +618,9 @@ public:
          return &hashtable->buckets[index] != &other.hashtable->buckets[other.index];
       }
       __host__
-      const std::pair<GID, LID>& operator*() const { return hashtable->buckets[index]; }
+      const hash_pair<GID, LID>& operator*() const { return hashtable->buckets[index]; }
       __host__
-      const std::pair<GID, LID>* operator->() const { return &hashtable->buckets[index]; }
+      const hash_pair<GID, LID>* operator->() const { return &hashtable->buckets[index]; }
       __host__
       size_t getIndex() { return index; }
    };
@@ -555,7 +633,7 @@ public:
 
       // Try to find the matching bucket.
       for (int i = 0; i < maxBucketOverflow; i++) {
-         const std::pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
+         const hash_pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
          if (candidate.first == key) {
             // Found a match, return that
             return const_iterator(*this, (hashIndex + i) & bitMask);
@@ -578,7 +656,7 @@ public:
 
       // Try to find the matching bucket.
       for (int i = 0; i < maxBucketOverflow; i++) {
-         const std::pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
+         const hash_pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
          if (candidate.first == key) {
             // Found a match, return that
             return iterator(*this, (hashIndex + i) & bitMask);
@@ -651,7 +729,7 @@ public:
                   // Copy this entry to the current newly empty bucket, then continue with deleting
                   // this overflown entry and continue searching for overflown entries
                   LID moveValue = buckets[(index+i)&bitMask].second;
-                  buckets[targetPos] = std::pair<GID, LID>(nextBucket,moveValue);
+                  buckets[targetPos] = hash_pair<GID, LID>(nextBucket,moveValue);
                   targetPos = ((index+i)&bitMask);
                   buckets[targetPos].first = EMPTYBUCKET;
                }
@@ -664,12 +742,12 @@ public:
    }
 
    __host__
-   std::pair<iterator, bool> insert(std::pair<GID, LID> newEntry) {
+   hash_pair<iterator, bool> insert(hash_pair<GID, LID> newEntry) {
       bool found = find(newEntry.first) != end();
       if (!found) {
          at(newEntry.first) = newEntry.second;
       }
-      return std::pair<iterator, bool>(find(newEntry.first), !found);
+      return hash_pair<iterator, bool>(find(newEntry.first), !found);
    }
 
    __host__
@@ -737,9 +815,9 @@ public:
       }
       
       __device__
-      std::pair<GID, LID>& operator*() const { return hashtable->buckets[index]; }
+      hash_pair<GID, LID>& operator*() const { return hashtable->buckets[index]; }
       __device__
-      std::pair<GID, LID>* operator->() const { return &hashtable->buckets[index]; }
+      hash_pair<GID, LID>* operator->() const { return &hashtable->buckets[index]; }
 
    };
 
@@ -786,9 +864,9 @@ public:
       }
       
       __device__
-      const std::pair<GID, LID>& operator*() const { return hashtable->buckets[index]; }
+      const hash_pair<GID, LID>& operator*() const { return hashtable->buckets[index]; }
       __device__
-      const std::pair<GID, LID>* operator->() const { return &hashtable->buckets[index]; }
+      const hash_pair<GID, LID>* operator->() const { return &hashtable->buckets[index]; }
    };
 
 
@@ -800,7 +878,7 @@ public:
 
       // Try to find the matching bucket.
       for (int i = 0; i < *d_maxBucketOverflow; i++) {
-         const std::pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
+         const hash_pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
 
          if (candidate.first==TOMBSTONE){continue;}
 
@@ -826,7 +904,7 @@ public:
 
       // Try to find the matching bucket.
       for (int i = 0; i < *d_maxBucketOverflow; i++) {
-         const std::pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
+         const hash_pair<GID, LID>& candidate = buckets[(hashIndex + i) & bitMask];
 
          if (candidate.first==TOMBSTONE){continue;}
 
@@ -887,6 +965,7 @@ public:
 
       //Let's simply add a tombstone here
       atomicExch(&buckets[index].first,TOMBSTONE);
+      atomicExch(&buckets[index].offset,0);
       atomicSub((unsigned int*)d_fill, 1);
       ++keyPos;
       return keyPos;
@@ -907,6 +986,7 @@ public:
          if (old == EMPTYBUCKET){
             atomicExch(&buckets[vecindex].first,key);
             atomicExch(&buckets[vecindex].second,value);
+            atomicExch(&buckets[vecindex].offset,i);
             atomicAdd((unsigned int*)d_fill, 1);
             thread_overflowLookup = i+1;
             return;
@@ -922,38 +1002,38 @@ public:
          //Tombstone encounter. Fill gets inceremented and we look ahead for 
          //duplicates. If we find a duplicate we overwrite that otherwise we 
          //replace the tombstone with the new element
-         if (old==TOMBSTONE){
-            for (size_t j=i; j< thread_overflowLookup; j++){
-               uint32_t next_index=(hashIndex + j) & bitMask;
-               GID candidate;
-               atomicExch(&candidate,buckets[next_index].first);
-               if (candidate == key){
-                  atomicExch(&buckets[vecindex].second,value);
-                  thread_overflowLookup = i+1;
-                  return;
-               }
-               if (candidate == EMPTYBUCKET){
-                  atomicExch(&buckets[vecindex].first,key);
-                  atomicExch(&buckets[vecindex].second,value);
-                  atomicAdd((unsigned int*)d_fill, 1);
-                  thread_overflowLookup = i+1;
-                  return;
-               }
-            }
+         //if (old==TOMBSTONE){
+            //for (size_t j=i; j< thread_overflowLookup; j++){
+               //uint32_t next_index=(hashIndex + j) & bitMask;
+               //GID candidate;
+               //atomicExch(&candidate,buckets[next_index].first);
+               //if (candidate == key){
+                  //atomicExch(&buckets[vecindex].second,value);
+                  //thread_overflowLookup = i+1;
+                  //return;
+               //}
+               //if (candidate == EMPTYBUCKET){
+                  //atomicExch(&buckets[vecindex].first,key);
+                  //atomicExch(&buckets[vecindex].second,value);
+                  //atomicAdd((unsigned int*)d_fill, 1);
+                  //thread_overflowLookup = i+1;
+                  //return;
+               //}
+            //}
 
-         }
+         //}
          i++;
       }
       assert(false && "Hashmap completely overflown");
    }
 
    __device__
-   std::pair<iterator, bool> insert(std::pair<GID, LID> newEntry) {
+   hash_pair<iterator, bool> insert(hash_pair<GID, LID> newEntry) {
       bool found = find(newEntry.first) != end();
       if (!found) {
          set_element(newEntry.first,newEntry.second);
       }
-      return std::pair<iterator, bool>(find(newEntry.first), !found);
+      return hash_pair<iterator, bool>(find(newEntry.first), !found);
    }
 
 #endif

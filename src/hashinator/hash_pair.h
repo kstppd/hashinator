@@ -9,7 +9,7 @@ struct hash_pair{
    // members
    T first;
    U second;
-   unsigned char offset; //overflowing offset from ideal position
+   unsigned int offset; //overflowing offset from ideal position
    
    //Constructors
    hash_pair():first(T()),second(U()),offset(0){}

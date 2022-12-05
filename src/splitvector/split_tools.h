@@ -26,7 +26,7 @@ namespace split_tools{
    template<typename T,typename Rule>
    __global__
    void scan_reduce(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* input,
-                   split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* output,
+                   split::SplitVector<uint32_t,split::split_unified_allocator<uint32_t>,split::split_unified_allocator<size_t>>* output,
                    Rule rule){
 
       size_t size=input->size();
@@ -94,12 +94,12 @@ namespace split_tools{
    template <typename T,typename Rule,size_t BLOCKSIZE=1024, size_t WARP=32>
    __global__
    void split_compact(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* input,
-                      split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* counts,
-                      split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* offsets,
+                      split::SplitVector<uint32_t,split::split_unified_allocator<uint32_t>,split::split_unified_allocator<size_t>>* counts,
+                      split::SplitVector<uint32_t,split::split_unified_allocator<uint32_t>,split::split_unified_allocator<size_t>>* offsets,
                       split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* output,
                       Rule rule)
    {
-      extern __shared__ T buffer[];
+      extern __shared__ uint32_t buffer[];
       const size_t size=input->size();
       const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
       if (tid>=size) {return;}
@@ -188,17 +188,18 @@ namespace split_tools{
    {
 
 
-      using vector=split::SplitVector<uint32_t,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>;
+      using vector=split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>;
+      using vector_int=split::SplitVector<uint32_t,split::split_unified_allocator<uint32_t>,split::split_unified_allocator<size_t>>;
       
       //Figure out Blocks to use
       size_t nBlocks=input.size()/BLOCKSIZE; 
-      vector counts(nBlocks);
-      vector offsets(nBlocks);
+      vector_int counts(nBlocks);
+      vector_int offsets(nBlocks);
 
             
       //Phase 1 -- Calculate per warp workload
       vector * d_input=input.upload();
-      vector * d_counts=counts.upload();
+      vector_int * d_counts=counts.upload();
       split_tools::scan_reduce<<<nBlocks,BLOCKSIZE>>>(d_input,d_counts,rule);
       cudaDeviceSynchronize();
       cudaFree(d_input);
@@ -206,19 +207,19 @@ namespace split_tools{
 
 
       //Step 2 -- Exclusive Prefix Scan on offsets
-      split_prefix_scan<T,BLOCKSIZE,WARP>(counts,offsets);
+      split_prefix_scan<uint32_t,BLOCKSIZE,WARP>(counts,offsets);
       cudaDeviceSynchronize();
 
 
       //Step 3 -- Compaction
       vector* d_output=output.upload();
-      vector* d_offsets=offsets.upload();
+      vector_int* d_offsets=offsets.upload();
       d_input=input.upload();
       d_counts=counts.upload();
-      split_tools::split_compact<uint32_t,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int)>>>(d_input,d_counts,d_offsets,d_output,rule);
+      split_tools::split_compact<T,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int)>>>(d_input,d_counts,d_offsets,d_output,rule);
       cudaDeviceSynchronize();
-
       //Deallocate the handle pointers
+
       cudaFree(d_input);
       cudaFree(d_counts);
       cudaFree(d_output);
@@ -230,7 +231,7 @@ namespace split_tools{
    __global__
    void split_compact_raw(T* input, uint32_t* counts, uint32_t* offsets, T* output, Rule rule,const size_t size,size_t nBlocks,uint32_t* retval){
 
-      extern __shared__ T buffer[];
+      extern __shared__ uint32_t buffer[];
       const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
       if (tid>=size) {return;}
       unsigned int offset = BLOCKSIZE/WARP;
@@ -381,7 +382,7 @@ namespace split_tools{
 
 
       //Step 2 -- Exclusive Prefix Scan on offsets
-      split_prefix_scan_raw<T,BLOCKSIZE,WARP>(d_counts,d_offsets,mPool,nBlocks);
+      split_prefix_scan_raw<uint32_t,BLOCKSIZE,WARP>(d_counts,d_offsets,mPool,nBlocks);
       cudaDeviceSynchronize();
 
 
@@ -389,7 +390,7 @@ namespace split_tools{
       uint32_t* retval=(uint32_t*)mPool.allocate(sizeof(uint32_t));
       split_tools::split_compact_raw<T,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int)>>>(input.data(),d_counts,d_offsets,output.data(),rule,input.size(),nBlocks,retval);
       cudaDeviceSynchronize();
-      T numel;
+      uint32_t numel;
       cudaMemcpy(&numel,retval,sizeof(uint32_t),cudaMemcpyDeviceToHost);
       output.erase(&output[numel],output.end());
    }

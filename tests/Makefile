@@ -6,7 +6,7 @@ EXTRA=  --std=c++14
 EXTRA+= -gencode arch=compute_60,code=sm_60  -L /usr/lib/x86_64-linux-gnu
 EXTRA+=  -DHASHMAPDEBUG --expt-relaxed-constexpr 
 GTEST=-lgtest -lgtest_main -lpthread
-OBJ= map_gpu_vs_cpu.o speed_test.o	  mempool_main.o	  gtest_vec.o	gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o	  map_add_remove.o 	  vecspeedtest hashmap_bench.o hashmap_stress_test.o stream_compaction.o
+OBJ= map_gpu_vs_cpu.o speed_test.o	  mempool_main.o	  gtest_vec.o	gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o	  map_add_remove.o 	  vecspeedtest hashmap_bench.o hashmap_stress_test.o stream_compaction.o delete_mechanism.o
 
 default: all
 all: ${OBJ}
@@ -28,7 +28,8 @@ allclean:
 	rm hashmap_bench &
 	rm hashmap_stress_test &
 	rm vecspeedtest &
-	rm compaction
+	rm compaction &
+	rm delete_mechanism
 
 
 map_gpu_vs_cpu.o: hash_gpu_vs_cpu/gpuport.cu
@@ -57,6 +58,9 @@ gtest_vec_device.o: gtest_vec_device/vec_test.cu
 
 stream_compaction.o: stream_compaction/race.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o compaction stream_compaction/race.cu
+
+delete_mechanism.o: delete_by_compaction/main.cu
+	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o delete_mechanism delete_by_compaction/main.cu
 
 vecspeedtest: vec_speed_test/main.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} -o vecspeedtest vec_speed_test/main.cu -DPROFINY_CALL_GRAPH_PROFILER -lboost_timer -lboost_chrono -lboost_system
