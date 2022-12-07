@@ -71,7 +71,7 @@ void hasher(hash_pair<GID, LID>* src, hash_pair<GID, LID>* dst, const int sizePo
       //vote for available emptybuckets in warp region
       uint32_t  mask= __ballot_sync(SPLIT_VOTING_MASK,dst[vecindex].first==EMPTYBUCKET);
       while(mask!=0 && warp_exit_flag==0){
-         //LSB is the winner (little endian)--> smallest overflow
+         //LSB is the winner (little endian)--> smallest overflow candidate thread
          int winner =__ffs ( mask ) -1;
          if (w_tid==winner){
             GID old = atomicCAS(&dst[vecindex].first, EMPTYBUCKET, candidate.first);
@@ -80,7 +80,7 @@ void hasher(hash_pair<GID, LID>* src, hash_pair<GID, LID>* dst, const int sizePo
                //no need to commmunicate new overflow as it will be less than before...
                int overflow = vecindex-optimalindex;
                atomicExch(&dst[vecindex].offset,overflow);
-               assert(overflow<=maxoverflow && "Thread exceeded max overflow. This does eventually fail!");
+               assert(overflow<=maxoverflow && "Thread exceeded max overflow. This does fail after all!");
                warp_exit_flag=1;
             }else{
                mask &= ~(1<< winner);
