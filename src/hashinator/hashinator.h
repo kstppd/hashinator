@@ -383,7 +383,7 @@ public:
    }
 
    /**
-    * This must be called after exiting a CUDA kernel. This functions
+    * This must be called after exiting a CUDA kernel. These functions
     * will do the following :
     *  • handle communicating bookeepping info back to host. 
     *  • If the hashmap has overflown on device it will try 
