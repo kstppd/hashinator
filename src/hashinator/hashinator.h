@@ -425,6 +425,17 @@ public:
    }
 
    __host__
+      void print_pair(const hash_pair<GID, LID>& i){
+         if (i.first==TOMBSTONE){
+            std::cout<<"[╀,-,-] ";
+         }else if (i.first == EMPTYBUCKET){
+            std::cout<<"[▢,-,-] ";
+         }
+         else{
+            printf("[%d,%d-%d] ",i.first,i.second,i.offset);
+         }
+      }
+   __host__
    void dump_buckets(){
       std::cout<<"\n";
       for  (auto i :buckets){
