@@ -12,6 +12,7 @@
 typedef uint32_t val_type;
 typedef split::SplitVector<hash_pair<val_type,val_type>,split::split_unified_allocator<hash_pair<val_type,val_type>>,split::split_unified_allocator<size_t>> vector ;
 typedef Hashinator<val_type,val_type> hashmap;
+using namespace std::chrono;
 
 
 void create_input(vector& src){
@@ -73,7 +74,7 @@ bool test_hashmap(val_type power){
    create_input(src);
    hashmap hmap;
    hashmap* d_hmap;
-   hmap.resize(power);
+   hmap.resize(power+2);
 
 
    //Upload to device
@@ -90,10 +91,15 @@ bool test_hashmap(val_type power){
    gpu_delete_even<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
    cudaDeviceSynchronize();
    //Download
+   auto start = std::chrono::high_resolution_clock::now();
    hmap.download();
+   auto stop = std::chrono::high_resolution_clock::now();
+   auto duration = duration_cast<microseconds>(stop- start).count();
+   //std::cout<<"Time= "<<duration<<std::endl;
 
    //Quick check to verify there are no even elements
    for (const auto& kval : hmap){
+      if (kval.second%2==0){std::cout<<kval.first<<" "<<kval.second<<std::endl;}
       assert(kval.second%2!=0 && "There are even elements leaked into the hashmap");
    }
 
@@ -111,7 +117,7 @@ bool test_hashmap(val_type power){
 
 
 TEST(HashmapUnitTets , Host_Device_Insert_Delete_Global_Tets){
-   for (int power=7; power<24; ++power){
+   for (int power=6; power<20; ++power){
       bool retval=test_hashmap(power);
       expect_true(retval);
    }

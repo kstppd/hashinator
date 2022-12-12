@@ -184,7 +184,7 @@ private:
       // TODO tune parameters based on output size
       split::SplitVector<hash_pair<GID, LID>> overflownElements(1 << sizePower, {EMPTYBUCKET, LID()});
       split_tools::copy_if<hash_pair<GID, LID>,Tombstone_Predicate<GID,LID>,32,32>(buckets,overflownElements,Tombstone_Predicate<GID,LID>());
-      hasher<GID,LID><<<1,32>>> (overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow);
+      hasher<GID,LID><<<overflownElements.size()/32,32>>> (overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow);
       cudaDeviceSynchronize();
    }
 
@@ -236,7 +236,8 @@ private:
                   auto& targetBucket=buckets.at(target_index);
                   if (targetBucket.first==EMPTYBUCKET){
                      targetBucket.first=candidate.first;
-                     targetBucket.second=kval_overflow(targetBucket.first,target_index)+1;
+                     targetBucket.second=candidate.second;
+                     targetBucket.offset=kval_overflow(targetBucket.first,target_index);
                      candidate.first=EMPTYBUCKET;
                      break;
                   }
@@ -244,7 +245,6 @@ private:
                }
 
             }
-            //dump_buckets();
             i=end+1;
          }
       }
@@ -265,6 +265,7 @@ private:
    __host__
    void clean_tombstones(){
       //clean_by_compaction();
+      //tombstoneCounter=0;
       clean_tombstones_in_place();
       assert(tombstone_count()==0 && "Tombstones leaked into CPU hashmap!");
    }
@@ -477,7 +478,9 @@ public:
          rehash(sizePower+1);
       }else{
          if(tombstone_count()>0){
-            rehash(sizePower);
+            clean_tombstones();
+            //clean_tombstones_in_place();
+            //rehash(sizePower);
          }
       }
    }
@@ -1071,26 +1074,26 @@ public:
          //Tombstone encounter. Fill gets inceremented and we look ahead for 
          //duplicates. If we find a duplicate we overwrite that otherwise we 
          //replace the tombstone with the new element
-         //if (old==TOMBSTONE){
-            //for (size_t j=i; j< thread_overflowLookup; j++){
-               //uint32_t next_index=(hashIndex + j) & bitMask;
-               //GID candidate;
-               //atomicExch(&candidate,buckets[next_index].first);
-               //if (candidate == key){
-                  //atomicExch(&buckets[vecindex].second,value);
-                  //thread_overflowLookup = i+1;
-                  //return;
-               //}
-               //if (candidate == EMPTYBUCKET){
-                  //atomicExch(&buckets[vecindex].first,key);
-                  //atomicExch(&buckets[vecindex].second,value);
-                  //atomicAdd((unsigned int*)d_fill, 1);
-                  //thread_overflowLookup = i+1;
-                  //return;
-               //}
-            //}
+         if (old==TOMBSTONE){
+            for (size_t j=i; j< thread_overflowLookup; j++){
+               uint32_t next_index=(hashIndex + j) & bitMask;
+               GID candidate;
+               atomicExch(&candidate,buckets[next_index].first);
+               if (candidate == key){
+                  atomicExch(&buckets[vecindex].second,value);
+                  thread_overflowLookup = i+1;
+                  return;
+               }
+               if (candidate == EMPTYBUCKET){
+                  atomicExch(&buckets[vecindex].first,key);
+                  atomicExch(&buckets[vecindex].second,value);
+                  atomicAdd((unsigned int*)d_fill, 1);
+                  thread_overflowLookup = i+1;
+                  return;
+               }
+            }
 
-         //}
+         }
          i++;
       }
       assert(false && "Hashmap completely overflown");
