@@ -300,9 +300,6 @@ public:
    // maxBucketOverflow has triggered. This can only be done on host (so far)
    __host__
    void rehash(int newSizePower) {
-#ifdef HASHMAPDEBUG
-      std::cout<<"Rehashing to "<<( 1<<newSizePower )<<std::endl;
-#endif
       if (newSizePower > 32) {
          throw std::out_of_range("Hashinator ran into rehashing catastrophe and exceeded 32bit buckets.");
       }
@@ -475,27 +472,19 @@ public:
       cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,stream);
       cudaMemcpyAsync(&tombstoneCounter, d_tombstoneCounter, sizeof(size_t),cudaMemcpyDeviceToHost,stream);
       cudaMemcpyAsync(&postDevice_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,stream);
-#ifdef HASHMAPDEBUG
-      //dump_buckets();
-      std::cout<<"Cleaning TombStones"<<std::endl;
-      std::cout<<"Overflow Limits Dev/Host "<<maxBucketOverflow<<"--> "<<postDevice_maxBucketOverflow<<std::endl;
-      std::cout<<"Fill after device = "<<fill<<std::endl;
-#endif
       this->buckets.optimizeCPU(stream);
       if (postDevice_maxBucketOverflow>maxBucketOverflow){
          rehash(sizePower+1);
       }else{
-         std::cout<<"Before : "<<tombstone_count()<<" tombstones\n";
          if(tombstone_count()>0){
-            clean_tombstones();
+            rehash(sizePower);
          }
-         std::cout<<"After : "<<tombstone_count()<<" tombstones\n";
       }
    }
 
    #ifdef HASHMAPDEBUG
    __host__
-   void print_all(){
+   void print_all()const {
       std::cout<<">>>>*********************************"<<std::endl;
       std::cout<<"Map contains "<<bucket_count()<<" buckets"<<std::endl;
       std::cout<<"Map fill is "<<fill<<std::endl;
@@ -506,7 +495,7 @@ public:
    }
 
    __host__
-      void print_pair(const hash_pair<GID, LID>& i){
+      void print_pair(const hash_pair<GID, LID>& i)const {
          if (i.first==TOMBSTONE){
             std::cout<<"[╀,-,-] ";
          }else if (i.first == EMPTYBUCKET){
@@ -517,21 +506,21 @@ public:
          }
       }
    __host__
-   void dump_buckets(){
+   void dump_buckets()const {
       std::cout<<"\n";
-      for  (auto i :buckets){
-         print_pair(i);
+      for  (int i =0 ; i < buckets.size(); ++i){
+         print_pair(buckets[i]);
       }
       std::cout<<std::endl;
 
    }
    __host__
-   void print_kvals(){
+   void print_kvals()const {
       dump_buckets();
       std::cout<<"Total Tombstones= "<<tombstone_count()<<std::endl;
    }
    __host__
-   size_t tombstone_count(){
+   size_t tombstone_count()const {
       return tombstoneCounter;
    }
    #endif
@@ -1038,6 +1027,7 @@ public:
       size_t index = keyPos.getIndex();
       
       //If this is an empty bucket or a tombstone we can return already
+      //TODO Use CAS here for safety
       GID& item=buckets[index].first;
       if (item==EMPTYBUCKET || item==TOMBSTONE){return ++keyPos;}
 

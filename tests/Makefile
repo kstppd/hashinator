@@ -6,7 +6,7 @@ EXTRA=  --std=c++14
 EXTRA+= -gencode arch=compute_60,code=sm_60  -L /usr/lib/x86_64-linux-gnu
 EXTRA+=  -DHASHMAPDEBUG --expt-relaxed-constexpr 
 GTEST=-lgtest -lgtest_main -lpthread
-OBJ= gtest_vec_host.o	gtest_vec_device.o  map_add_remove.o stream_compaction.o delete_mechanism.o
+OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o delete_mechanism.o
 
 default: all
 all: ${OBJ}
@@ -17,12 +17,12 @@ allclean:
 	rm ${OBJ} &
 	rm gtestvechost &
 	rm gtestvecdevice &
-	rm map_add_remove & 
+	rm gtest_hashmap & 
 	rm compaction &
 	rm delete_mechanism
 
-map_add_remove.o: add_remove_map_elements/main.cu
-	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o map_add_remove add_remove_map_elements/main.cu
+gtest_hashmap.o: hashmap_unit_test/main.cu
+	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o gtest_hashmap hashmap_unit_test/main.cu
 
 gtest_vec_host.o: gtest_vec_host/vec_test.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o gtestvechost gtest_vec_host/vec_test.cu
