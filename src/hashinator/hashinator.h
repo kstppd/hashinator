@@ -165,6 +165,105 @@ private:
       cudaFree(d_fill);
    }
 
+   __host__
+   int kval_overflow(GID key,size_t index){
+      int bitMask = (1 << sizePower) - 1;
+      uint32_t hashIndex = hash(key)&bitMask;
+      uint32_t optimalIndex=((index)&bitMask);
+      return optimalIndex-hashIndex;
+   }
+
+
+   __host__
+   void clean_by_compaction(){
+
+      // TODO tune parameters based on output size
+      split::SplitVector<hash_pair<GID, LID>> overflownElements(1 << sizePower, {EMPTYBUCKET, LID()});
+      split_tools::copy_if<hash_pair<GID, LID>,Tombstone_Predicate<GID,LID>,32,32>(buckets,overflownElements,Tombstone_Predicate<GID,LID>());
+      hasher<GID,LID><<<1,32>>> (overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow);
+      cudaDeviceSynchronize();
+   }
+
+   __host__ 
+   void clean_tombstones_in_place(){
+      while(tombstone_count()){
+         size_t i=0;
+         size_t start=0;
+         size_t end=0;
+         if (buckets.back().first==TOMBSTONE){
+            buckets.back().first=EMPTYBUCKET;
+         }
+         while(i<buckets.size()-1){
+            const auto& current=buckets[i];
+            size_t offset=1;
+            if (current.first != TOMBSTONE && kval_overflow(current.first,i)==0){
+               i++;
+               continue;
+            }
+            auto next=buckets[i+offset];
+            while(next.first!=EMPTYBUCKET){
+               //Is this element in the correct location?
+               auto  distance=kval_overflow(next.first,i+offset);
+               if (distance==0) {
+                  break;
+               }
+               offset++;
+               if (i+offset>buckets.size()){
+                  break;
+               }
+               next=buckets[i+offset];
+            }
+            start=i;
+            end=start+offset;
+            printf("Cleaning subdomain %d to %d\n",start,end);
+            //dump_buckets();
+            for( size_t sub_index=start; sub_index<=end; ++sub_index){
+               auto& candidate=buckets[sub_index];
+               if (candidate.first==TOMBSTONE){
+                  candidate.first=EMPTYBUCKET;
+                  continue;
+               }
+               size_t running_index= sub_index;
+               auto distance=kval_overflow(candidate.first,running_index);
+               size_t target_index=running_index-distance;
+               while(distance){
+                  auto& targetBucket=buckets.at(target_index);
+                  if (targetBucket.first==EMPTYBUCKET){
+                     targetBucket.first=candidate.first;
+                     targetBucket.second=kval_overflow(targetBucket.first,target_index)+1;
+                     candidate.first=EMPTYBUCKET;
+                     break;
+                  }
+                  target_index++;
+               }
+
+            }
+            //dump_buckets();
+            i=end+1;
+         }
+      }
+   }
+
+   __host__
+   inline bool isEmpty(const hash_pair<GID,LID>& b ){
+      return b.first==EMPTYBUCKET;
+   }
+
+   __host__
+   inline bool isTombStone(const hash_pair<GID,LID>& b ){
+      return b.first==TOMBSTONE;
+   }
+   
+
+   //Simply remove all tombstones on host by rehashing
+   __host__
+   void clean_tombstones(){
+      //clean_by_compaction();
+      clean_tombstones_in_place();
+      assert(tombstone_count()==0 && "Tombstones leaked into CPU hashmap!");
+   }
+
+
 public:
    split::SplitVector<hash_pair<GID, LID>> buckets;
     
@@ -355,32 +454,6 @@ public:
       return device_map;
    }
 
-   __host__
-   inline bool isEmpty(const hash_pair<GID,LID>& b ){
-      return b.first==EMPTYBUCKET;
-   }
-
-   __host__
-   inline bool isTombStone(const hash_pair<GID,LID>& b ){
-      return b.first==TOMBSTONE;
-   }
-   
-   __host__
-   void clean_by_compaction(){
-
-      // TODO tune parameters based on output size
-      split::SplitVector<hash_pair<GID, LID>> overflownElements(1 << sizePower, {EMPTYBUCKET, LID()});
-      split_tools::copy_if<hash_pair<GID, LID>,Tombstone_Predicate<GID,LID>,32,32>(buckets,overflownElements,Tombstone_Predicate<GID,LID>());
-      hasher<GID,LID><<<1,32>>> (overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow);
-      cudaDeviceSynchronize();
-   }
-
-   //Simply remove all tombstones on host by rehashing
-   __host__
-   void clean_tombstones(){
-      clean_by_compaction();
-      assert(tombstone_count()==0 && "Tombstones leaked into CPU hashmap!");
-   }
 
    /**
     * This must be called after exiting a CUDA kernel. These functions
