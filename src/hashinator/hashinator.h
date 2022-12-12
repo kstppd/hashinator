@@ -106,6 +106,8 @@ private:
    int* d_maxBucketOverflow;
    int postDevice_maxBucketOverflow;
    size_t* d_fill;
+   size_t* d_tombstoneCounter;
+   size_t tombstoneCounter;
    Hashinator* device_map;
    //~CUDA device handles
 
@@ -153,6 +155,7 @@ private:
       cudaMalloc((void **)&d_sizePower, sizeof(int));
       cudaMalloc((void **)&d_maxBucketOverflow, sizeof(int));
       cudaMalloc((void **)&d_fill, sizeof(size_t));
+      cudaMalloc((void **)&d_tombstoneCounter, sizeof(size_t));
       cudaMalloc((void **)&device_map, sizeof(Hashinator));
    }
 
@@ -163,6 +166,7 @@ private:
       cudaFree(d_sizePower);
       cudaFree(d_maxBucketOverflow);
       cudaFree(d_fill);
+      cudaFree(d_tombstoneCounter);
    }
 
    __host__
@@ -186,12 +190,13 @@ private:
 
    __host__ 
    void clean_tombstones_in_place(){
-      while(tombstone_count()){
+      while(tombstoneCounter){
          size_t i=0;
          size_t start=0;
          size_t end=0;
          if (buckets.back().first==TOMBSTONE){
             buckets.back().first=EMPTYBUCKET;
+            tombstoneCounter--;
          }
          while(i<buckets.size()-1){
             const auto& current=buckets[i];
@@ -215,12 +220,13 @@ private:
             }
             start=i;
             end=start+offset;
-            printf("Cleaning subdomain %d to %d\n",start,end);
+            //printf("Cleaning subdomain %d to %d\n",start,end);
             //dump_buckets();
             for( size_t sub_index=start; sub_index<=end; ++sub_index){
                auto& candidate=buckets[sub_index];
                if (candidate.first==TOMBSTONE){
                   candidate.first=EMPTYBUCKET;
+                  tombstoneCounter--;
                   continue;
                }
                size_t running_index= sub_index;
@@ -444,6 +450,7 @@ public:
       cudaMemcpyAsync(d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice,stream);
       cudaMemcpyAsync(d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice,stream);
       cudaMemcpyAsync(device_map, this, sizeof(Hashinator),cudaMemcpyHostToDevice,stream);
+      cudaMemsetAsync(d_tombstoneCounter, 0, sizeof(size_t));
       return device_map;
    }
 
@@ -466,9 +473,10 @@ public:
    void download(cudaStream_t stream = 0){
       //Copy over fill as it might have changed
       cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,stream);
+      cudaMemcpyAsync(&tombstoneCounter, d_tombstoneCounter, sizeof(size_t),cudaMemcpyDeviceToHost,stream);
       cudaMemcpyAsync(&postDevice_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,stream);
 #ifdef HASHMAPDEBUG
-      dump_buckets();
+      //dump_buckets();
       std::cout<<"Cleaning TombStones"<<std::endl;
       std::cout<<"Overflow Limits Dev/Host "<<maxBucketOverflow<<"--> "<<postDevice_maxBucketOverflow<<std::endl;
       std::cout<<"Fill after device = "<<fill<<std::endl;
@@ -512,15 +520,7 @@ public:
    void dump_buckets(){
       std::cout<<"\n";
       for  (auto i :buckets){
-         if (i.first==TOMBSTONE){
-            std::cout<<"[╀,-,-] ";
-         }else if (i.first == EMPTYBUCKET){
-            std::cout<<"[▢,-,-] ";
-         }
-         else{
-            printf("[%d,%d-%d] ",i.first,i.second,i.offset);
-            //std::cout<<i.first<<" " ;
-         }
+         print_pair(i);
       }
       std::cout<<std::endl;
 
@@ -532,13 +532,7 @@ public:
    }
    __host__
    size_t tombstone_count(){
-      size_t cnt=0;
-      for (auto it=begin(); it!=end();it++){
-         if (it->first==TOMBSTONE){
-            cnt++;
-         }
-      }
-         return cnt;
+      return tombstoneCounter;
    }
    #endif
 
@@ -1051,6 +1045,7 @@ public:
       atomicExch(&buckets[index].first,TOMBSTONE);
       atomicExch(&buckets[index].offset,0);
       atomicSub((unsigned int*)d_fill, 1);
+      atomicAdd((unsigned int*)d_tombstoneCounter, 1);
       ++keyPos;
       return keyPos;
    }
