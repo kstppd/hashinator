@@ -19,9 +19,9 @@ do
    $file >/dev/null 2>&1
    result=$?
    if [ $result -eq 0 ]; then
-     echo echo Test $file passed!
+     echo Test: $file passed!
    else
-     echo echo Test $file failed!
+     echo Test: $file failed!
      all_tests_passed=false
    fi
    make allclean >/dev/null 2>&1
