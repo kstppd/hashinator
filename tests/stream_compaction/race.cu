@@ -106,8 +106,10 @@ void thrust_test_prefix(size_t size){
 
 int main(int argc, char **argv ){
 
-
-   int power = strtol(argv[1], NULL, 10); 
+   int power=12;
+   if (argc>2){
+      power = strtol(argv[1], NULL, 10); 
+   }
    uint32_t N=1<<power;
    int reps=100;
 
