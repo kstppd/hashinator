@@ -184,7 +184,7 @@ private:
       // TODO tune parameters based on output size
       split::SplitVector<hash_pair<GID, LID>> overflownElements(1 << sizePower, {EMPTYBUCKET, LID()});
       split_tools::copy_if<hash_pair<GID, LID>,Tombstone_Predicate<GID,LID>,32,32>(buckets,overflownElements,Tombstone_Predicate<GID,LID>());
-      hasher<GID,LID><<<overflownElements.size()/32,32>>> (overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow);
+      hasher<GID,LID><<<std::ceil(overflownElements.size()/32),32>>> (overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow);
       cudaDeviceSynchronize();
    }
 
