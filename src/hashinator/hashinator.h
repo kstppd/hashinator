@@ -47,47 +47,59 @@ static inline uint32_t ext_fibonacci_hash(GID in,const int sizePower){
    return retval;
 }
 
+
+template<typename GID, typename LID,GID EMPTYBUCKET=vmesh::INVALID_GLOBALID>
+__global__ 
+void reset_to_empty(hash_pair<GID, LID>* src, hash_pair<GID, LID>* dst,const int sizePower,int maxoverflow,size_t Nsrc){
+   const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
+   if (tid>=Nsrc){return ;}
+   hash_pair<GID,LID>&candidate=src[tid];
+   int bitMask = (1 <<(sizePower )) - 1; 
+   uint32_t hashIndex = ext_fibonacci_hash(candidate.first,sizePower);
+   uint32_t actual_index=((hashIndex) & bitMask)+candidate.offset;
+   atomicCAS(&dst[actual_index].first,candidate.first,EMPTYBUCKET);
+   return ;
+}
+
+
 template<typename GID, typename LID,GID EMPTYBUCKET=vmesh::INVALID_GLOBALID,size_t BLOCKSIZE=1024, size_t WARP=32>
 __global__ 
-void hasher(hash_pair<GID, LID>* src, hash_pair<GID, LID>* dst, const int sizePower,int maxoverflow){
+void hasher(hash_pair<GID, LID>* src, hash_pair<GID, LID>* dst, const int sizePower,int maxoverflow,size_t Nsrc){
 
-   __shared__ int warp_exit_flag;
+   extern __shared__ int8_t warp_exit_flag[];
    const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
    const unsigned int wid = tid/WARP;
    const unsigned int w_tid=tid%WARP;
 
+   if (wid>=Nsrc){return;}//early quit if we have more warps than overflown elements
+   warp_exit_flag[wid]=0;
    hash_pair<GID,LID>&candidate=src[wid];
    int bitMask = (1 <<(sizePower )) - 1; 
    uint32_t hashIndex = ext_fibonacci_hash(candidate.first,sizePower);
    uint32_t optimalindex=(hashIndex) & bitMask;
-   //Reset the element to EMPTYBUCKET
-   if (w_tid==0){
-      dst[optimalindex+candidate.offset].first=EMPTYBUCKET;
-      warp_exit_flag=0;
-   }
 
-   for (size_t warp_offset=0; warp_offset<(1<<sizePower); warp_offset+=WARP){
+
+   //TODO Fix the loop!
+   for (size_t warp_offset=0; warp_offset<=0; warp_offset+=WARP){
       uint32_t vecindex=(hashIndex+ warp_offset+ w_tid) & bitMask;
       //vote for available emptybuckets in warp region
       uint32_t  mask= __ballot_sync(SPLIT_VOTING_MASK,dst[vecindex].first==EMPTYBUCKET);
-      while(mask!=0 && warp_exit_flag==0){
-         //LSB is the winner (little endian)--> smallest overflow candidate thread
+      while(mask!=0 && warp_exit_flag[wid]==0){
          int winner =__ffs ( mask ) -1;
          if (w_tid==winner){
             GID old = atomicCAS(&dst[vecindex].first, EMPTYBUCKET, candidate.first);
             if (old == EMPTYBUCKET){
                atomicExch(&dst[vecindex].second,candidate.second);
-               //no need to commmunicate new overflow as it will be less than before...
                int overflow = vecindex-optimalindex;
                atomicExch(&dst[vecindex].offset,overflow);
                assert(overflow<=maxoverflow && "Thread exceeded max overflow. This does fail after all!");
-               warp_exit_flag=1;
+               warp_exit_flag[wid]=1;
             }else{
                mask &= ~(1<< winner);
             }
          }
-         __syncthreads();
-         if(warp_exit_flag==1){
+         __syncwarp();
+         if(warp_exit_flag[wid]==1){
             return;
          }
       }
@@ -177,15 +189,27 @@ private:
       return optimalIndex-hashIndex;
    }
 
-
    __host__
-   void clean_by_compaction(){
-
-      // TODO tune parameters based on output size
+   inline void clean_by_compaction(){
+      /*Perform stream compaction on our buckets and exctract all overflown elements that would 
+        possibly need moving after the tombstones are deleted. The predicate passed here also resets
+        all tombstones to empty so we can safely reset the tombstone counter.
+      */
+      tombstoneCounter=0;
       split::SplitVector<hash_pair<GID, LID>> overflownElements(1 << sizePower, {EMPTYBUCKET, LID()});
       split_tools::copy_if<hash_pair<GID, LID>,Tombstone_Predicate<GID,LID>,32,32>(buckets,overflownElements,Tombstone_Predicate<GID,LID>());
-      hasher<GID,LID><<<std::ceil(overflownElements.size()/32),32>>> (overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow);
+      size_t nOver=overflownElements.size();
+      std::cout<<"Overflown elemenets = "<<nOver<<std::endl;
+      if (nOver ==0 ){
+         std::cout<<"No cleaning needed!"<<std::endl;
+         return ;
+      }
+      //If we do have overflown elements we put them back in the buckets
+      reset_to_empty<GID,LID><<<overflownElements.size(),1024>>> (overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow,overflownElements.size());
       cudaDeviceSynchronize();
+      hasher<GID,LID><<<overflownElements.size(),1024,overflownElements.size()*sizeof(int8_t)>>> (overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow,overflownElements.size());
+      cudaDeviceSynchronize();
+      return ;
    }
 
    __host__ 
@@ -264,9 +288,8 @@ private:
    //Simply remove all tombstones on host by rehashing
    __host__
    void clean_tombstones(){
-      //clean_by_compaction();
-      //tombstoneCounter=0;
-      clean_tombstones_in_place();
+      clean_by_compaction();
+      //clean_tombstones_in_place();
       assert(tombstone_count()==0 && "Tombstones leaked into CPU hashmap!");
    }
 
@@ -475,12 +498,12 @@ public:
       cudaMemcpyAsync(&postDevice_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,stream);
       this->buckets.optimizeCPU(stream);
       if (postDevice_maxBucketOverflow>maxBucketOverflow){
+         std::cout<<"Device Overflow"<<std::endl;
          rehash(sizePower+1);
       }else{
          if(tombstone_count()>0){
             clean_tombstones();
             //clean_tombstones_in_place();
-            //rehash(sizePower);
          }
       }
    }
@@ -505,7 +528,11 @@ public:
             std::cout<<"[▢,-,-] ";
          }
          else{
-            printf("[%d,%d-%d] ",i.first,i.second,i.offset);
+            if (i.offset>0){
+               printf("[%d,%d-\033[1;31m%d\033[0m]] ",i.first,i.second,i.offset);
+            }else{
+               printf("[%d,%d-%d] ",i.first,i.second,i.offset);
+            }
          }
       }
    __host__
