@@ -248,32 +248,51 @@ void hasher_V3(hash_pair<GID, LID>* src,
    const size_t optimalindex=(hashIndex) & bitMask;
    bool done=false;
 
-   size_t vecindex=((hashIndex+w_tid) & bitMask ) ;
-   //vote for available emptybuckets in warp region
-   uint32_t  mask;
-   mask=1;
-   while(mask!=0){
-      mask = __ballot_sync(SPLIT_VOTING_MASK,buckets[vecindex].first==EMPTYBUCKET);
-      mask&=submask;
-      int winner =__ffs ( mask ) -1;
-      winner-=(subwarp_relative_index)*WARP;
-      if (w_tid==winner){
-         GID old = atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, candidate.first);
-         if (old == EMPTYBUCKET){
-            //TODO the atomicExch here could be non atomics as no other thread can probe here
-            int overflow = vecindex-optimalindex;
+   for(int i=0; i<(1<<sizePower); i+=WARP){
+      
+      //Get the position we should be looking into
+      size_t vecindex=((hashIndex+i+w_tid) & bitMask ) ;
+
+      //vote for already existing in warp region
+      uint32_t mask_already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[vecindex].first==candidate.first);
+      mask_already_exists&=submask;
+      if (mask_already_exists){
+         int winner =__ffs ( mask_already_exists ) -1;
+         winner-=(subwarp_relative_index)*WARP;
+         if(w_tid==winner){
             atomicExch(&buckets[vecindex].second,candidate.second);
-            atomicExch(&buckets[vecindex].offset,overflow);
-            atomicMax((int*)d_overflow,overflow);
-            atomicAdd((unsigned long long int*)d_fill, 1);
-            //printf("Warp %lu  added w overflow = %lu\n",(unsigned long)wid,(unsigned long)overflow);
-            assert(overflow<=maxoverflow && "Thread exceeded max overflow. This does fail after all!");
             done=true;
          }
+         int warp_done=__any_sync(submask,done);
+         if(warp_done>0){
+            return;
+         }
       }
-      int warp_done=__any_sync(submask,done);
-      if(warp_done>0){
-         return;
+
+      //vote for available emptybuckets in warp region
+      uint32_t  mask;
+      mask=1;
+      while(mask!=0){
+         mask = __ballot_sync(SPLIT_VOTING_MASK,buckets[vecindex].first==EMPTYBUCKET);
+         mask&=submask;
+         int winner =__ffs ( mask ) -1;
+         winner-=(subwarp_relative_index)*WARP;
+         if (w_tid==winner){
+            GID old = atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, candidate.first);
+            if (old == EMPTYBUCKET){
+               //TODO the atomicExch here could be non atomics as no other thread can probe here
+               int overflow = vecindex-optimalindex;
+               atomicExch(&buckets[vecindex].second,candidate.second);
+               atomicExch(&buckets[vecindex].offset,overflow);
+               atomicMax((int*)d_overflow,overflow);
+               atomicAdd((unsigned long long int*)d_fill, 1);
+               done=true;
+            }
+         }
+         int warp_done=__any_sync(submask,done);
+         if(warp_done>0){
+            return;
+         }
       }
    }
    return ;
@@ -495,7 +514,7 @@ public:
       cpu_maxBucketOverflow=maxBucketOverflow;
       cudaMemcpy(d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice);
       cudaMemcpy(d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice);
-      hasher_V3<GID,LID><<<len,1024>>>(src,buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,len);
+      hasher_V2<GID,LID><<<len,1024>>>(src,buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,len);
       //hasher_V2<GID,LID><<<len,1024>>>(src,buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,len);
       cudaDeviceSynchronize();
       cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,0);

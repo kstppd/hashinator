@@ -87,7 +87,6 @@ bool test_hashmap_1(val_type power){
    vector src(N);
    create_input(src);
 
-
    hashmap hmap;
    hmap.insert(src.data(),src.size(),power);
    assert(recover_elements(hmap,src) && "Hashmap is illformed!");
@@ -98,8 +97,8 @@ bool test_hashmap_2(val_type power){
    //Settings
    size_t N = 1<<power;
    size_t blocksize=BLOCKSIZE;
-   size_t blocks=2*N/blocksize;
    vector src(N);
+   size_t blocks=2*N/blocksize;
    create_input(src);
 
    hashmap hmap;
@@ -117,10 +116,13 @@ bool test_hashmap_2(val_type power){
 }
 
 TEST(HashmapUnitTets , Device_Insert){
-   for (int power=10; power<11; ++power){
+   int reps=10;
+   for (int power=20; power<21; ++power){
       std::string name= "Power= "+std::to_string(power);
-      bool retval = execute_and_time(name.c_str(),test_hashmap_1 ,power);
-      expect_true(retval);
+      for (int i =0; i< reps; i++){
+         bool retval = execute_and_time(name.c_str(),test_hashmap_1 ,power);
+         expect_true(retval);
+      }
    }
 }
 
