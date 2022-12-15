@@ -196,11 +196,10 @@ void hasher_V2(hash_pair<GID, LID>* src,
 }
 
 
-
 __device__
-unsigned int getSubMask(unsigned int n,unsigned int l,unsigned int r){
-   int num = ((1 << r) - 1) ^ ((1 << (l - 1)) - 1);
-   return (n ^ num);
+unsigned int getIntraWarpMask(unsigned int n,unsigned int l,unsigned int r){
+   int num = ((1<<r)-1)^((1<<(l-1))-1);
+   return (n^num);
 }
 
 /*Warp Synchronous hashing kernel for hashinator's internal use:
@@ -231,56 +230,50 @@ void hasher_V3(hash_pair<GID, LID>* src,
               size_t* d_fill,
               size_t len){
 
+   typedef unsigned long tp;
    const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
    const size_t wid = tid/WARP;
    const size_t w_tid=tid%WARP;
-   unsigned int subwarp_relative_index=(wid/WARP)%4;
+   unsigned int subwarp_relative_index=(wid)%(32/WARP);
    
-   uint32_t submask=getSubMask(0,WARP*subwarp_relative_index+1,WARP*subwarp_relative_index+WARP);
    //Early quit if we have more warps than elements to insert
    if (wid>=len){
       return;
    }
+   uint32_t submask=getIntraWarpMask(0,WARP*subwarp_relative_index+1,WARP*subwarp_relative_index+WARP);
                          
-
    hash_pair<GID,LID>&candidate=src[wid];
    const int bitMask = (1 <<(sizePower )) - 1; 
    const size_t hashIndex = ext_fibonacci_hash(candidate.first,sizePower);
    const size_t optimalindex=(hashIndex) & bitMask;
    bool done=false;
 
-
-   //TODO Fix the loop!
-   for (size_t warp_offset=0; warp_offset<=0; warp_offset+=WARP){
-      size_t vecindex=((hashIndex+ warp_offset+w_tid) & bitMask ) ;
-      //vote for available emptybuckets in warp region
-      uint32_t  mask;
-      mask=1;
-      while(mask!=0){
-         mask = __ballot_sync(SPLIT_VOTING_MASK,buckets[vecindex].first==EMPTYBUCKET);
-         mask&=submask;
-         int winner =__ffs ( mask ) -1;
-         winner-=(subwarp_relative_index)*WARP;
-         if (w_tid==winner){
-            GID old = atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, candidate.first);
-            if (old == EMPTYBUCKET || old==candidate.first){
-               //TODO the atomicExch here could be non atomics as no other thread can probe here
-               int overflow = vecindex-optimalindex;
-               atomicExch(&buckets[vecindex].second,candidate.second);
-               atomicExch(&buckets[vecindex].offset,overflow);
-               atomicMax((int*)d_overflow,overflow);
-               if (old==EMPTYBUCKET){
-                  atomicAdd((unsigned long long int*)d_fill, 1);
-               }
-               assert(overflow<=maxoverflow && "Thread exceeded max overflow. This does fail after all!");
-               done=true;
-            }else{
-            }
+   size_t vecindex=((hashIndex+w_tid) & bitMask ) ;
+   //vote for available emptybuckets in warp region
+   uint32_t  mask;
+   mask=1;
+   while(mask!=0){
+      mask = __ballot_sync(SPLIT_VOTING_MASK,buckets[vecindex].first==EMPTYBUCKET);
+      mask&=submask;
+      int winner =__ffs ( mask ) -1;
+      winner-=(subwarp_relative_index)*WARP;
+      if (w_tid==winner){
+         GID old = atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, candidate.first);
+         if (old == EMPTYBUCKET){
+            //TODO the atomicExch here could be non atomics as no other thread can probe here
+            int overflow = vecindex-optimalindex;
+            atomicExch(&buckets[vecindex].second,candidate.second);
+            atomicExch(&buckets[vecindex].offset,overflow);
+            atomicMax((int*)d_overflow,overflow);
+            atomicAdd((unsigned long long int*)d_fill, 1);
+            //printf("Warp %lu  added w overflow = %lu\n",(unsigned long)wid,(unsigned long)overflow);
+            assert(overflow<=maxoverflow && "Thread exceeded max overflow. This does fail after all!");
+            done=true;
          }
-         int warp_done=__any_sync(submask,done);
-         if(warp_done>0){
-            return;
-         }
+      }
+      int warp_done=__any_sync(submask,done);
+      if(warp_done>0){
+         return;
       }
    }
    return ;
@@ -498,11 +491,11 @@ public:
 
    __host__
    void insert(hash_pair<GID,LID>*src,size_t len,int power){
-      resize(power);
+      resize(power+1);
       cpu_maxBucketOverflow=maxBucketOverflow;
       cudaMemcpy(d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice);
       cudaMemcpy(d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice);
-      hasher_V2<GID,LID><<<len,1024>>>(src,buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,len);
+      hasher_V3<GID,LID><<<len,1024>>>(src,buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,len);
       //hasher_V2<GID,LID><<<len,1024>>>(src,buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,len);
       cudaDeviceSynchronize();
       cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,0);
