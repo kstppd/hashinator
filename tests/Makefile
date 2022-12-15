@@ -6,7 +6,7 @@ EXTRA= -g  --std=c++14
 EXTRA+= -gencode arch=compute_60,code=sm_60  -L /usr/lib/x86_64-linux-gnu
 EXTRA+=  -DHASHMAPDEBUG --expt-relaxed-constexpr 
 GTEST=-lgtest -lgtest_main -lpthread
-OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o delete_mechanism.o
+OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o delete_mechanism.o insertion_mechanism.o
 
 default: all
 all: ${OBJ}
@@ -19,7 +19,8 @@ allclean:
 	rm gtestvecdevice &
 	rm gtest_hashmap & 
 	rm compaction &
-	rm delete_mechanism
+	rm delete_mechanism &
+	rm insertion
 
 gtest_hashmap.o: hashmap_unit_test/main.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o gtest_hashmap hashmap_unit_test/main.cu
@@ -36,3 +37,5 @@ stream_compaction.o: stream_compaction/race.cu
 delete_mechanism.o: delete_by_compaction/main.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o delete_mechanism delete_by_compaction/main.cu
 
+insertion_mechanism.o: insertion_mechanism/main.cu
+	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o insertion insertion_mechanism/main.cu

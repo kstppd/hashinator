@@ -29,7 +29,6 @@
 #include "../splitvector/split_tools.h"
 #include "hash_pair.h"
 
-
 template <typename T, typename U,T EMPTYBUCKET = vmesh::INVALID_GLOBALID,T TOMBSTONE = EMPTYBUCKET - 1>
 struct Tombstone_Predicate{
    __host__ __device__
@@ -103,10 +102,85 @@ void hasher(hash_pair<GID, LID>* src, hash_pair<GID, LID>* dst, const int sizePo
             return;
          }
       }
+      assert(0 && "NO WAY");
    }
 }
 
 
+/*Warp Synchronous hashing kernel for hashinator's internal use:
+ * This method uses 32-thread Warps to hash an elements from src.
+ * Threads in a given warp simultaneously try to hash an element
+ * in the buckets by using warp voting to communicate available 
+ * positions in the probing  sequence. The position of least overflow
+ * is selected by using __ffs to decide on the winner. If no positios
+ * are available in the probing sequence the warp shifts by a warp size
+ * and ties to overflow(up to maxoverflow).
+ * Parameters:
+ *    src          -> pointer to device data with pairs to be inserted
+ *    buckets      -> current hashinator buckets
+ *    sizePower    -> current hashinator sizepower
+ *    maxoverflow  -> maximum allowed overflow
+ *    d_overflow   -> stores the overflow after inserting the elements
+ *    d_fill       -> stores the device fill after inserting the elements
+ *    len          -> number of elements to read from src
+ * */
+template<typename GID, typename LID,GID EMPTYBUCKET=vmesh::INVALID_GLOBALID,size_t BLOCKSIZE=1024, size_t WARP=32>
+__global__ 
+void hasher_V2(hash_pair<GID, LID>* src,
+              hash_pair<GID, LID>* buckets,
+              int sizePower,
+              int maxoverflow,
+              int* d_overflow,
+              size_t* d_fill,
+              size_t len){
+
+   const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
+   const size_t wid = tid/WARP;
+   const size_t w_tid=tid%WARP;
+
+
+   //Early quit if we have more warps than elements to insert
+   if (wid>=len){
+      return;
+   }
+                         
+
+   hash_pair<GID,LID>&candidate=src[wid];
+   const int bitMask = (1 <<(sizePower )) - 1; 
+   const size_t hashIndex = ext_fibonacci_hash(candidate.first,sizePower);
+   const size_t optimalindex=(hashIndex) & bitMask;
+   bool done=false;
+
+
+   //TODO Fix the loop!
+   for (size_t warp_offset=0; warp_offset<=0; warp_offset+=WARP){
+      size_t vecindex=(hashIndex+ warp_offset+ w_tid) & bitMask;
+      //vote for available emptybuckets in warp region
+      uint32_t  mask= __ballot_sync(SPLIT_VOTING_MASK,buckets[vecindex].first==EMPTYBUCKET);
+      while(mask!=0){
+         int winner =__ffs ( mask ) -1;
+         if (w_tid==winner){
+            GID old = atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, candidate.first);
+            if (old == EMPTYBUCKET){
+               //TODO the atomicExch here could be non atomics as no other thread can probe here
+               int overflow = vecindex-optimalindex;
+               atomicExch(&buckets[vecindex].second,candidate.second);
+               atomicExch(&buckets[vecindex].offset,overflow);
+               atomicMax((int*)d_overflow,overflow);
+               atomicAdd((unsigned long long int*)d_fill, 1);
+               assert(overflow<=maxoverflow && "Thread exceeded max overflow. This does fail after all!");
+               done=true;
+            }else{
+               mask &= ~(1<< winner);
+            }
+         }
+         int warp_done=__any_sync(__activemask(),done);
+         if(warp_done>0){
+            return;
+         }
+      }
+   }
+}
 
 
 // Open bucket power-of-two sized hash table with multiplicative fibonacci hashing
@@ -275,12 +349,12 @@ private:
    }
 
    __host__
-   inline bool isEmpty(const hash_pair<GID,LID>& b ){
+   inline bool isEmpty(const hash_pair<GID,LID>& b )const {
       return b.first==EMPTYBUCKET;
    }
 
    __host__
-   inline bool isTombStone(const hash_pair<GID,LID>& b ){
+   inline bool isTombStone(const hash_pair<GID,LID>& b )const {
       return b.first==TOMBSTONE;
    }
    
@@ -317,6 +391,20 @@ public:
    ~Hashinator(){     
       deallocate_device_handles();
    };
+
+
+   __host__
+   void insert(hash_pair<GID,LID>*src,size_t len,int power){
+      resize(power+1);
+      cpu_maxBucketOverflow=maxBucketOverflow;
+      cudaMemcpy(d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice);
+      cudaMemcpy(d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice);
+      hasher_V2<GID,LID><<<len,1024>>>(src,buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,len);
+      cudaDeviceSynchronize();
+      cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,0);
+      return;
+   }
+
 
 
 
