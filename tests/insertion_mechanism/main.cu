@@ -117,7 +117,7 @@ bool test_hashmap_2(val_type power){
 }
 
 TEST(HashmapUnitTets , Device_Insert){
-   for (int power=15; power<20; ++power){
+   for (int power=10; power<11; ++power){
       std::string name= "Power= "+std::to_string(power);
       bool retval = execute_and_time(name.c_str(),test_hashmap_1 ,power);
       expect_true(retval);
@@ -125,13 +125,13 @@ TEST(HashmapUnitTets , Device_Insert){
 }
 
 
-TEST(HashmapUnitTets , Host_Device_Insert){
-   for (int power=15; power<20; ++power){
-      std::string name= "Power naive= "+std::to_string(power);
-      bool retval = execute_and_time(name.c_str(),test_hashmap_2 ,power);
-      expect_true(retval);
-   }
-}
+//TEST(HashmapUnitTets , Host_Device_Insert){
+   //for (int power=15; power<20; ++power){
+      //std::string name= "Power naive= "+std::to_string(power);
+      //bool retval = execute_and_time(name.c_str(),test_hashmap_2 ,power);
+      //expect_true(retval);
+   //}
+//}
 
 
 int main(int argc, char* argv[]){
