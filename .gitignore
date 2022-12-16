@@ -9,3 +9,4 @@
 scripts/*
 tags
 tests/*tags
+storage/*
