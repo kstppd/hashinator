@@ -27,280 +27,21 @@
 #include "../splitvector/splitvec.h"
 #include "../splitvector/split_tools.h"
 #include "hash_pair.h"
+#include "hashers.h"
+#include "tombstoneCleaning.h"
 #include <limits>
 
-template <typename T, typename U,T EMPTYBUCKET = std::numeric_limits<T>::max(),T TOMBSTONE = EMPTYBUCKET - 1>
-struct Tombstone_Predicate{
-   __host__ __device__
-   inline bool operator()( hash_pair<T,U>& element)const{
-      if (element.first==TOMBSTONE){element.first=EMPTYBUCKET;return false;}
-      return element.offset>0;
-   }
-};
-
-template<typename GID>
-__device__
-static inline uint32_t ext_fibonacci_hash(GID in,const int sizePower){
-   in ^= in >> (32 - sizePower);
-   uint32_t retval = (uint64_t)(in * 2654435769ul) >> (32 - sizePower);
-   return retval;
-}
-
-
-template<typename GID, typename LID,GID EMPTYBUCKET=std::numeric_limits<GID>::max()>
-__global__ 
-void reset_to_empty(hash_pair<GID, LID>* src, hash_pair<GID, LID>* dst,const int sizePower,int maxoverflow,size_t Nsrc){
-   const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
-   if (tid>=Nsrc){return ;}
-   hash_pair<GID,LID>&candidate=src[tid];
-   int bitMask = (1 <<(sizePower )) - 1; 
-   uint32_t hashIndex = ext_fibonacci_hash(candidate.first,sizePower);
-   uint32_t actual_index=((hashIndex) & bitMask)+candidate.offset;
-   atomicCAS(&dst[actual_index].first,candidate.first,EMPTYBUCKET);
-   return ;
-}
-
-
-template<typename GID, typename LID,GID EMPTYBUCKET=std::numeric_limits<GID>::max(),size_t BLOCKSIZE=1024, size_t WARP=32>
-__global__ 
-void hasher(hash_pair<GID, LID>* src, hash_pair<GID, LID>* dst, const int sizePower,int maxoverflow,size_t Nsrc){
-
-   extern __shared__ int8_t warp_exit_flag[];
-   const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
-   const unsigned int wid = tid/WARP;
-   const unsigned int w_tid=tid%WARP;
-
-   if (wid>=Nsrc){return;}//early quit if we have more warps than overflown elements
-   warp_exit_flag[wid]=0;
-   hash_pair<GID,LID>&candidate=src[wid];
-   int bitMask = (1 <<(sizePower )) - 1; 
-   uint32_t hashIndex = ext_fibonacci_hash(candidate.first,sizePower);
-   uint32_t optimalindex=(hashIndex) & bitMask;
-
-
-   //TODO Fix the loop!
-   for (size_t warp_offset=0; warp_offset<=0; warp_offset+=WARP){
-      uint32_t vecindex=(hashIndex+ warp_offset+ w_tid) & bitMask;
-      //vote for available emptybuckets in warp region
-      uint32_t  mask= __ballot_sync(SPLIT_VOTING_MASK,dst[vecindex].first==EMPTYBUCKET);
-      while(mask!=0 && warp_exit_flag[wid]==0){
-         int winner =__ffs ( mask ) -1;
-         if (w_tid==winner){
-            GID old = atomicCAS(&dst[vecindex].first, EMPTYBUCKET, candidate.first);
-            if (old == EMPTYBUCKET){
-               atomicExch(&dst[vecindex].second,candidate.second);
-               int overflow = vecindex-optimalindex;
-               atomicExch(&dst[vecindex].offset,overflow);
-               assert(overflow<=maxoverflow && "Thread exceeded max overflow. This does fail after all!");
-               warp_exit_flag[wid]=1;
-            }else{
-               mask &= ~(1<< winner);
-            }
-         }
-         __syncwarp();
-         if(warp_exit_flag[wid]==1){
-            return;
-         }
-      }
-      assert(0 && "NO WAY");
-   }
-}
-
-
-/*Warp Synchronous hashing kernel for hashinator's internal use:
- * This method uses 32-thread Warps to hash an element from src.
- * Threads in a given warp simultaneously try to hash an element
- * in the buckets by using warp voting to communicate available 
- * positions in the probing  sequence. The position of least overflow
- * is selected by using __ffs to decide on the winner. If no positios
- * are available in the probing sequence the warp shifts by a warp size
- * and ties to overflow(up to maxoverflow).
- * No tombstones allowed!
- * Parameters:
- *    src          -> pointer to device data with pairs to be inserted
- *    buckets      -> current hashinator buckets
- *    sizePower    -> current hashinator sizepower
- *    maxoverflow  -> maximum allowed overflow
- *    d_overflow   -> stores the overflow after inserting the elements
- *    d_fill       -> stores the device fill after inserting the elements
- *    len          -> number of elements to read from src
- * */
-template<typename GID, typename LID,GID EMPTYBUCKET=std::numeric_limits<GID>::max(),size_t BLOCKSIZE=1024, size_t WARP=32>
-__global__ 
-void hasher_V2(hash_pair<GID, LID>* src,
-              hash_pair<GID, LID>* buckets,
-              int sizePower,
-              int maxoverflow,
-              int* d_overflow,
-              size_t* d_fill,
-              size_t len){
-
-   const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
-   const size_t wid = tid/WARP;
-   const size_t w_tid=tid%WARP;
-   //Early quit if we have more warps than elements to insert
-   if (wid>=len){
-      return;
-   }
-                         
-   hash_pair<GID,LID>&candidate=src[wid];
-   const int bitMask = (1 <<(sizePower )) - 1; 
-   const size_t hashIndex = ext_fibonacci_hash(candidate.first,sizePower);
-   const size_t optimalindex=(hashIndex) & bitMask;
-   bool done=false;
-
-
-   for(int i=0; i<(1<<sizePower); i+=WARP){
-
-      //Get the position we should be looking into
-      size_t vecindex=((hashIndex+i+w_tid) & bitMask ) ;
-      
-      //vote for already existing in warp region
-      uint32_t mask_already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[vecindex].first==candidate.first);
-      if (mask_already_exists){
-         int winner =__ffs ( mask_already_exists ) -1;
-         if(w_tid==winner){
-            atomicExch(&buckets[vecindex].second,candidate.second);
-            done=true;
-         }
-         int warp_done=__any_sync(__activemask(),done);
-         if(warp_done>0){
-            return;
-         }
-      }
-
-      //vote for available emptybuckets in warp region
-      uint32_t mask = 1;//_ballot_sync(SPLIT_VOTING_MASK,buckets[vecindex].first==EMPTYBUCKET);
-      while(mask!=0){
-         mask = __ballot_sync(SPLIT_VOTING_MASK,buckets[vecindex].first==EMPTYBUCKET);
-         int winner =__ffs ( mask ) -1;
-         if (w_tid==winner){
-            GID old = atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, candidate.first);
-            if (old == EMPTYBUCKET){
-               //TODO the atomicExch here could be non atomics as no other thread can probe here
-               int overflow = vecindex-optimalindex;
-               atomicExch(&buckets[vecindex].second,candidate.second);
-               atomicExch(&buckets[vecindex].offset,overflow);
-               atomicMax((int*)d_overflow,overflow);
-               atomicAdd((unsigned long long int*)d_fill, 1);
-               done=true;
-            }
-         }
-         int warp_done=__any_sync(__activemask(),done);
-         if(warp_done>0){
-            return;
-         }
-      }
-   }
-   return ;
-}
-
-
-__device__
-unsigned int getIntraWarpMask(unsigned int n,unsigned int l,unsigned int r){
-   int num = ((1<<r)-1)^((1<<(l-1))-1);
-   return (n^num);
-}
-
-/*Warp Synchronous hashing kernel for hashinator's internal use:
- * This method uses 32-thread Warps to hash an element from src.
- * Threads in a given warp simultaneously try to hash an element
- * in the buckets by using warp voting to communicate available 
- * positions in the probing  sequence. The position of least overflow
- * is selected by using __ffs to decide on the winner. If no positios
- * are available in the probing sequence the warp shifts by a warp size
- * and ties to overflow(up to maxoverflow).
- * No tombstones allowed!
- * Parameters:
- *    src          -> pointer to device data with pairs to be inserted
- *    buckets      -> current hashinator buckets
- *    sizePower    -> current hashinator sizepower
- *    maxoverflow  -> maximum allowed overflow
- *    d_overflow   -> stores the overflow after inserting the elements
- *    d_fill       -> stores the device fill after inserting the elements
- *    len          -> number of elements to read from src
- * */
-template<typename GID, typename LID,GID EMPTYBUCKET=std::numeric_limits<GID>::max(),size_t BLOCKSIZE=1024, size_t WARP=8>
-__global__ 
-void hasher_V3(hash_pair<GID, LID>* src,
-              hash_pair<GID, LID>* buckets,
-              int sizePower,
-              int maxoverflow,
-              int* d_overflow,
-              size_t* d_fill,
-              size_t len){
-
-   typedef unsigned long tp;
-   const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
-   const size_t wid = tid/WARP;
-   const size_t w_tid=tid%WARP;
-   unsigned int subwarp_relative_index=(wid)%(32/WARP);
-   
-   //Early quit if we have more warps than elements to insert
-   if (wid>=len){
-      return;
-   }
-   uint32_t submask=getIntraWarpMask(0,WARP*subwarp_relative_index+1,WARP*subwarp_relative_index+WARP);
-                         
-   hash_pair<GID,LID>&candidate=src[wid];
-   const int bitMask = (1 <<(sizePower )) - 1; 
-   const size_t hashIndex = ext_fibonacci_hash(candidate.first,sizePower);
-   const size_t optimalindex=(hashIndex) & bitMask;
-   bool done=false;
-
-   for(int i=0; i<(1<<sizePower); i+=WARP){
-      
-      //Get the position we should be looking into
-      size_t vecindex=((hashIndex+i+w_tid) & bitMask ) ;
-
-      //vote for already existing in warp region
-      uint32_t mask_already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[vecindex].first==candidate.first);
-      mask_already_exists&=submask;
-      if (mask_already_exists){
-         int winner =__ffs ( mask_already_exists ) -1;
-         winner-=(subwarp_relative_index)*WARP;
-         if(w_tid==winner){
-            atomicExch(&buckets[vecindex].second,candidate.second);
-            done=true;
-         }
-         int warp_done=__any_sync(submask,done);
-         if(warp_done>0){
-            return;
-         }
-      }
-
-      //vote for available emptybuckets in warp region
-      uint32_t  mask;
-      mask=1;
-      while(mask!=0){
-         mask = __ballot_sync(SPLIT_VOTING_MASK,buckets[vecindex].first==EMPTYBUCKET);
-         mask&=submask;
-         int winner =__ffs ( mask ) -1;
-         winner-=(subwarp_relative_index)*WARP;
-         if (w_tid==winner){
-            GID old = atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, candidate.first);
-            if (old == EMPTYBUCKET){
-               //TODO the atomicExch here could be non atomics as no other thread can probe here
-               int overflow = vecindex-optimalindex;
-               atomicExch(&buckets[vecindex].second,candidate.second);
-               atomicExch(&buckets[vecindex].offset,overflow);
-               atomicMax((int*)d_overflow,overflow);
-               atomicAdd((unsigned long long int*)d_fill, 1);
-               done=true;
-            }
-         }
-         int warp_done=__any_sync(submask,done);
-         if(warp_done>0){
-            return;
-         }
-      }
-   }
-   return ;
-}
 
 // Open bucket power-of-two sized hash table with multiplicative fibonacci hashing
-template <typename GID, typename LID, int maxBucketOverflow = 32, GID EMPTYBUCKET = std::numeric_limits<GID>::max(),GID TOMBSTONE = EMPTYBUCKET - 1 > 
+template <typename GID, 
+          typename LID, 
+          int maxBucketOverflow = 32, 
+          GID EMPTYBUCKET = std::numeric_limits<GID>::max(),
+          GID TOMBSTONE = EMPTYBUCKET - 1,
+          class HashFunction=Hashers::Murmur<GID>,
+          class DeviceHasher=TombStoneCleaning::Hasher<GID,LID,HashFunction>>
 class Hashinator {
+
 private:
    //CUDA device handles
    int* d_sizePower;
@@ -316,37 +57,15 @@ private:
    int sizePower; // Logarithm (base two) of the size of the table
    int cpu_maxBucketOverflow;
    size_t fill;   // Number of filled buckets
+   split::SplitVector<hash_pair<GID, LID>> buckets;
    //~Host members
    
-   // Fibonacci hash function for 64bit values
-   __host__ __device__
-   uint32_t fibonacci_hash(GID in) const {
-      in ^= in >> (32 - sizePower);
-      uint32_t retval = (uint64_t)(in * 2654435769ul) >> (32 - sizePower);
-      return retval;
-   }
-
-    //Hash a chunk of memory using fnv_1a
-   __host__ __device__
-   uint32_t fnv_1a(const void* chunk, size_t bytes)const{
-       assert(chunk);
-       uint32_t h = 2166136261ul;
-       const unsigned char* ptr = (const unsigned char*)chunk;
-       while (bytes--){
-          h = (h ^ *ptr++) * 16777619ul;
-       }
-       return h ;
-    }
 
     // Wrapper over available hash functions 
    __host__ __device__
    uint32_t hash(GID in) const {
-       static constexpr bool n = (std::is_arithmetic<GID>::value && sizeof(GID) <= sizeof(uint32_t));
-       if (n) {
-          return fibonacci_hash(in);
-       } else {
-          return fnv_1a(&in, sizeof(GID));
-       }
+       static_assert(std::is_arithmetic<GID>::value && sizeof(GID) <= sizeof(uint32_t));
+       return HashFunction::_hash(in);
     }
    
    // Used by the constructors. Preallocates the device pointer and bookeepping info for later use on device. 
@@ -370,20 +89,10 @@ private:
       cudaFree(d_tombstoneCounter);
    }
 
-   __host__
-   int kval_overflow(GID key,size_t index){
-      int bitMask = (1 << sizePower) - 1;
-      uint32_t hashIndex = hash(key)&bitMask;
-      uint32_t optimalIndex=((index)&bitMask);
-      return optimalIndex-hashIndex;
-   }
 
-      /*Perform stream compaction on our buckets and exctract all overflown elements that would 
-        possibly need moving after the tombstones are deleted. The predicate passed here also resets
-        all tombstones to empty so we can safely reset the tombstone counter.
-      */
+   //Cleans all tombstones
    __host__
-   inline void clean_by_compaction(){
+   void clean_tombstones(){
       //Reset the tomstone counter
       tombstoneCounter=0;
       //Allocate memory for overflown elements. So far this is the same size as our buckets but we can be better than this 
@@ -397,38 +106,25 @@ private:
          return ;
       }
       //If we do have overflown elements we put them back in the buckets
-      reset_to_empty<GID,LID><<<overflownElements.size(),1024>>> (overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow,overflownElements.size());
+      TombStoneCleaning::reset_to_empty<GID,LID,EMPTYBUCKET,HashFunction><<<overflownElements.size(),1024>>> (overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow,overflownElements.size());
       cudaDeviceSynchronize();
-      hasher<GID,LID><<<overflownElements.size(),1024,overflownElements.size()*sizeof(int8_t)>>> (overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow,overflownElements.size());
-      cudaDeviceSynchronize();
+      DeviceHasher::insert(overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,overflownElements.size());
       return ;
-   }
-
-   __host__
-   inline bool isEmpty(const hash_pair<GID,LID>& b )const {
-      return b.first==EMPTYBUCKET;
-   }
-
-   __host__
-   inline bool isTombStone(const hash_pair<GID,LID>& b )const {
-      return b.first==TOMBSTONE;
-   }
-   
-
-   //Wrapper method to clean all tombstones after usage on device
-   __host__
-   void clean_tombstones(){
-      clean_by_compaction();
-      assert(tombstone_count()==0 && "Tombstones leaked into CPU hashmap!");
    }
 
 
 public:
-   split::SplitVector<hash_pair<GID, LID>> buckets;
-    
+   template <typename T, typename U>
+   struct Tombstone_Predicate{
+      __host__ __device__
+      inline bool operator()( hash_pair<T,U>& element)const{
+         if (element.first==TOMBSTONE){element.first=EMPTYBUCKET;return false;}
+         return element.offset>0;
+      }
+   };
    __host__
    Hashinator()
-       : sizePower(4), fill(0), buckets(1 << sizePower, hash_pair<GID, LID>(EMPTYBUCKET, LID())){
+       : sizePower(5), fill(0), buckets(1 << sizePower, hash_pair<GID, LID>(EMPTYBUCKET, LID())){
          preallocate_device_handles();
        };
 
@@ -450,26 +146,23 @@ public:
 
    __host__
    void insert(hash_pair<GID,LID>*src,size_t len,int power){
-      resize(power+1);
-      cpu_maxBucketOverflow=maxBucketOverflow;
-      cudaMemcpy(d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice);
-      cudaMemcpy(d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice);
-      hasher_V2<GID,LID><<<len,1024>>>(src,buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,len);
+      //resize(power+1);
+      //cpu_maxBucketOverflow=maxBucketOverflow;
+      //cudaMemcpy(d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice);
+      //cudaMemcpy(d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice);
       //hasher_V2<GID,LID><<<len,1024>>>(src,buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,len);
-      cudaDeviceSynchronize();
-      cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,0);
-      cudaMemcpyAsync(&cpu_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,0);
-      std::cout<<fill<<std::endl;
-      std::cout<<cpu_maxBucketOverflow<<std::endl;
-      if (cpu_maxBucketOverflow>maxBucketOverflow){
-         std::cout<<"Rehashing..."<<std::endl;
-         rehash(power+1);
-      }
-      return;
+      ////hasher_V2<GID,LID><<<len,1024>>>(src,buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,len);
+      //cudaDeviceSynchronize();
+      //cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,0);
+      //cudaMemcpyAsync(&cpu_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,0);
+      //std::cout<<fill<<std::endl;
+      //std::cout<<cpu_maxBucketOverflow<<std::endl;
+      //if (cpu_maxBucketOverflow>maxBucketOverflow){
+         //std::cout<<"Rehashing..."<<std::endl;
+         //rehash(power+1);
+      //}
+      //return;
    }
-
-
-
 
    // Resize the table to fit more things. This is automatically invoked once
    // maxBucketOverflow has triggered. This can only be done on host (so far)
@@ -654,7 +347,6 @@ public:
       }else{
          if(tombstone_count()>0){
             clean_tombstones();
-            //clean_tombstones_in_place();
          }
       }
    }

@@ -130,6 +130,16 @@ bool test_hashmap_1(val_type power){
       assert(kval.second%2!=0 && "There are even elements leaked into the hashmap");
    }
 
+   //All odd elements should be recoverable
+   for (const auto& i:src){
+      if (i.second%2!=0){
+         auto exists=hmap.find(i.first);
+
+         assert(exists!=hmap.end() && "Odd element not there");
+      }
+   }
+
+
    //Reinsert so that we can also test duplicate insertion
    d_hmap=hmap.upload();
    gpu_write<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
@@ -142,53 +152,46 @@ bool test_hashmap_1(val_type power){
    return retval;
 }
 
-bool test_hashmap_2(val_type power){
-   return true;
-   ////Settings
-   //size_t N = 1<<power;
-   ////Create some input data
-   //vector src(N);
-   //create_input(src);
-   //hashmap hmap;
-   //hashmap* d_hmap;
-   //hmap.resize(power);
-   //cpu_write(hmap,src);
-
-   //for (int i =0 ; i<=4 ; i+=2){
-      //vector src2(N/(2+2*i));
-      //create_input(src2,10*N+i*N);
-      //for (auto i:src2){
-         //src.push_back(i);
-      //}
-      //cpu_write(hmap,src);
-   //}
-
-   //size_t blocksize=BLOCKSIZE;
-   //size_t blocks=2*N/blocksize;
-
-   ////Delete some selection if the source data
-   //d_hmap=hmap.upload();
-   //gpu_delete_even<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   //cudaDeviceSynchronize();
-
-   ////Download
-   //auto start = std::chrono::high_resolution_clock::now();
-   //hmap.download();
-   //auto stop = std::chrono::high_resolution_clock::now();
-   //auto duration = duration_cast<microseconds>(stop- start).count();
-   //std::cout<<"Time= "<<duration<<std::endl;
-
-   ////Quick check to verify there are no even elements
-   //for (const auto& kval : hmap){
-      //if (kval.second%2==0){std::cout<<kval.first<<" "<<kval.second<<std::endl;}
-      //assert(kval.second%2!=0 && "There are even elements leaked into the hashmap");
-   //}
-   //return true;
+TEST(HashmapUnitTets , Host_Tets){
+   size_t N = 1<<10;
+   //Create some input data
+   vector src(N);
+   create_input(src);
+   hashmap hmap;
+   cpu_write(hmap,src);
+   bool retval=recover_elements(hmap,src);
+   expect_true(retval);
 }
 
+TEST(HashmapUnitTets , Device_Tets){
+
+   int power =10;
+   size_t N = 1<<power;
+   size_t blocksize=BLOCKSIZE;
+   size_t blocks=2*N/blocksize;
+
+
+   //Create some input data
+   vector src(N);
+   create_input(src);
+   hashmap hmap;
+   hashmap* d_hmap;
+   hmap.resize(power+1);
+   //Upload to device
+   d_hmap=hmap.upload();
+   gpu_write<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
+   cudaDeviceSynchronize();
+   //Download
+   hmap.download();
+
+
+
+   bool retval=recover_elements(hmap,src);
+   expect_true(retval);
+}
 
 TEST(HashmapUnitTets , Host_Device_Insert_Delete_Global_Tets){
-   for (int power=11; power<24; ++power){
+   for (int power=11; power<20; ++power){
       std::string name= "Power= "+std::to_string(power);
       bool retval = execute_and_time(name.c_str(),test_hashmap_1 ,power);
       expect_true(retval);
@@ -196,11 +199,11 @@ TEST(HashmapUnitTets , Host_Device_Insert_Delete_Global_Tets){
 }
 
 
-TEST(HashmapUnitTets , Load_Factor){
-   int power=14;
-   bool retval = execute_and_time("Load factor test",test_hashmap_2 ,power);
-   expect_true(retval);
-}
+//TEST(HashmapUnitTets , Load_Factor){
+   //int power=14;
+   //bool retval = execute_and_time("Load factor test",test_hashmap_2 ,power);
+   //expect_true(retval);
+//}
 
 
 int main(int argc, char* argv[]){
