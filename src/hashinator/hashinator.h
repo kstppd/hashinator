@@ -24,12 +24,12 @@
 #include <vector>
 #include <stdexcept>
 #include <cassert>
-#include "definitions.h"
 #include "../splitvector/splitvec.h"
 #include "../splitvector/split_tools.h"
 #include "hash_pair.h"
+#include <limits>
 
-template <typename T, typename U,T EMPTYBUCKET = vmesh::INVALID_GLOBALID,T TOMBSTONE = EMPTYBUCKET - 1>
+template <typename T, typename U,T EMPTYBUCKET = std::numeric_limits<T>::max(),T TOMBSTONE = EMPTYBUCKET - 1>
 struct Tombstone_Predicate{
    __host__ __device__
    inline bool operator()( hash_pair<T,U>& element)const{
@@ -47,7 +47,7 @@ static inline uint32_t ext_fibonacci_hash(GID in,const int sizePower){
 }
 
 
-template<typename GID, typename LID,GID EMPTYBUCKET=vmesh::INVALID_GLOBALID>
+template<typename GID, typename LID,GID EMPTYBUCKET=std::numeric_limits<GID>::max()>
 __global__ 
 void reset_to_empty(hash_pair<GID, LID>* src, hash_pair<GID, LID>* dst,const int sizePower,int maxoverflow,size_t Nsrc){
    const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
@@ -61,7 +61,7 @@ void reset_to_empty(hash_pair<GID, LID>* src, hash_pair<GID, LID>* dst,const int
 }
 
 
-template<typename GID, typename LID,GID EMPTYBUCKET=vmesh::INVALID_GLOBALID,size_t BLOCKSIZE=1024, size_t WARP=32>
+template<typename GID, typename LID,GID EMPTYBUCKET=std::numeric_limits<GID>::max(),size_t BLOCKSIZE=1024, size_t WARP=32>
 __global__ 
 void hasher(hash_pair<GID, LID>* src, hash_pair<GID, LID>* dst, const int sizePower,int maxoverflow,size_t Nsrc){
 
@@ -125,7 +125,7 @@ void hasher(hash_pair<GID, LID>* src, hash_pair<GID, LID>* dst, const int sizePo
  *    d_fill       -> stores the device fill after inserting the elements
  *    len          -> number of elements to read from src
  * */
-template<typename GID, typename LID,GID EMPTYBUCKET=vmesh::INVALID_GLOBALID,size_t BLOCKSIZE=1024, size_t WARP=32>
+template<typename GID, typename LID,GID EMPTYBUCKET=std::numeric_limits<GID>::max(),size_t BLOCKSIZE=1024, size_t WARP=32>
 __global__ 
 void hasher_V2(hash_pair<GID, LID>* src,
               hash_pair<GID, LID>* buckets,
@@ -220,7 +220,7 @@ unsigned int getIntraWarpMask(unsigned int n,unsigned int l,unsigned int r){
  *    d_fill       -> stores the device fill after inserting the elements
  *    len          -> number of elements to read from src
  * */
-template<typename GID, typename LID,GID EMPTYBUCKET=vmesh::INVALID_GLOBALID,size_t BLOCKSIZE=1024, size_t WARP=8>
+template<typename GID, typename LID,GID EMPTYBUCKET=std::numeric_limits<GID>::max(),size_t BLOCKSIZE=1024, size_t WARP=8>
 __global__ 
 void hasher_V3(hash_pair<GID, LID>* src,
               hash_pair<GID, LID>* buckets,
@@ -299,7 +299,7 @@ void hasher_V3(hash_pair<GID, LID>* src,
 }
 
 // Open bucket power-of-two sized hash table with multiplicative fibonacci hashing
-template <typename GID, typename LID, int maxBucketOverflow = 32, GID EMPTYBUCKET = vmesh::INVALID_GLOBALID,GID TOMBSTONE = EMPTYBUCKET - 1 > 
+template <typename GID, typename LID, int maxBucketOverflow = 32, GID EMPTYBUCKET = std::numeric_limits<GID>::max(),GID TOMBSTONE = EMPTYBUCKET - 1 > 
 class Hashinator {
 private:
    //CUDA device handles
