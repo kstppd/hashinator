@@ -268,6 +268,10 @@ namespace split{
             return &(_data[0]);
          }
 
+         /*Return a raw pointer to our data similar to stl vector*/
+         __host__ __device__ const T* data() const {
+            return &(_data[0]);
+         }
 
          /* Size Modifiers*/
 
