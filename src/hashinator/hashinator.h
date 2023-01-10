@@ -98,7 +98,7 @@ private:
       //Allocate memory for overflown elements. So far this is the same size as our buckets but we can be better than this 
       //TODO size of overflown elements is known beforhand.
       split::SplitVector<hash_pair<GID, LID>> overflownElements(1 << sizePower, {EMPTYBUCKET, LID()});
-      //Extract all overflown elements
+      //Extract all overflown elements-This also resets TOMSBTONES to EMPTYBUCKET!
       split_tools::copy_if<hash_pair<GID, LID>,Tombstone_Predicate<GID,LID>,32,32>(buckets,overflownElements,Tombstone_Predicate<GID,LID>());
       size_t nOverflownElements=overflownElements.size();
       if (nOverflownElements ==0 ){
@@ -146,22 +146,21 @@ public:
 
    __host__
    void insert(hash_pair<GID,LID>*src,size_t len,int power){
-      //resize(power+1);
-      //cpu_maxBucketOverflow=maxBucketOverflow;
-      //cudaMemcpy(d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice);
-      //cudaMemcpy(d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice);
-      //hasher_V2<GID,LID><<<len,1024>>>(src,buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,len);
-      ////hasher_V2<GID,LID><<<len,1024>>>(src,buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,len);
-      //cudaDeviceSynchronize();
-      //cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,0);
-      //cudaMemcpyAsync(&cpu_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,0);
-      //std::cout<<fill<<std::endl;
-      //std::cout<<cpu_maxBucketOverflow<<std::endl;
-      //if (cpu_maxBucketOverflow>maxBucketOverflow){
-         //std::cout<<"Rehashing..."<<std::endl;
-         //rehash(power+1);
-      //}
-      //return;
+      resize(power+1);
+      cpu_maxBucketOverflow=maxBucketOverflow;
+      cudaMemcpy(d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice);
+      cudaMemcpy(d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice);
+      DeviceHasher::insert(src,buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,len);
+      cudaDeviceSynchronize();
+      cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,0);
+      cudaMemcpyAsync(&cpu_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,0);
+      std::cout<<fill<<std::endl;
+      std::cout<<cpu_maxBucketOverflow<<std::endl;
+      if (cpu_maxBucketOverflow>maxBucketOverflow){
+         std::cout<<"Rehashing..."<<std::endl;
+         rehash(power+1);
+      }
+      return;
    }
 
    // Resize the table to fit more things. This is automatically invoked once
@@ -346,6 +345,7 @@ public:
          rehash(sizePower+1);
       }else{
          if(tombstone_count()>0){
+            std::cout<<"Cleaning Tombstones"<<std::endl;
             clean_tombstones();
          }
       }
@@ -380,6 +380,7 @@ public:
       }
    __host__
    void dump_buckets()const {
+      std::cout<<fill<<" "<<load_factor()<<std::endl;
       std::cout<<"\n";
       for  (int i =0 ; i < buckets.size(); ++i){
          print_pair(buckets[i]);

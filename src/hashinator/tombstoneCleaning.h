@@ -22,7 +22,7 @@ namespace TombStoneCleaning{
       hash_pair<GID,LID>&candidate=src[tid];
       int bitMask = (1 <<(sizePower )) - 1; 
       uint32_t hashIndex = HashFunction::_hash(candidate.first);
-      uint32_t actual_index=((hashIndex) & bitMask)+candidate.offset;
+      uint32_t actual_index=(hashIndex+candidate.offset)&bitMask;
       atomicCAS(&dst[actual_index].first,candidate.first,EMPTYBUCKET);
       return ;
    }
@@ -121,7 +121,8 @@ namespace TombStoneCleaning{
    template<typename GID,
             typename LID,
             class HashFunction,
-            GID EMPTYBUCKET=std::numeric_limits<GID>::max()>
+            GID EMPTYBUCKET=std::numeric_limits<GID>::max(),
+            int WARP=32>
    class Hasher{
 
    public:
@@ -133,10 +134,21 @@ namespace TombStoneCleaning{
                          size_t* d_fill,
                          size_t len)
       {
-         hasher_V2<GID,LID,EMPTYBUCKET,HashFunction,32><<<1024,1024>>>(src,buckets,sizePower,maxoverflow,d_overflow,d_fill,len);
+         size_t blocks,blockSize;
+         launchParams(1,len,blocks,blockSize);
+         hasher_V2<GID,LID,EMPTYBUCKET,HashFunction,32><<<blocks,blockSize>>>(src,buckets,sizePower,maxoverflow,d_overflow,d_fill,len);
          cudaDeviceSynchronize();
       }
 
+   private:
+      static void launchParams(size_t elementsPerWarp,size_t N,size_t& blocks,size_t& blockSize){
+         //fast ceil for positive ints
+         size_t warpsNeeded=N/elementsPerWarp + (N%elementsPerWarp!=0);
+         blockSize=std::min(warpsNeeded*WARP,(size_t)1024);
+         blocks=warpsNeeded*WARP/blockSize + ((warpsNeeded*WARP)%blockSize!=0);
+         blocks*=2;
+         return;
+      }
    };
 
 }
