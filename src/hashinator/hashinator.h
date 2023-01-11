@@ -400,7 +400,7 @@ public:
    #endif
 
    __host__
-   void swap(Hashinator<GID, LID>& other) {
+   void swap(Hashinator<GID, LID>& other) noexcept{
       buckets.swap(other.buckets);
       int tempSizePower = sizePower;
       sizePower = other.sizePower;
