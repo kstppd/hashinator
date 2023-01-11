@@ -623,6 +623,28 @@ namespace split{
             return retval;
          }
 
+            
+         template<typename InputIterator, class = typename std::enable_if< !std::is_integral<InputIterator>::value >::type>
+         __host__ 
+         iterator insert(iterator it, InputIterator p0, InputIterator p1){
+
+            const int64_t count = std::distance(p0, p1);
+            const int64_t index = it.data() - begin().data();
+      
+            if (index<0 || index>size()){
+               throw std::out_of_range("Insert");
+            }
+
+            if (size() + count > capacity()) {
+               resize(capacity() + count);
+            }
+
+            iterator retval = &_data[index];
+            std::move(retval, end(), retval.data() + count);
+            std::copy(p0, p1, retval);
+            return retval;
+         }
+
 
          __host__
          iterator insert(iterator& it, iterator p0, iterator p1) {
