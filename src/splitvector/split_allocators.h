@@ -1,3 +1,13 @@
+/* File:    split_allocators.h
+ * Authors: Kostis Papadakis (2023)
+ * Description: Custom allocators for splitvectors 
+ *
+ * This file defines the following classes:
+ *    --split::split_unified_allocator;
+ *    --split::split_host_allocator;
+ *
+ * (c) Copyright 2012-2023 Apache License version 2.0 or later
+ * */
 #pragma once 
 
 #ifdef CUDAVEC
@@ -111,6 +121,5 @@ namespace split{
          p->~value_type(); 
       }
    };
-
-}
+}//namespace split
 

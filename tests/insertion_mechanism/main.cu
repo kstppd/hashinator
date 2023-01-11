@@ -11,8 +11,9 @@
 #define expect_eq EXPECT_EQ
 typedef uint32_t val_type;
 typedef split::SplitVector<hash_pair<val_type,val_type>,split::split_unified_allocator<hash_pair<val_type,val_type>>,split::split_unified_allocator<size_t>> vector ;
-typedef Hashinator<val_type,val_type> hashmap;
+using namespace Hashinator;
 using namespace std::chrono;
+typedef Hashmap<val_type,val_type> hashmap;
 
 
 template <class Fn, class ... Args>
@@ -80,7 +81,6 @@ bool recover_elements(const hashmap& hmap, vector& src){
 }
 
 bool test_hashmap_1(val_type power){
-   //Settings
    size_t N = 1<<power;
    size_t blocksize=BLOCKSIZE;
    size_t blocks=2*N/blocksize;
@@ -93,46 +93,12 @@ bool test_hashmap_1(val_type power){
    return true;
 }
 
-bool test_hashmap_2(val_type power){
-   //Settings
-   size_t N = 1<<power;
-   size_t blocksize=BLOCKSIZE;
-   vector src(N);
-   size_t blocks=2*N/blocksize;
-   create_input(src);
-
-   hashmap hmap;
-   hashmap* d_hmap;
-   hmap.resize(power++);
-
-   //Upload to device
-   d_hmap=hmap.upload();
-   gpu_write<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   cudaDeviceSynchronize();
-   hmap.download();
-   assert(recover_elements(hmap,src) && "Hashmap is illformed!");
-   cudaFree(d_hmap);
-   return true;
-}
-
 TEST(HashmapUnitTets , Device_Insert){
    int reps=1;
    for (int power=20; power<21; ++power){
       std::string name= "Power= "+std::to_string(power);
       for (int i =0; i< reps; i++){
          bool retval = execute_and_time(name.c_str(),test_hashmap_1 ,power);
-         expect_true(retval);
-      }
-   }
-}
-
-
-TEST(HashmapUnitTets , Host_Device_Insert){
-   int reps=1;
-   for (int power=20; power<21; ++power){
-      std::string name= "Power naive= "+std::to_string(power);
-      for (int i =0; i< reps; i++){
-         bool retval = execute_and_time(name.c_str(),test_hashmap_2 ,power);
          expect_true(retval);
       }
    }
