@@ -155,8 +155,6 @@ namespace Hashinator{
          cudaDeviceSynchronize();
          cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,0);
          cudaMemcpyAsync(&cpu_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,0);
-         std::cout<<fill<<std::endl;
-         std::cout<<cpu_maxBucketOverflow<<std::endl;
          if (cpu_maxBucketOverflow>maxBucketOverflow){
             std::cout<<"Rehashing..."<<std::endl;
             rehash(power+1);

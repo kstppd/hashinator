@@ -163,13 +163,6 @@ namespace split{
                }
             }
     
-         __host__ explicit  SplitVector(const std::vector<T> &other ){
-               this->_allocate(other.size());
-               for (size_t i=0; i<size(); i++){
-                  _data[i]=other[i];
-               }
-            }
-         
          //Destructor
          __host__ ~SplitVector(){
             _deallocate();
