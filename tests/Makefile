@@ -8,8 +8,8 @@ EXTRA+=  -DHASHMAPDEBUG --expt-relaxed-constexpr
 GTEST=-lgtest -lgtest_main -lpthread
 OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o delete_mechanism.o insertion_mechanism.o
 
-default: all
-all: ${OBJ}
+default: tests
+tests: ${OBJ}
 
 clean: 
 	rm  ${OBJ}
