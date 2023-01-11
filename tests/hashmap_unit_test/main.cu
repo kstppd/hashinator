@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <chrono>
 #include <random>
-#include "../../src/hashinator/hashinator.h"
+#include "../../include/hashinator/hashinator.h"
 #include <gtest/gtest.h>
 
 #define BLOCKSIZE 32
@@ -119,6 +119,7 @@ bool test_hashmap_1(val_type power){
    //Download
    hmap.download();
 
+   dump_buckets();
    //Quick check to verify there are no even elements
    for (const auto& kval : hmap){
       if (kval.second%2==0){std::cout<<kval.first<<" "<<kval.second<<std::endl;}

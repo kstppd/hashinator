@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <chrono>
 #include <random>
-#include "../../src/hashinator/hashinator.h"
+#include "../../include/hashinator/hashinator.h"
 #include <gtest/gtest.h>
 
 #define BLOCKSIZE 32

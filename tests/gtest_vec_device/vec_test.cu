@@ -2,9 +2,9 @@
 #include <stdlib.h>
 #include <chrono>
 #include <gtest/gtest.h>
-#include "../../src/splitvector/splitvec.h"
+#include "../../include/splitvector/splitvec.h"
 #include <cuda_profiler_api.h>
-#include "../../src/splitvector/split_tools.h"
+#include "../../include/splitvector/split_tools.h"
 
 #define expect_true EXPECT_TRUE
 #define expect_false EXPECT_FALSE

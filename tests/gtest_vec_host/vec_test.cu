@@ -1,8 +1,9 @@
 #include <iostream>
 #include <stdlib.h>
 #include <chrono>
+#include <vector>
 #include <gtest/gtest.h>
-#include "../../src/splitvector/splitvec.h"
+#include "../../include/splitvector/splitvec.h"
 #include <cuda_profiler_api.h>
 
 #define expect_true EXPECT_TRUE
@@ -11,6 +12,7 @@
 #define N 1<<12
 
 typedef split::SplitVector<int> vec ;
+typedef std::vector<int> stdvec ;
 typedef split::SplitVector<split::SplitVector<int>> vec2d ;
 typedef split::SplitVector<int>::iterator   split_iterator;
 
@@ -372,35 +374,36 @@ TEST(Vector_Functionality , Erase_Range){
       expect_true(a==b);
 }
 
-//TEST(Vector_Functionality , Emplace_Back){
-   //vec a;
-   //for (auto i=a.begin(); i!=a.end();i++){
-      //expect_true(false);
-   //}
-   //size_t initial_size=a.size();
-   //size_t initial_cap=a.capacity();
+TEST(Vector_Functionality , Emplace_Back){
+   vec a;
+   for (auto i=a.begin(); i!=a.end();i++){
+      expect_true(false);
+   }
+   size_t initial_size=a.size();
+   size_t initial_cap=a.capacity();
 
-   //std::cout<<"--------------------Before\n";
-   //a.emplace_back(11);
-   //std::cout<<"--------------------After\n";
-   ////expect_true(11==a[a.size()-1]);
-   ////a.emplace_back(12);
-   ////expect_true(12==a[a.size()-1]);
-
-//}
-
-////TEST(Vector_Functionality , Emplace_Back_2){
-   //vec a{1,2,3,4,5,6,7,8,9,10};
-   //size_t initial_size=a.size();
-   //size_t initial_cap=a.capacity();
-   //a.emplace_back(11);
+   std::cout<<"--------------------Before\n";
+   a.emplace_back(11);
+   std::cout<<"--------------------After\n";
    //expect_true(11==a[a.size()-1]);
    //a.emplace_back(12);
    //expect_true(12==a[a.size()-1]);
-//}
+
+}
+
+TEST(Vector_Functionality , Emplace_Back_2){
+   vec a{1,2,3,4,5,6,7,8,9,10};
+   size_t initial_size=a.size();
+   size_t initial_cap=a.capacity();
+   a.emplace_back(11);
+   expect_true(11==a[a.size()-1]);
+   a.emplace_back(12);
+   expect_true(12==a[a.size()-1]);
+}
 
 
 int main(int argc, char* argv[]){
    ::testing::InitGoogleTest(&argc, argv);
    return RUN_ALL_TESTS();
 }
+

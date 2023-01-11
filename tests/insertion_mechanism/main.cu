@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <vector>
 #include <random>
-#include "../../src/hashinator/hashinator.h"
+#include "../../include/hashinator/hashinator.h"
 #include <gtest/gtest.h>
 
 #define BLOCKSIZE 1024
