@@ -35,11 +35,11 @@
 namespace Hashinator{
    template <typename KEY_TYPE, 
              typename VAL_TYPE, 
-             int maxBucketOverflow = 32, 
+             int maxBucketOverflow = Hashinator::defaults::BUCKET_OVERFLOW, 
              KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(),
              KEY_TYPE TOMBSTONE = EMPTYBUCKET - 1,
              class HashFunction=HashFunctions::Murmur<KEY_TYPE>,
-             class DeviceHasher=Hashers::Hasher<KEY_TYPE,VAL_TYPE,HashFunction>>
+             class DeviceHasher=Hashers::Hasher<KEY_TYPE,VAL_TYPE,HashFunction,EMPTYBUCKET,defaults::WARPSIZE,1>>
    class Hashmap {
 
    private:
