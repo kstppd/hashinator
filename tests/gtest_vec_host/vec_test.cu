@@ -73,7 +73,8 @@ TEST(Constructors,Size_based){
 
 TEST(Constructors,std_vector){
    std::vector<int>  stdvec(N,10);
-   vec a(stdvec);
+   vec a;
+   a.insert(a.begin(),stdvec.begin(),stdvec.end());
 
    for (size_t i=0; i<N; i++){
       expect_true(stdvec[i]=a[i]);
