@@ -51,7 +51,7 @@ void split_test_raw_compaction(size_t size){
    }
    input_split.optimizeGPU();
    output_split.optimizeGPU();
-   split_tools::copy_if_raw<val_type,Predicate,1024,32>(input_split,output_split,Predicate());
+   split::tools::copy_if_raw<val_type,Predicate,1024,32>(input_split,output_split,Predicate());
 }
 
 void split_test_compaction(size_t size){
@@ -63,7 +63,7 @@ void split_test_compaction(size_t size){
    }
    input_split.optimizeGPU();
    output_split.optimizeGPU();
-   split_tools::copy_if<val_type,Predicate,1024,32>(input_split,output_split,Predicate());
+   split::tools::copy_if<val_type,Predicate,1024,32>(input_split,output_split,Predicate());
 }
 
 void thrust_test_compaction(size_t size){
@@ -88,7 +88,7 @@ void split_test_prefix(size_t size){
    for (size_t i =0 ;  i< size ;++i){
       input_split[i]=i;//tmp;
    }
-   split_tools::split_prefix_scan<val_type,1024,32>(input_split,output_split);
+   split::tools::split_prefix_scan<val_type,1024,32>(input_split,output_split);
 }
 void split_prefix_raw(size_t size){
 }

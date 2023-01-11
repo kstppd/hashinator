@@ -11,15 +11,15 @@
  * */
 #pragma once
 #include <algorithm>
-#include <vector>
 #include <stdexcept>
 #include <cassert>
+#include <limits>
 #include "../splitvector/splitvec.h"
 #include "../splitvector/split_tools.h"
 #include "hash_pair.h"
+#include "defaults.h"
 #include "hashfunctions.h"
 #include "hashers.h"
-#include <limits>
 
 namespace Hashinator{
    template <typename KEY_TYPE, 
@@ -79,7 +79,8 @@ namespace Hashinator{
       }
 
 
-      //Cleans all tombstones
+      //Cleans all tombstones using splitvectors stream compcation and
+      //the member Hasher
       __host__
       void clean_tombstones(){
          //Reset the tomstone counter
@@ -88,14 +89,14 @@ namespace Hashinator{
          //TODO size of overflown elements is known beforhand.
          split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>> overflownElements(1 << sizePower, {EMPTYBUCKET, VAL_TYPE()});
          //Extract all overflown elements-This also resets TOMSBTONES to EMPTYBUCKET!
-         split::tools::copy_if<hash_pair<KEY_TYPE, VAL_TYPE>,Tombstone_Predicate<KEY_TYPE,VAL_TYPE>,32,32>(buckets,overflownElements,Tombstone_Predicate<KEY_TYPE,VAL_TYPE>());
+         split::tools::copy_if<hash_pair<KEY_TYPE, VAL_TYPE>,Overflown_Predicate<KEY_TYPE,VAL_TYPE>,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,overflownElements,Overflown_Predicate<KEY_TYPE,VAL_TYPE>());
          size_t nOverflownElements=overflownElements.size();
          if (nOverflownElements ==0 ){
             std::cout<<"No cleaning needed!"<<std::endl;
             return ;
          }
          //If we do have overflown elements we put them back in the buckets
-         Hashers::reset_to_empty<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction><<<overflownElements.size(),1024>>> (overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow,overflownElements.size());
+         Hashers::reset_to_empty<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction><<<overflownElements.size(),defaults::MAX_BLOCKSIZE>>> (overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow,overflownElements.size());
          cudaDeviceSynchronize();
          DeviceHasher::insert(overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,overflownElements.size());
          return ;
@@ -104,7 +105,7 @@ namespace Hashinator{
 
    public:
       template <typename T, typename U>
-      struct Tombstone_Predicate{
+      struct Overflown_Predicate{
          __host__ __device__
          inline bool operator()( hash_pair<T,U>& element)const{
             if (element.first==TOMBSTONE){element.first=EMPTYBUCKET;return false;}
@@ -449,7 +450,6 @@ namespace Hashinator{
 #ifndef __CUDA_ARCH__
       
       // Iterator type. Iterates through all non-empty buckets.
-      __host__
       class iterator : public std::iterator<std::random_access_iterator_tag, hash_pair<KEY_TYPE, VAL_TYPE>> {
          Hashmap<KEY_TYPE, VAL_TYPE>* hashtable;
          size_t index;
@@ -493,7 +493,6 @@ namespace Hashinator{
       };
 
       // Const iterator.
-      __host__
       class const_iterator : public std::iterator<std::random_access_iterator_tag, hash_pair<KEY_TYPE, VAL_TYPE>> {
          const Hashmap<KEY_TYPE, VAL_TYPE>* hashtable;
          size_t index;
@@ -683,7 +682,6 @@ namespace Hashinator{
 
 
       // Device Iterator type. Iterates through all non-empty buckets.
-      __device__
       class iterator  {
       private:
          size_t index;
@@ -732,7 +730,6 @@ namespace Hashinator{
       };
 
 
-      __device__
       class const_iterator  {
       private:
          size_t index;

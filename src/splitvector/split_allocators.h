@@ -24,7 +24,6 @@
       } while (0)
 #else
 //TODO--> make it do smth.
-#pragma message ("TODO-->Make this a no NOOP" )
    #define CheckErrors(msg) \
       do { }  while (0)
 #endif

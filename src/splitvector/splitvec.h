@@ -693,7 +693,7 @@ namespace split{
             resize(size() + 1);
             iterator it = &_data[index];
             std::move(it.data(), end().data(), it.data() + 1);
-            #pragma message ("TODO-->Not really sure whether we need to destroy first. If not then this is UB if yes then if we do not we end up with a small memleak" )
+            #warning "TODO-->Not really sure whether we need to destroy first. If not then this is UB if yes then if we do not we end up with a small memleak"
             _allocator.destroy(it.data());
             _allocator.construct(it.data(), args...);
             return it;
@@ -703,7 +703,7 @@ namespace split{
          void emplace_back(Args&&... args) {
             emplace(end(), std::forward<Args>(args)...);
          }
-};
+   };//SplitVector
 
 	/*Equal operator*/
 	template <typename  T,class Allocator,class Meta_Allocator>

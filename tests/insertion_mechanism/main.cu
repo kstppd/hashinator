@@ -1,6 +1,8 @@
 #include <iostream>
 #include <stdlib.h>
 #include <chrono>
+#include <algorithm>
+#include <vector>
 #include <random>
 #include "../../src/hashinator/hashinator.h"
 #include <gtest/gtest.h>
@@ -10,8 +12,8 @@
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
 typedef uint32_t val_type;
-typedef split::SplitVector<hash_pair<val_type,val_type>,split::split_unified_allocator<hash_pair<val_type,val_type>>,split::split_unified_allocator<size_t>> vector ;
 using namespace Hashinator;
+typedef split::SplitVector<hash_pair<val_type,val_type>,split::split_unified_allocator<hash_pair<val_type,val_type>>,split::split_unified_allocator<size_t>> vector ;
 using namespace std::chrono;
 typedef Hashmap<val_type,val_type> hashmap;
 
