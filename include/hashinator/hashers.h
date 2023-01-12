@@ -91,7 +91,7 @@ namespace Hashinator{
                                
          hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[wid];
          const int bitMask = (1 <<(sizePower )) - 1; 
-         const size_t hashIndex = HashFunction::_hash(candidate.first);
+         const size_t hashIndex = HashFunction::_hash(candidate.first,sizePower);
          const size_t optimalindex=(hashIndex) & bitMask;
          bool done=false;
 
@@ -189,7 +189,7 @@ namespace Hashinator{
                                
          hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[wid];
          const int bitMask = (1 <<(sizePower )) - 1; 
-         const size_t hashIndex = HashFunction::_hash(candidate.first);
+         const size_t hashIndex = HashFunction::_hash(candidate.first,sizePower);
          const size_t optimalindex=(hashIndex) & bitMask;
          bool done=false;
 

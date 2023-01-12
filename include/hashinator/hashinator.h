@@ -38,8 +38,8 @@ namespace Hashinator{
              int maxBucketOverflow = Hashinator::defaults::BUCKET_OVERFLOW, 
              KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(),
              KEY_TYPE TOMBSTONE = EMPTYBUCKET - 1,
-             class HashFunction=HashFunctions::Murmur<KEY_TYPE>,
-             class DeviceHasher=Hashers::Hasher<KEY_TYPE,VAL_TYPE,HashFunction,EMPTYBUCKET,defaults::WARPSIZE,1>>
+             class HashFunction=HashFunctions::Fibonacci<KEY_TYPE>,
+             class DeviceHasher=Hashers::Hasher<KEY_TYPE,VAL_TYPE,HashFunction,EMPTYBUCKET,defaults::WARPSIZE,8>>
    class Hashmap {
 
    private:
@@ -65,7 +65,7 @@ namespace Hashinator{
       __host__ __device__
       uint32_t hash(KEY_TYPE in) const {
           static_assert(std::is_arithmetic<KEY_TYPE>::value && sizeof(KEY_TYPE) <= sizeof(uint32_t));
-          return HashFunction::_hash(in);
+          return HashFunction::_hash(in,sizePower);
        }
       
       // Used by the constructors. Preallocates the device pointer and bookeepping info for later use on device. 

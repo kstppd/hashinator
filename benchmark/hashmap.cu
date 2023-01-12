@@ -13,7 +13,7 @@ void create_input(vector& src){
    for (size_t i=0; i<src.size(); ++i){
       hash_pair<val_type,val_type>& kval=src.at(i);
       kval.first=i;
-      kval.second=i;
+      kval.second=rand()%100000;
    }
 }
 
@@ -23,8 +23,8 @@ void hashmap_benchmark()
    int power=24;
    size_t N = 1<<power;
    vector src(N);
-   src.optimizeGPU();
    create_input(src);
+   src.optimizeGPU();
    hashmap hmap;
    hmap.insert(src.data(),src.size(),power);
    std::cout<<hmap.load_factor()<<std::endl;

@@ -29,13 +29,23 @@ namespace Hashinator{
       template<typename T>
       struct Murmur{
          __host__ __device__
-         inline static uint32_t _hash(T key){
+         inline static uint32_t _hash(T key,const int sizePower){
             key ^= key >> 16;
             key *= 0x85ebca6b;
             key ^= key >> 13;
             key *= 0xc2b2ae35;
             key ^= key >> 16;
             return key;
+         }
+      };
+
+      template<typename T>
+      struct Fibonacci{
+         __host__ __device__
+         inline static uint32_t _hash(T key,const int sizePower){
+            key ^= key >> (32 - sizePower);
+            uint32_t retval = (uint64_t)(key * 2654435769ul) >> (32 - sizePower);
+            return retval;
          }
       };
    }//namespace HashFunctions
