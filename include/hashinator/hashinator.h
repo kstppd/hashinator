@@ -148,6 +148,7 @@ namespace Hashinator{
       __host__
       void insert(hash_pair<KEY_TYPE,VAL_TYPE>*src,size_t len,int power){
          resize(power+1);
+         buckets.optimizeGPU();
          cpu_maxBucketOverflow=maxBucketOverflow;
          cudaMemcpy(d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice);
          cudaMemcpy(d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice);
