@@ -32,7 +32,7 @@ namespace Hashinator{
       template<typename KEY_TYPE, 
                typename VAL_TYPE,
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
-               class HashFunction=HashFunctions::Murmur<KEY_TYPE>>
+               class HashFunction=HashFunctions::Fibonacci<KEY_TYPE>>
       __global__ 
       void reset_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* src,
                           hash_pair<KEY_TYPE, VAL_TYPE>* dst,
@@ -45,7 +45,7 @@ namespace Hashinator{
          if (tid>=Nsrc){return ;}
          hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[tid];
          int bitMask = (1 <<(sizePower )) - 1; 
-         uint32_t hashIndex = HashFunction::_hash(candidate.first);
+         uint32_t hashIndex = HashFunction::_hash(candidate.first,sizePower);
          uint32_t actual_index=(hashIndex+candidate.offset)&bitMask;
          atomicCAS(&dst[actual_index].first,candidate.first,EMPTYBUCKET);
          return ;
