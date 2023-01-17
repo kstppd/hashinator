@@ -81,20 +81,35 @@ void thrust_test_compaction(size_t size){
 
 
 
-void split_test_prefix(size_t size){
-   split_vector input_split(size);
-   split_vector output_split(size);
+bool verify_scan(const split_vector& l, const thrust::device_vector<val_type>& r){
 
+   for (size_t i=0; i< l.size(); ++i){
+      bool ok = l[i]==r[i];
+      if (!ok){return false;}
+   }
+   return true;
+}
+
+template <typename T
+         ,typename std::enable_if<std::is_base_of<split_vector, T>::value || 
+                   std::is_base_of<thrust::device_vector<val_type>, T>::value >::type* = nullptr>
+static inline std::ostream& operator<<(std::ostream& os, T& obj ){
+    for (int i=0; i< obj.size();++i){
+      os<<obj[i]<<" ";
+    }
+    return os;
+}
+
+
+void split_test_prefix(split_vector& input_split,split_vector& output_split,size_t size){
    for (size_t i =0 ;  i< size ;++i){
       input_split[i]=i;//tmp;
    }
    split::tools::split_prefix_scan<val_type,1024,32>(input_split,output_split);
 }
-void split_prefix_raw(size_t size){
-}
-void thrust_test_prefix(size_t size){
-   thrust::device_vector<val_type> input_thrust(size);
-   thrust::device_vector<val_type> output_thrust(size);
+
+
+void thrust_test_prefix(thrust::device_vector<val_type>& input_thrust,thrust::device_vector<val_type>& output_thrust  ,size_t size){
    for (size_t i =0 ;  i< size ;++i){
       input_thrust[i]=i;//tmp;
    }
@@ -106,17 +121,26 @@ void thrust_test_prefix(size_t size){
 
 int main(int argc, char **argv ){
 
-   int power=12;
-   if (argc>2){
-      power = strtol(argv[1], NULL, 10); 
-   }
-   uint32_t N=1<<power;
-   int reps=100;
+   uint32_t N=1<<12;
+   split_vector input_split(N);
+   split_vector output_split(N);
+   thrust::device_vector<val_type> input_thrust(N);
+   thrust::device_vector<val_type> output_thrust(N);
+   int reps=1;
+   //timer("Split Prefix",reps,split_test_prefix,input_split,output_split,N);
+   timer("Thrust Prefix",reps,thrust_test_prefix,input_thrust,output_thrust,N);
 
-   //timer("Split Compaction",reps,split_test_compaction,N);
-   //timer("Split Compaction Raw",reps,split_test_raw_compaction,N);
-   timer("Split Prefix",reps,split_test_prefix,N);
-   timer("Thrust Prefix",reps,thrust_test_prefix,N);
-   //timer("Thrust Compaction Raw",reps,thrust_test_compaction,N);
+   bool ok = verify_scan(output_split,output_thrust);
+   if (!ok){std::cerr<<"SCAN FAILED"<<std::endl;assert(false);}
+
+   if (0){
+      std::cout<<"Split->"<<std::endl;
+      std::cout<<output_split<<std::endl;
+      std::cout<<"Thrust->"<<std::endl;
+      std::cout<<output_thrust<<std::endl;
+   }
+
+
+   std::cout<<"Success!"<<std::endl;
 
 }
