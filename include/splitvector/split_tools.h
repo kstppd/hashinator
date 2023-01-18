@@ -32,6 +32,9 @@
 #pragma once 
 #include "split_allocators.h"
 #define SPLIT_VOTING_MASK 0xFFFFFFFF //32-bit wide for cuda warps not sure what we do on AMD HW
+#define NUM_BANKS 32 //TODO depends on device
+#define LOG_NUM_BANKS 5
+#define CONFLICT_FREE_OFFSET(n) ((n) >> LOG_NUM_BANKS)
 
 namespace split{
    namespace tools{
@@ -72,6 +75,10 @@ namespace split{
       }
 
 
+      /*
+        Prefix Scan routine with Bank Conflict Optimization
+        Credits to  https://www.eecs.umich.edu/courses/eecs570/hw/parprefix.pdf
+      */
       template <typename T>
       __global__
       void split_prescan(T* input,T* output,T* partial_sums, int n,size_t len){
@@ -80,12 +87,17 @@ namespace split{
          int tid = threadIdx.x;
          int offset=1;
          int local_start=blockIdx.x*n;
+         input=input+local_start;
+         output=output+local_start;
+
 
          //Load into shared memory 
-         if (local_start+2*tid+1<len){
-            buffer[2*tid]= input[local_start+ 2*tid];
-            buffer[2*tid+1]= input[local_start+ 2*tid+1];
-         }
+         int ai = tid;
+         int bi = tid + (n/2);
+         int bankOffsetA = CONFLICT_FREE_OFFSET(ai);
+         int bankOffsetB = CONFLICT_FREE_OFFSET(bi);
+         buffer[ai + bankOffsetA] = input[ai];
+         buffer[bi + bankOffsetB] = input[bi];
 
          //Reduce Phase
          for (int d =n>>1; d>0; d>>=1){
@@ -94,13 +106,16 @@ namespace split{
             if (tid<d){
                int ai = offset*(2*tid+1)-1;
                int bi = offset*(2*tid+2)-1;
+               ai += CONFLICT_FREE_OFFSET(ai);
+               bi += CONFLICT_FREE_OFFSET(bi);
+
                buffer[bi]+=buffer[ai];
             }
             offset*=2;
          }
          
          //Exclusive scan so zero out last element (will propagate to first)
-         if (tid==0){ partial_sums[blockIdx.x]=buffer[n-1] ;buffer[n-1]=0;}
+         if (tid==0){ partial_sums[blockIdx.x]=buffer[n-1+CONFLICT_FREE_OFFSET(n-1)] ;buffer[n-1+CONFLICT_FREE_OFFSET(n-1)]=0;}
 
          //Downsweep Phase
          for (int d =1; d<n; d*=2){
@@ -110,16 +125,17 @@ namespace split{
             if (tid<d){
                int ai = offset*(2*tid+1)-1;
                int bi = offset*(2*tid+2)-1;
+               ai += CONFLICT_FREE_OFFSET(ai);
+               bi += CONFLICT_FREE_OFFSET(bi);
+
                T tmp=buffer[ai];
                buffer[ai]=buffer[bi];
                buffer[bi]+=tmp;
             }
          }
          __syncthreads();
-         if (local_start+2*tid+1<len){
-            output[local_start+2*tid]   = buffer[2*tid];
-            output[local_start+2*tid+1]= buffer[2*tid+1];
-         }
+         output[ai] = buffer[ai + bankOffsetA];
+         output[bi] = buffer[bi + bankOffsetB];
       }
 
 
@@ -194,14 +210,15 @@ namespace split{
          //Allocate memory for partial sums
          vector partial_sums(gridSize); 
 
-         split::tools::split_prescan<<<gridSize,scanBlocksize,scanElements*sizeof(T)>>>(input.data(),output.data(),partial_sums.data(),scanElements,input.size());
+         //TODO +FIXME extra shmem allocations
+         split::tools::split_prescan<<<gridSize,scanBlocksize,2*scanElements*sizeof(T)>>>(input.data(),output.data(),partial_sums.data(),scanElements,input.size());
          cudaDeviceSynchronize();
-
 
          if (gridSize>1){
             if (partial_sums.size()<scanElements){
                vector partial_sums_dummy(gridSize); 
-               split::tools::split_prescan<<<1,scanBlocksize,scanElements*sizeof(T)>>>(partial_sums.data(),partial_sums.data(),partial_sums_dummy.data(),gridSize,partial_sums.size());
+               //TODO +FIXME extra shmem allocations
+               split::tools::split_prescan<<<1,scanBlocksize,2*scanElements*sizeof(T)>>>(partial_sums.data(),partial_sums.data(),partial_sums_dummy.data(),gridSize,partial_sums.size());
                cudaDeviceSynchronize();
             }else{
                vector partial_sums_clone(partial_sums);
@@ -365,20 +382,22 @@ namespace split{
          if (input_size%scanElements!=0){
             gridSize=1<<((int)ceil(log(++gridSize)/log(2)));
          }
+         
 
          //Allocate memory for partial sums
          T* partial_sums = (T*)mPool.allocate(gridSize*sizeof(T)); 
-         split::tools::split_prescan<<<gridSize,scanBlocksize,scanElements*sizeof(T)>>>(input,output,partial_sums,scanElements,input_size);
+         //TODO + FIXME extra shmem
+         split::tools::split_prescan<<<gridSize,scanBlocksize,2*scanElements*sizeof(T)>>>(input,output,partial_sums,scanElements,input_size);
          cudaDeviceSynchronize();
 
 
          if (gridSize>1){
             if (gridSize<scanElements){
                T* partial_sums_dummy=(T*)mPool.allocate(sizeof(T));
-               split::tools::split_prescan<<<1,scanBlocksize,scanElements*sizeof(T)>>>(partial_sums,partial_sums,partial_sums_dummy,gridSize,gridSize*sizeof(T));
+               //TODO + FIXME extra shmem
+               split::tools::split_prescan<<<1,scanBlocksize,2*scanElements*sizeof(T)>>>(partial_sums,partial_sums,partial_sums_dummy,gridSize,gridSize*sizeof(T));
                cudaDeviceSynchronize();
             }else{
-               assert(0 && "NOT IMPLEMENTED YET");
                T* partial_sums_clone=(T*)mPool.allocate(gridSize*sizeof(T));
                cudaMemcpy(partial_sums_clone, partial_sums, gridSize*sizeof(T),cudaMemcpyDeviceToDevice);
                split_prefix_scan_raw(partial_sums_clone,partial_sums,mPool,gridSize);
