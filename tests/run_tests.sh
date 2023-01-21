@@ -22,13 +22,11 @@ do
      echo Test: $file passed!
    else
      echo Test: $file failed!
-     all_tests_passed=false
+     exit 1
    fi
    make allclean >/dev/null 2>&1
    echo " "
 done
 
 make allclean >/dev/null 2>&1
-if [ $all_tests_passed ]; then 
-   echo "ALL TESTS PASSED"
-fi
+echo "ALL TESTS PASSED"
