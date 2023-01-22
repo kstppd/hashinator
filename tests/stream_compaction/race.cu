@@ -102,7 +102,12 @@ void thrust_test_prefix(thrust::device_vector<val_type>& input_thrust,thrust::de
 
 int main(int argc, char **argv ){
 
-   const size_t N= 1<<(std::stoi(argv[1]));
+   size_t N;
+   if (argc>1){
+      N=1<<(std::stoi(argv[1]));
+   }else{
+      N=1024;
+   }
    split_vector input_split(N);
    split_vector output_split(N);
    thrust::device_vector<val_type> input_thrust(N);
