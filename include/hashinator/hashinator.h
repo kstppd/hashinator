@@ -199,7 +199,6 @@ namespace Hashinator{
                hash_pair<KEY_TYPE, VAL_TYPE>& candidate = newBuckets[(newHash + i) & bitMask];
                if (candidate.first == EMPTYBUCKET) {
                   // Found an empty bucket, assign that one.
-                  e.offset=i;
                   candidate = e;
                   found = true;
                   break;
@@ -234,7 +233,6 @@ namespace Hashinator{
                // Found an empty bucket, assign and return that.
                candidate.first = key;
                fill++;
-               candidate.offset=i;
                return candidate.second;
             }
          }
@@ -367,11 +365,7 @@ namespace Hashinator{
                std::cout<<"[▢,-,-] ";
             }
             else{
-               if (i.offset>0){
-                  printf("[%d,%d-\033[1;31m%d\033[0m]] ",i.first,i.second,i.offset);
-               }else{
-                  printf("[%d,%d-%d] ",i.first,i.second,i.offset);
-               }
+               printf("[%d,%d] ",i.first,i.second);
             }
          }
       __host__
@@ -893,7 +887,6 @@ namespace Hashinator{
 
          //Let's simply add a tombstone here
          atomicExch(&buckets[index].first,TOMBSTONE);
-         atomicExch(&buckets[index].offset,0);
          atomicSub((unsigned int*)d_fill, 1);
          atomicAdd((unsigned int*)d_tombstoneCounter, 1);
          ++keyPos;
@@ -915,7 +908,6 @@ namespace Hashinator{
             if (old == EMPTYBUCKET){
                atomicExch(&buckets[vecindex].first,key);
                atomicExch(&buckets[vecindex].second,value);
-               atomicExch(&buckets[vecindex].offset,i);
                atomicAdd((unsigned int*)d_fill, 1);
                thread_overflowLookup = i+1;
                return;

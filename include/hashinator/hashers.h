@@ -132,7 +132,6 @@ namespace Hashinator{
                      //TODO the atomicExch here could be non atomics as no other thread can probe here
                      int overflow = vecindex-optimalindex;
                      atomicExch(&buckets[vecindex].second,candidate.second);
-                     atomicExch(&buckets[vecindex].offset,overflow);
                      atomicMax((int*)d_overflow,overflow);
                      atomicAdd((unsigned long long int*)d_fill, 1);
                      done=true;
@@ -234,7 +233,6 @@ namespace Hashinator{
                      //TODO the atomicExch here could be non atomics as no other thread can probe here
                      int overflow = vecindex-optimalindex;
                      atomicExch(&buckets[vecindex].second,candidate.second);
-                     atomicExch(&buckets[vecindex].offset,overflow);
                      atomicMax((int*)d_overflow,overflow);
                      atomicAdd((unsigned long long int*)d_fill, 1);
                      done=true;
