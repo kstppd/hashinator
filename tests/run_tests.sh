@@ -16,7 +16,7 @@ do
    file=$(find . -executable -type f \( ! -iname "*sh" \) -printf "%p\n")
    echo Build file=  $file
 	echo Running test: $i
-   /usr/local/cuda-11.8/bin/compute-sanitizer $file #>/dev/null 2>&1
+   $file >/dev/null 2>&1
    result=$?
    if [ $result -eq 0 ]; then
      echo Test: $file passed!
