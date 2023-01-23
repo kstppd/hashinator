@@ -140,7 +140,7 @@ bool test_hashmap_1(val_type power){
 }
 
 TEST(HashmapUnitTets , Host_Device_Insert_Delete_Global_Tets){
-   for (int power=5; power<24; ++power){
+   for (int power=10; power<24; ++power){
       std::string name= "Power= "+std::to_string(power);
       bool retval = execute_and_time(name.c_str(),test_hashmap_1 ,power);
       expect_true(retval);

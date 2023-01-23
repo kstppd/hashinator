@@ -87,6 +87,9 @@ namespace split{
          int tid = threadIdx.x;
          int offset=1;
          int local_start=blockIdx.x*n;
+         if (local_start+2*tid+1>=len){
+            return;
+         }
          input=input+local_start;
          output=output+local_start;
 
@@ -215,14 +218,14 @@ namespace split{
          cudaDeviceSynchronize();
 
          if (gridSize>1){
-            if (partial_sums.size()<scanElements){
+            if (partial_sums.size()<=scanElements){
                vector partial_sums_dummy(gridSize); 
                //TODO +FIXME extra shmem allocations
                split::tools::split_prescan<<<1,scanBlocksize,2*scanElements*sizeof(T)>>>(partial_sums.data(),partial_sums.data(),partial_sums_dummy.data(),gridSize,partial_sums.size());
                cudaDeviceSynchronize();
             }else{
                vector partial_sums_clone(partial_sums);
-               split_prefix_scan(partial_sums_clone,partial_sums);
+               split_prefix_scan<T,BLOCKSIZE,WARP>(partial_sums_clone,partial_sums);
             }
             split::tools::scan_add<<<gridSize,scanBlocksize>>>(output.data(),partial_sums.data(),scanElements,output.size());
             cudaDeviceSynchronize();

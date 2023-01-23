@@ -68,27 +68,35 @@ void split_test_prefix(split_vector& input_split,split_vector& output_split,size
       input_split[i]=i;//tmp;
    }
 
-         split::tools::Cuda_mempool mPool(1024*64);
+   split::tools::Cuda_mempool mPool(1024*64);
 
 
-         input_split.optimizeGPU();
-         output_split.optimizeGPU();
-         cudaDeviceSynchronize();
-         split::tools::split_prefix_scan_raw<val_type,1024,32>(input_split.data(),output_split.data(),mPool,input_split.size());
+   input_split.optimizeGPU();
+   output_split.optimizeGPU();
+   cudaDeviceSynchronize();
+   split::tools::split_prefix_scan_raw<val_type,1024,32>(input_split.data(),output_split.data(),mPool,input_split.size());
 
 
-       /*  val_type* in; */
-         /*val_type* out; */
-         /*cudaMalloc( (void**)&in , size*sizeof(val_type));*/
-         /*cudaMalloc( (void**)&out, size*sizeof(val_type));*/
-         /*cudaMemcpy(in,input_split.data(),size*sizeof(val_type),cudaMemcpyDeviceToDevice);*/
-         /*cudaMemset(out, 0, size*sizeof(val_type));*/
-         /*split::tools::split_prefix_scan_raw<val_type,1024,32>(in,out,mPool,input_split.size());*/
-         /*cudaMemcpy(output_split.data(),out,size*sizeof(val_type),cudaMemcpyDeviceToHost);*/
-         /*cudaFree(in);*/
-         /*cudaFree(out);*/
+ /*  val_type* in; */
+   /*val_type* out; */
+   /*cudaMalloc( (void**)&in , size*sizeof(val_type));*/
+   /*cudaMalloc( (void**)&out, size*sizeof(val_type));*/
+   /*cudaMemcpy(in,input_split.data(),size*sizeof(val_type),cudaMemcpyDeviceToDevice);*/
+   /*cudaMemset(out, 0, size*sizeof(val_type));*/
+   /*split::tools::split_prefix_scan_raw<val_type,1024,32>(in,out,mPool,input_split.size());*/
+   /*cudaMemcpy(output_split.data(),out,size*sizeof(val_type),cudaMemcpyDeviceToHost);*/
+   /*cudaFree(in);*/
+      /*cudaFree(out);*/
 }
 
+void split_test_compaction(split_vector& input_split,split_vector& output_split,size_t size){
+
+
+   for (size_t i =0 ;  i< size ;++i){
+      input_split[i]=i;//tmp;
+   }
+   split::tools::copy_if(input_split,output_split,Predicate());
+}
 
 void thrust_test_prefix(thrust::device_vector<val_type>& input_thrust,thrust::device_vector<val_type>& output_thrust  ,size_t size){
    for (size_t i =0 ;  i< size ;++i){
@@ -112,8 +120,9 @@ int main(int argc, char **argv ){
    split_vector output_split(N);
    thrust::device_vector<val_type> input_thrust(N);
    thrust::device_vector<val_type> output_thrust(N);
-   int reps=10;
-   timer("Split Prefix",reps,split_test_prefix,input_split,output_split,N);
+   int reps=1;
+   //timer("Split Prefix",reps,split_test_prefix,input_split,output_split,N);
+   timer("Split Compaction",reps,split_test_compaction,input_split,output_split,N);
    //timer("Thrust Prefix",reps,thrust_test_prefix,input_thrust,output_thrust,N);
 
    //bool ok = verify_scan(output_split,output_thrust);
@@ -121,12 +130,9 @@ int main(int argc, char **argv ){
 
    //if (0){
       //std::cout<<"Split->"<<std::endl;
-      //std::cout<<output_split<<std::endl;
       //std::cout<<"Thrust->"<<std::endl;
       //std::cout<<output_thrust<<std::endl;
    //}
-
-
    //std::cout<<"Success!"<<std::endl;
    return 0;
 
