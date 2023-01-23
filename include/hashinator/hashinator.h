@@ -100,7 +100,7 @@ namespace Hashinator{
          //TODO size of overflown elements is known beforhand.
          split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>> overflownElements(1 << sizePower, {EMPTYBUCKET, VAL_TYPE()});
          //Extract all overflown elements-This also resets TOMSBTONES to EMPTYBUCKET!
-         split::tools::copy_if<hash_pair<KEY_TYPE, VAL_TYPE>,Overflown_Predicate<KEY_TYPE,VAL_TYPE>,defaults::WARPSIZE,defaults::WARPSIZE>(buckets,overflownElements,Overflown_Predicate<KEY_TYPE,VAL_TYPE>());
+         split::tools::copy_if<hash_pair<KEY_TYPE, VAL_TYPE>,Overflown_Predicate<KEY_TYPE,VAL_TYPE>,defaults::WARPSIZE,defaults::WARPSIZE>(buckets,overflownElements,Overflown_Predicate<KEY_TYPE,VAL_TYPE>(buckets.data(),sizePower));
          size_t nOverflownElements=overflownElements.size();
          if (nOverflownElements ==0 ){
             std::cout<<"No cleaning needed!"<<std::endl;
@@ -117,10 +117,21 @@ namespace Hashinator{
    public:
       template <typename T, typename U>
       struct Overflown_Predicate{
+
+      hash_pair<KEY_TYPE, VAL_TYPE> *bck_ptr;
+      int currentSizePower;
+   
+      explicit Overflown_Predicate(hash_pair<KEY_TYPE, VAL_TYPE>*ptr,int s):bck_ptr(ptr),currentSizePower(s){}
+      Overflown_Predicate()=delete;
          __host__ __device__
          inline bool operator()( hash_pair<T,U>& element)const{
             if (element.first==TOMBSTONE){element.first=EMPTYBUCKET;return false;}
-            return element.offset>0;
+            if (element.first==EMPTYBUCKET){return false;}
+            const size_t hashIndex = HashFunction::_hash(element.first,currentSizePower);
+            const int bitMask = (1 <<(currentSizePower )) - 1; 
+            bool isOverflown=(bck_ptr[hashIndex&bitMask].first!=(int)element.first);
+            //printf("Hashidex= %d, actual elemenet=%d, candidate=%d , result =%d\n",(int)hashIndex&bitMask,(int)bck_ptr[hashIndex&bitMask].first,(int)element.first,(int)isOverflown);
+            return isOverflown;
          }
       };
       __host__

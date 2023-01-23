@@ -46,9 +46,15 @@ namespace Hashinator{
          hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[tid];
          int bitMask = (1 <<(sizePower )) - 1; 
          uint32_t hashIndex = HashFunction::_hash(candidate.first,sizePower);
-         uint32_t actual_index=(hashIndex+candidate.offset)&bitMask;
-         atomicCAS(&dst[actual_index].first,candidate.first,EMPTYBUCKET);
-         return ;
+
+         for(size_t i =0; i< (1<<sizePower);++i){
+            uint32_t probing_index=(hashIndex+i)&bitMask;
+            KEY_TYPE old = atomicCAS(&dst[probing_index].first,candidate.first,EMPTYBUCKET);
+            if (old==candidate.first){
+               return ;
+            }
+         }
+         assert(false && "Could not reset element. Something is broken!");
       }
 
 
