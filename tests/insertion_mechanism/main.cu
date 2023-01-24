@@ -88,6 +88,7 @@ bool test_hashmap_1(val_type power){
    size_t blocks=2*N/blocksize;
    vector src(N);
    create_input(src);
+   src.optimizeGPU();
 
    hashmap hmap;
    hmap.insert(src.data(),src.size(),power);
@@ -96,8 +97,8 @@ bool test_hashmap_1(val_type power){
 }
 
 TEST(HashmapUnitTets , Device_Insert){
-   int reps=1;
-   for (int power=20; power<21; ++power){
+   int reps=20;
+   for (int power=22; power<23; ++power){
       std::string name= "Power= "+std::to_string(power);
       for (int i =0; i< reps; i++){
          bool retval = execute_and_time(name.c_str(),test_hashmap_1 ,power);
