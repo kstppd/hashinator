@@ -139,6 +139,11 @@ namespace Hashinator{
                      atomicAdd((unsigned long long int*)d_fill, 1);
                      done=true;
                   }
+                  //Parallel stuff are fun. Major edge case!
+                  if (old==candidate.first){
+                     atomicExch(&buckets[probingindex].second,candidate.second);
+                     done=true;
+                  }
                }
                int warp_done=__any_sync(__activemask(),done);
                if(warp_done>0){
@@ -240,6 +245,11 @@ namespace Hashinator{
                      atomicExch(&buckets[probingindex].second,candidate.second);
                      atomicMax((int*)d_overflow,overflow);
                      atomicAdd((unsigned long long int*)d_fill, 1);
+                     done=true;
+                  }
+                  //Parallel stuff are fun. Major edge case!
+                  if (old==candidate.first){
+                     atomicExch(&buckets[probingindex].second,candidate.second);
                      done=true;
                   }
                }
