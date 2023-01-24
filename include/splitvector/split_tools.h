@@ -87,9 +87,6 @@ namespace split{
          int tid = threadIdx.x;
          int offset=1;
          int local_start=blockIdx.x*n;
-         if (local_start+2*tid+1>=len){
-            return;
-         }
          input=input+local_start;
          output=output+local_start;
 
@@ -99,8 +96,11 @@ namespace split{
          int bi = tid + (n/2);
          int bankOffsetA = CONFLICT_FREE_OFFSET(ai);
          int bankOffsetB = CONFLICT_FREE_OFFSET(bi);
-         buffer[ai + bankOffsetA] = input[ai];
-         buffer[bi + bankOffsetB] = input[bi];
+         
+         if (local_start+ai<len && local_start+bi<len){
+            buffer[ai + bankOffsetA] = input[ai];
+            buffer[bi + bankOffsetB] = input[bi];
+         }
 
          //Reduce Phase
          for (int d =n>>1; d>0; d>>=1){
@@ -137,8 +137,10 @@ namespace split{
             }
          }
          __syncthreads();
-         output[ai] = buffer[ai + bankOffsetA];
-         output[bi] = buffer[bi + bankOffsetB];
+         if (local_start+ai<len && local_start+bi<len){
+            output[ai] = buffer[ai + bankOffsetA];
+            output[bi] = buffer[bi + bankOffsetB];
+         }
       }
 
 
@@ -210,6 +212,14 @@ namespace split{
             gridSize=1<<((int)ceil(log(++gridSize)/log(2)));
          }
 
+         //If the elements are too few manually override and launch a small kernel
+         if (input_size<scanElements){
+            scanBlocksize=input_size/2;
+            scanElements=input_size;
+            if (scanBlocksize==0){scanBlocksize+=1;}
+            gridSize=1;
+         }
+
          //Allocate memory for partial sums
          vector partial_sums(gridSize); 
 
@@ -245,6 +255,7 @@ namespace split{
          
          //Figure out Blocks to use
          size_t nBlocks=input.size()/BLOCKSIZE; 
+         if (nBlocks==0){nBlocks+=1;}
          vector_int counts(nBlocks);
          vector_int offsets(nBlocks);
 
@@ -259,7 +270,11 @@ namespace split{
 
 
          //Step 2 -- Exclusive Prefix Scan on offsets
-         split_prefix_scan<uint32_t,BLOCKSIZE,WARP>(counts,offsets);
+         if (nBlocks==1){
+            split_prefix_scan<uint32_t,2,WARP>(counts,offsets);
+         }else{
+            split_prefix_scan<uint32_t,BLOCKSIZE,WARP>(counts,offsets);
+         }
          cudaDeviceSynchronize();
 
 
@@ -385,6 +400,13 @@ namespace split{
          if (input_size%scanElements!=0){
             gridSize=1<<((int)ceil(log(++gridSize)/log(2)));
          }
+         //If the elements are too few manually override and launch a small kernel
+         if (input_size<scanElements){
+            scanBlocksize=input_size/2;
+            scanElements=input_size;
+            if (scanBlocksize==0){scanBlocksize+=1;}
+            gridSize=1;
+         }
          
 
          //Allocate memory for partial sums
@@ -419,6 +441,7 @@ namespace split{
          
          //Figure out Blocks to use
          size_t nBlocks=input.size()/BLOCKSIZE; 
+         if (nBlocks==0){nBlocks+=1;}
          
          //Allocate with Mempool
          const size_t memory_for_pool = 8*nBlocks*sizeof(uint32_t) ;
@@ -436,7 +459,11 @@ namespace split{
 
 
          //Step 2 -- Exclusive Prefix Scan on offsets
-         split_prefix_scan_raw<uint32_t,BLOCKSIZE,WARP>(d_counts,d_offsets,mPool,nBlocks);
+         if (nBlocks==1){
+            split_prefix_scan_raw<uint32_t,2,WARP>(d_counts,d_offsets,mPool,nBlocks);
+         }else{
+            split_prefix_scan_raw<uint32_t,BLOCKSIZE,WARP>(d_counts,d_offsets,mPool,nBlocks);
+         }
          cudaDeviceSynchronize();
 
 

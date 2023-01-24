@@ -43,7 +43,7 @@ auto timer(char* name,int reps,Fn fn, Args && ... args){
 }
 
 
-bool verify_scan(const split_vector& l, const thrust::device_vector<val_type>& r){
+bool verify(const split_vector& l, const thrust::device_vector<val_type>& r){
 
    for (size_t i=0; i< l.size(); ++i){
       bool ok = l[i]==r[i];
@@ -68,13 +68,13 @@ void split_test_prefix(split_vector& input_split,split_vector& output_split,size
       input_split[i]=i;//tmp;
    }
 
-   split::tools::Cuda_mempool mPool(1024*64);
+   //split::tools::Cuda_mempool mPool(1024*64);
 
 
    input_split.optimizeGPU();
    output_split.optimizeGPU();
    cudaDeviceSynchronize();
-   split::tools::split_prefix_scan_raw<val_type,1024,32>(input_split.data(),output_split.data(),mPool,input_split.size());
+   split::tools::split_prefix_scan(input_split,output_split);
 
 
  /*  val_type* in; */
@@ -90,8 +90,6 @@ void split_test_prefix(split_vector& input_split,split_vector& output_split,size
 }
 
 void split_test_compaction(split_vector& input_split,split_vector& output_split,size_t size){
-
-
    for (size_t i =0 ;  i< size ;++i){
       input_split[i]=i;//tmp;
    }
@@ -102,38 +100,56 @@ void thrust_test_prefix(thrust::device_vector<val_type>& input_thrust,thrust::de
    for (size_t i =0 ;  i< size ;++i){
       input_thrust[i]=i;//tmp;
    }
-   thrust::exclusive_scan(thrust::device, input_thrust.begin(),input_thrust.end(), output_thrust.begin(), 0); // in-place scan
+   thrust::exclusive_scan(thrust::device, input_thrust.begin(),input_thrust.end(), output_thrust.begin(), 0); 
+}
+
+void thrust_test_compaction(thrust::device_vector<val_type>& input_thrust,thrust::device_vector<val_type>& output_thrust  ,size_t size){
+   for (size_t i =0 ;  i< size ;++i){
+      input_thrust[i]=i;//tmp;
+   }
+   auto res=thrust::copy_if(thrust::device, input_thrust.begin(),input_thrust.end(), output_thrust.begin(),Predicate() ); 
+   output_thrust.erase(res,output_thrust.end());
 }
 
 
+bool run_test(int power){
 
+   size_t N=1<<power;
+   bool ok= true;
+   {
+      split_vector input_split(N);
+      split_vector output_split(N);
+      thrust::device_vector<val_type> input_thrust(N);
+      thrust::device_vector<val_type> output_thrust(N);
+      int reps=1;
 
-int main(int argc, char **argv ){
-
-   size_t N;
-   if (argc>1){
-      N=1<<(std::stoi(argv[1]));
-   }else{
-      N=1024;
+      timer("Split Prefix",reps,split_test_prefix,input_split,output_split,N);
+      timer("Thrust Prefix",reps,thrust_test_prefix,input_thrust,output_thrust,N);
+      bool ok_scan = verify(output_split,output_thrust);
+      ok =ok && ok_scan;
    }
-   split_vector input_split(N);
-   split_vector output_split(N);
-   thrust::device_vector<val_type> input_thrust(N);
-   thrust::device_vector<val_type> output_thrust(N);
-   int reps=1;
-   //timer("Split Prefix",reps,split_test_prefix,input_split,output_split,N);
-   timer("Split Compaction",reps,split_test_compaction,input_split,output_split,N);
-   //timer("Thrust Prefix",reps,thrust_test_prefix,input_thrust,output_thrust,N);
 
-   //bool ok = verify_scan(output_split,output_thrust);
-   //if (!ok){std::cerr<<"SCAN FAILED"<<std::endl;;}
+   {
+      split_vector input_split(N);
+      split_vector output_split(N);
+      thrust::device_vector<val_type> input_thrust(N);
+      thrust::device_vector<val_type> output_thrust(N);
+      int reps=1;
+      timer("Split Compaction",reps,split_test_compaction,input_split,output_split,N);
+      timer("Thrust Compaction",reps,thrust_test_compaction,input_thrust,output_thrust,N);
+      bool ok_comp = verify(output_split,output_thrust);
+      ok =ok && ok_comp;
+   }
+   return ok ;
+}
 
-   //if (0){
-      //std::cout<<"Split->"<<std::endl;
-      //std::cout<<"Thrust->"<<std::endl;
-      //std::cout<<output_thrust<<std::endl;
-   //}
-   //std::cout<<"Success!"<<std::endl;
-   return 0;
+TEST(StremCompaction , Compaction_Tests){
+   for (size_t power=2;power<18; ++power){
+      bool res = run_test(power);
+   }
+}
 
+int main(int argc, char* argv[]){
+   ::testing::InitGoogleTest(&argc, argv);
+   return RUN_ALL_TESTS();
 }
