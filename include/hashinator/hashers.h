@@ -201,22 +201,22 @@ namespace Hashinator{
          const size_t optimalindex=(hashIndex) & bitMask;
 
          //Check for duplicates
-         //for(int i=0; i<(*d_overflow); i+=VIRTUALWARP){
+         for(int i=0; i<(*d_overflow); i+=VIRTUALWARP){
             
-            ////Get the position we should be looking into
-            //size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
-            //uint32_t mask_already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidate.first);
-            //mask_already_exists&=submask;
+            //Get the position we should be looking into
+            size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
+            uint32_t mask_already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidate.first);
+            mask_already_exists&=submask;
 
-            //if (mask_already_exists){
-               //int winner =__ffs ( mask_already_exists ) -1;
-               //winner-=(subwarp_relative_index)*VIRTUALWARP;
-               //if(w_tid==winner){
-                  //atomicExch(&buckets[probingindex].second,candidate.second);
-               //}
-               //return;
-             //}
-         //}
+            if (mask_already_exists){
+               int winner =__ffs ( mask_already_exists ) -1;
+               winner-=(subwarp_relative_index)*VIRTUALWARP;
+               if(w_tid==winner){
+                  atomicExch(&buckets[probingindex].second,candidate.second);
+               }
+               return;
+             }
+         }
 
 
          //No duplicates so we insert
