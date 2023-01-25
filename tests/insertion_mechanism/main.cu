@@ -11,11 +11,11 @@
 #define expect_true EXPECT_TRUE
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
-typedef uint32_t val_type;
+typedef uint32_t keyval_type;
 using namespace Hashinator;
-typedef split::SplitVector<hash_pair<val_type,val_type>,split::split_unified_allocator<hash_pair<val_type,val_type>>,split::split_unified_allocator<size_t>> vector ;
+typedef split::SplitVector<keyval_type,split::split_unified_allocator<keyval_type>,split::split_unified_allocator<size_t>> vector ;
 using namespace std::chrono;
-typedef Hashmap<val_type,val_type> hashmap;
+typedef Hashmap<keyval_type,keyval_type> hashmap;
 
 
 template <class Fn, class ... Args>
@@ -30,48 +30,17 @@ auto execute_and_time(const char* name,Fn fn, Args && ... args) ->bool{
    std::cout<<name<<" took "<<total_time<<" us"<<std::endl;
    return retval;
 }
- 
 
-
-void create_input(vector& src, uint32_t bias=0){
-   for (size_t i=0; i<src.size(); ++i){
-      hash_pair<val_type,val_type>& kval=src.at(i);
-      kval.first=i + bias;
-      kval.second=rand()%1000000;
+void fill_input(keyval_type* keys , keyval_type* vals, size_t size){
+   for (size_t i=0; i<size; ++i){
+      keys[i]=i;
+      vals[i]=rand()%1000000;
    }
 }
 
-void cpu_write(hashmap& hmap, vector& src){
-   for (size_t i=0; i<src.size(); ++i){
-      const hash_pair<val_type,val_type>& kval=src.at(i);
-      hmap.at(kval.first)=kval.second;
-   }
-}
-
-__global__ 
-void gpu_write(hashmap* hmap, hash_pair<val_type,val_type>*src, size_t N){
-   size_t index = blockIdx.x * blockDim.x + threadIdx.x;
-   if (index < N ){
-      hmap->set_element(src[index].first, src[index].second);
-   }
-}
-
-__global__
-void gpu_delete_even(hashmap* hmap, hash_pair<val_type,val_type>*src,size_t N){
-   size_t index = blockIdx.x * blockDim.x + threadIdx.x;
-   if (index<N ){
-      auto kpos=hmap->find(src[index].first);
-      if (kpos==hmap->end()){assert(0 && "Catastrophic crash in deletion");}
-      if (kpos->second %2==0 ){
-         hmap->erase(kpos);
-      }
-   }
-   return;
-}
-
-bool recover_elements(const hashmap& hmap, vector& src){
-   for (size_t i=0; i<src.size(); ++i){
-      const hash_pair<val_type,val_type>& kval=src.at(i);
+bool recover_elements(const hashmap& hmap, keyval_type* keys, keyval_type* vals,size_t size){
+   for (size_t i=0; i<size; ++i){
+      const hash_pair<keyval_type,keyval_type> kval(keys[i],vals[i]);
       auto retval=hmap.find(kval.first);
       if (retval==hmap.end()){assert(0&& "END FOUND");}
       bool sane=retval->first==kval.first  &&  retval->second== kval.second ;
@@ -82,26 +51,56 @@ bool recover_elements(const hashmap& hmap, vector& src){
    return true;
 }
 
-bool test_hashmap_1(val_type power){
+bool test_hashmap_2(keyval_type power){
    size_t N = 1<<power;
    size_t blocksize=BLOCKSIZE;
    size_t blocks=2*N/blocksize;
-   vector src(N);
-   create_input(src);
-   src.optimizeGPU();
+
+   vector keys(N);
+   vector vals(N);
+   fill_input(keys.data(),vals.data(),N);
+   fill_input(keys.data(),vals.data(),N);
+   keys.optimizeGPU();
+   vals.optimizeGPU();
+
+
+   keyval_type* dkeys;
+   keyval_type* dvals;
+   cudaMalloc(&dkeys, N*sizeof(keyval_type)); 
+   cudaMalloc(&dvals, N*sizeof(keyval_type)); 
+   cudaMemcpy(dkeys,keys.data(),N*sizeof(keyval_type),cudaMemcpyHostToDevice);
+   cudaMemcpy(dvals,vals.data(),N*sizeof(keyval_type),cudaMemcpyHostToDevice);
 
    hashmap hmap;
-   hmap.insert(src.data(),src.size(),power);
-   assert(recover_elements(hmap,src) && "Hashmap is illformed!");
+   hmap.insert(dkeys,dvals,N,power);
+   assert(recover_elements(hmap,keys.data(),vals.data(),N) && "Hashmap is illformed!");
+   cudaFree(dkeys);
+   cudaFree(dvals);
+   return true;
+}
+
+bool test_hashmap_1(keyval_type power){
+   size_t N = 1<<power;
+   size_t blocksize=BLOCKSIZE;
+   size_t blocks=2*N/blocksize;
+   vector keys(N);
+   vector vals(N);
+   fill_input(keys.data(),vals.data(),N);
+   keys.optimizeGPU();
+   vals.optimizeGPU();
+
+   hashmap hmap;
+   hmap.insert(keys.data(),vals.data(),N,power);
+   assert(recover_elements(hmap,keys.data(),vals.data(),N) && "Hashmap is illformed!");
    return true;
 }
 
 TEST(HashmapUnitTets , Device_Insert){
-   int reps=20;
-   for (int power=22; power<23; ++power){
+   int reps=5;
+   for (int power=24; power<25; ++power){
       std::string name= "Power= "+std::to_string(power);
       for (int i =0; i< reps; i++){
-         bool retval = execute_and_time(name.c_str(),test_hashmap_1 ,power);
+         bool retval = execute_and_time(name.c_str(),test_hashmap_2 ,power);
          expect_true(retval);
       }
    }

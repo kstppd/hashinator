@@ -157,13 +157,13 @@ namespace Hashinator{
 
 
       __host__
-      void insert(hash_pair<KEY_TYPE,VAL_TYPE>*src,size_t len,int power){
+      void insert(KEY_TYPE* keys,VAL_TYPE* vals,size_t len,int power){
          resize(power+1);
          buckets.optimizeGPU();
          cpu_maxBucketOverflow=maxBucketOverflow;
          cudaMemcpy(d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice);
          cudaMemcpy(d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice);
-         DeviceHasher::insert(src,buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,len);
+         DeviceHasher::insert(keys,vals,buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,len);
          cudaDeviceSynchronize();
          cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,0);
          cudaMemcpyAsync(&cpu_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,0);
