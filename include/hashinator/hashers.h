@@ -80,12 +80,12 @@ namespace Hashinator{
       __global__ 
       void hasher_V2(KEY_TYPE* keys,
                      VAL_TYPE* vals,
-                    hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
-                    int sizePower,
-                    int maxoverflow,
-                    int* d_overflow,
-                    size_t* d_fill,
-                    size_t len)
+                     hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                     int sizePower,
+                     int maxoverflow,
+                     int* d_overflow,
+                     size_t* d_fill,
+                     size_t len)
       {
 
          const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
@@ -184,12 +184,12 @@ namespace Hashinator{
       __global__ 
       void hasher_V3(KEY_TYPE* keys,
                      VAL_TYPE* vals,
-                    hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
-                    int sizePower,
-                    int maxoverflow,
-                    int* d_overflow,
-                    size_t* d_fill,
-                    size_t len)
+                     hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                     int sizePower,
+                     int maxoverflow,
+                     int* d_overflow,
+                     size_t* d_fill,
+                     size_t len)
       {
          
          const int VIRTUALWARP=WARPSIZE/elementsPerWarp;
