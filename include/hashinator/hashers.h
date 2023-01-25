@@ -109,6 +109,12 @@ namespace Hashinator{
 
             //vote for already existing in warp region
             uint32_t mask_already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidate.first);
+            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET);
+            //If we encountered empty and there is no duplicate in this probing
+            //chain we are done.
+            if (!mask_already_exists && emptyFound){
+               break;
+            }
             if (mask_already_exists){
                int winner =__ffs ( mask_already_exists ) -1;
                if(w_tid==winner){
@@ -210,9 +216,14 @@ namespace Hashinator{
             
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
-            uint32_t mask_already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidate.first);
-            mask_already_exists&=submask;
-
+            //If we encounter empty  break as the
+            uint32_t mask_already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidate.first)&submask;
+            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            //If we encountered empty and there is no duplicate in this probing
+            //chain we are done.
+            if (!mask_already_exists && emptyFound){
+               break;
+            }
             if (mask_already_exists){
                int winner =__ffs ( mask_already_exists ) -1;
                winner-=(subwarp_relative_index)*VIRTUALWARP;
@@ -304,7 +315,7 @@ namespace Hashinator{
             size_t warpsNeeded=N/elementsPerWarp + (N%elementsPerWarp!=0);
             blockSize=std::min(warpsNeeded*WARP,(size_t)1024);
             blocks=warpsNeeded*WARP/blockSize + ((warpsNeeded*WARP)%blockSize!=0);
-            blocks*=2;
+            //blocks*=2;
             return;
          }
       };
