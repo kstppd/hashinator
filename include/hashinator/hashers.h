@@ -57,6 +57,108 @@ namespace Hashinator{
          assert(false && "Could not reset element. Something is broken!");
       }
 
+        /* Warp Synchronous hashing kernel for hashinator's internal use:
+       * This method uses 32-thread Warps to hash an element from src.
+       * Threads in a given warp simultaneously try to hash an element
+       * in the buckets by using warp voting to communicate available 
+       * positions in the probing  sequence. The position of least overflow
+       * is selected by using __ffs to decide on the winner. If no positions
+       * are available in the probing sequence the warp shifts by a warp size
+       * and tries to overflow(up to maxoverflow).
+       * No tombstones allowed!
+       * Parameters:
+       *    src          -> pointer to device data with pairs to be inserted
+       *    buckets      -> current hashinator buckets
+       *    sizePower    -> current hashinator sizepower
+       *    maxoverflow  -> maximum allowed overflow
+       *    d_overflow   -> stores the overflow after inserting the elements
+       *    d_fill       -> stores the device fill after inserting the elements
+       *    len          -> number of elements to read from src
+       * */
+      template<typename KEY_TYPE, typename VAL_TYPE,KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),class HashFunction=HashFunctions::Murmur<KEY_TYPE>,int WARP=Hashinator::defaults::WARPSIZE>
+      __global__ 
+      void hasher_V2(hash_pair<KEY_TYPE, VAL_TYPE>* src,
+                    hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                    int sizePower,
+                    int maxoverflow,
+                    int* d_overflow,
+                    size_t* d_fill,
+                    size_t len)
+      {
+
+         const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
+         const size_t wid = tid/WARP;
+         const size_t w_tid=tid%WARP;
+         //Early quit if we have more warps than elements to insert
+         if (wid>=len){
+            return;
+         }
+                               
+         hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[wid];
+         const int bitMask = (1 <<(sizePower )) - 1; 
+         const size_t hashIndex = HashFunction::_hash(candidate.first,sizePower);
+         const size_t optimalindex=(hashIndex) & bitMask;
+
+
+         //Check for duplicates
+         for(int i=0; i<(*d_overflow); i+=WARP){
+            
+            //Get the position we should be looking into
+            size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
+
+            //vote for already existing in warp region
+            uint32_t mask_already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidate.first);
+            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET);
+            //If we encountered empty and there is no duplicate in this probing
+            //chain we are done.
+            if (!mask_already_exists && emptyFound){
+               break;
+            }
+            if (mask_already_exists){
+               int winner =__ffs ( mask_already_exists ) -1;
+               if(w_tid==winner){
+                  atomicExch(&buckets[probingindex].second,candidate.second);
+               }
+               return;
+            }
+         }
+
+         //No duplicates so we insert
+         bool done=false;
+         for(int i=0; i<(1<<sizePower); i+=WARP){
+
+            //Get the position we should be looking into
+            size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
+            //vote for available emptybuckets in warp region
+            uint32_t mask = 1;//_ballot_sync(SPLIT_VOTING_MASK,buckets[vecindex].first==EMPTYBUCKET);
+            while(mask!=0){
+               mask = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET);
+               int winner =__ffs ( mask ) -1;
+               if (w_tid==winner){
+                  KEY_TYPE old = atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidate.first);
+                  if (old == EMPTYBUCKET){
+                     //TODO the atomicExch here could be non atomics as no other thread can probe here
+                     int overflow = probingindex-optimalindex;
+                     atomicExch(&buckets[probingindex].second,candidate.second);
+                     atomicMax((int*)d_overflow,overflow);
+                     atomicAdd((unsigned long long int*)d_fill, 1);
+                     done=true;
+                  }
+                  //Parallel stuff are fun. Major edge case!
+                  if (old==candidate.first){
+                     atomicExch(&buckets[probingindex].second,candidate.second);
+                     done=true;
+                  }
+               }
+               int warp_done=__any_sync(__activemask(),done);
+               if(warp_done>0){
+                  return;
+               }
+            }
+         }
+         return ;
+      }
+
 
       /* Warp Synchronous hashing kernel for hashinator's internal use:
        * This method uses 32-thread Warps to hash an element from src.
@@ -162,6 +264,120 @@ namespace Hashinator{
          return ;
       }
       
+         /*Warp Synchronous hashing kernel for hashinator's internal use:
+       * This method uses 32-thread Warps to hash an element from src.
+       * Threads in a given warp simultaneously try to hash an element
+       * in the buckets by using warp voting to communicate available 
+       * positions in the probing  sequence. The position of least overflow
+       * is selected by using __ffs to decide on the winner. If no positios
+       * are available in the probing sequence the warp shifts by a warp size
+       * and ties to overflow(up to maxoverflow).
+       * No tombstones allowed!
+       * Parameters:
+       *    src          -> pointer to device data with pairs to be inserted
+       *    buckets      -> current hashinator buckets
+       *    sizePower    -> current hashinator sizepower
+       *    maxoverflow  -> maximum allowed overflow
+       *    d_overflow   -> stores the overflow after inserting the elements
+       *    d_fill       -> stores the device fill after inserting the elements
+       *    len          -> number of elements to read from src
+       * */
+      template<typename KEY_TYPE, typename VAL_TYPE,KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),class HashFunction=HashFunctions::Murmur<KEY_TYPE>,int WARPSIZE=32,int elementsPerWarp>
+      __global__ 
+      void hasher_V3(hash_pair<KEY_TYPE, VAL_TYPE>* src,
+                    hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                    int sizePower,
+                    int maxoverflow,
+                    int* d_overflow,
+                    size_t* d_fill,
+                    size_t len)
+      {
+         
+         const int VIRTUALWARP=WARPSIZE/elementsPerWarp;
+         const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
+         const size_t wid = tid/VIRTUALWARP;
+         const size_t w_tid=tid%VIRTUALWARP;
+         unsigned int subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
+         
+         //Early quit if we have more warps than elements to insert
+         if (wid>=len){
+            return;
+         }
+
+         auto getIntraWarpMask = [](unsigned int n ,unsigned int l ,unsigned int r)->unsigned int{
+            int num = ((1<<r)-1)^((1<<(l-1))-1);
+            return (n^num);
+         };
+
+         uint32_t submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+         hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[wid];
+         const int bitMask = (1 <<(sizePower )) - 1; 
+         const size_t hashIndex = HashFunction::_hash(candidate.first,sizePower);
+         const size_t optimalindex=(hashIndex) & bitMask;
+
+         //Check for duplicates
+         for(int i=0; i<(*d_overflow); i+=VIRTUALWARP){
+            
+            //Get the position we should be looking into
+            size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
+            //If we encounter empty  break as the
+            uint32_t mask_already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidate.first)&submask;
+            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            //If we encountered empty and there is no duplicate in this probing
+            //chain we are done.
+            if (!mask_already_exists && emptyFound){
+               break;
+            }
+            if (mask_already_exists){
+               int winner =__ffs ( mask_already_exists ) -1;
+               winner-=(subwarp_relative_index)*VIRTUALWARP;
+               if(w_tid==winner){
+                  atomicExch(&buckets[probingindex].second,candidate.second);
+               }
+               return;
+             }
+         }
+
+
+         //No duplicates so we insert
+         bool done=false;
+         for(int i=0; i<(1<<sizePower); i+=VIRTUALWARP){
+
+            //Get the position we should be looking into
+            size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
+            //vote for available emptybuckets in warp region
+            uint32_t  mask;
+            mask=1;
+            while(mask!=0){
+               mask = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET);
+               mask&=submask;
+               int winner =__ffs ( mask ) -1;
+               winner-=(subwarp_relative_index)*VIRTUALWARP;
+               if (w_tid==winner){
+                  KEY_TYPE old = atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidate.first);
+                  if (old == EMPTYBUCKET){
+                     int overflow = probingindex-optimalindex;
+                     atomicExch(&buckets[probingindex].second,candidate.second);
+                     atomicMax((int*)d_overflow,overflow);
+                     atomicAdd((unsigned long long int*)d_fill, 1);
+                     done=true;
+                  }
+                  //Parallel stuff are fun. Major edge case!
+                  if (old==candidate.first){
+                     atomicExch(&buckets[probingindex].second,candidate.second);
+                     done=true;
+                  }
+               }
+               int warp_done=__any_sync(submask,done);
+               if(warp_done>0){
+                  return;
+               }
+            }
+         }
+         return ;
+      }
+
+
       /*Warp Synchronous hashing kernel for hashinator's internal use:
        * This method uses 32-thread Warps to hash an element from src.
        * Threads in a given warp simultaneously try to hash an element
@@ -310,6 +526,29 @@ namespace Hashinator{
                hasher_V3<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction,defaults::WARPSIZE,elementsPerWarp>
                         <<<blocks,blockSize>>>
                         (keys,vals,buckets,sizePower,maxoverflow,d_overflow,d_fill,len);
+            }
+            cudaDeviceSynchronize();
+         }
+
+         static void insert(hash_pair<KEY_TYPE, VAL_TYPE>* src,
+                            hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                            int sizePower,
+                            int maxoverflow,
+                            int* d_overflow,
+                            size_t* d_fill,
+                            size_t len)
+         {
+            size_t blocks,blockSize;
+            launchParams(len,blocks,blockSize);
+
+            if constexpr(elementsPerWarp==1){
+               hasher_V2<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction,Hashinator::defaults::WARPSIZE>
+                        <<<blocks,blockSize>>>
+                        (src,buckets,sizePower,maxoverflow,d_overflow,d_fill,len);
+            }else{
+               hasher_V3<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction,defaults::WARPSIZE,elementsPerWarp>
+                        <<<blocks,blockSize>>>
+                        (src,buckets,sizePower,maxoverflow,d_overflow,d_fill,len);
             }
             cudaDeviceSynchronize();
          }
