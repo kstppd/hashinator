@@ -72,7 +72,7 @@ bool test_hashmap_insertionDM(keyval_type power){
    cudaMemcpy(dvals,vals.data(),N*sizeof(keyval_type),cudaMemcpyHostToDevice);
 
    hashmap hmap;
-   hmap.insert(dkeys,dvals,N,power);
+   hmap.insert(dkeys,dvals,N); 
    assert(recover_elements(hmap,keys.data(),vals.data(),N) && "Hashmap is illformed!");
    cudaFree(dkeys);
    cudaFree(dvals);
@@ -90,7 +90,7 @@ bool test_hashmap_retrievalUM(keyval_type power){
    vals2.optimizeGPU();
 
    hashmap hmap;
-   hmap.insert(keys.data(),vals.data(),N,power);
+   hmap.insert(keys.data(),vals.data(),N); 
    assert(recover_elements(hmap,keys.data(),vals.data(),N) && "Hashmap is illformed!");
    keys.optimizeGPU();
    vals.optimizeGPU();
@@ -111,14 +111,40 @@ bool test_hashmap_insertionUM(keyval_type power){
    vals.optimizeGPU();
 
    hashmap hmap;
-   hmap.insert(keys.data(),vals.data(),N,power);
+   hmap.insert(keys.data(),vals.data(),N); 
    assert(recover_elements(hmap,keys.data(),vals.data(),N) && "Hashmap is illformed!");
+   
+   //std::cout<<hmap.load_factor()<<std::endl;
    return true;
 }
 
-TEST(HashmapUnitTets , Device_Insert){
-   int reps=5;
-   for (int power=20; power<21; ++power){
+TEST(HashmapUnitTets , Device_Insert_UM){
+   int reps=10;
+   for (int power=10; power<20; ++power){
+      std::string name= "Power= "+std::to_string(power);
+      for (int i =0; i< reps; i++){
+         bool retval = execute_and_time(name.c_str(),test_hashmap_insertionUM,power );
+         //expect_true(retval);
+      }
+   }
+}
+
+
+TEST(HashmapUnitTets , Device_Insert_DM){
+   int reps=10;
+   for (int power=10; power<20; ++power){
+      std::string name= "Power= "+std::to_string(power);
+      for (int i =0; i< reps; i++){
+         bool retval = execute_and_time(name.c_str(),test_hashmap_insertionDM ,power);
+         expect_true(retval);
+      }
+   }
+}
+
+
+TEST(HashmapUnitTets , Device_Retrieve_UM){
+   int reps=10;
+   for (int power=10; power<20; ++power){
       std::string name= "Power= "+std::to_string(power);
       for (int i =0; i< reps; i++){
          bool retval = execute_and_time(name.c_str(),test_hashmap_retrievalUM ,power);
@@ -126,7 +152,6 @@ TEST(HashmapUnitTets , Device_Insert){
       }
    }
 }
-
 
 int main(int argc, char* argv[]){
    //srand(time(NULL));

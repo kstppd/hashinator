@@ -110,6 +110,11 @@ namespace Hashinator{
          Hashers::reset_to_empty<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction><<<overflownElements.size(),defaults::MAX_BLOCKSIZE>>> (overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow,overflownElements.size());
          cudaDeviceSynchronize();
          DeviceHasher::insert(overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,overflownElements.size());
+         cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,0);
+         cudaMemcpyAsync(&cpu_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,0);
+         if (cpu_maxBucketOverflow>maxBucketOverflow){
+            rehash(sizePower++);
+         }
          return ;
       }
 
@@ -130,7 +135,6 @@ namespace Hashinator{
             const size_t hashIndex = HashFunction::_hash(element.first,currentSizePower);
             const int bitMask = (1 <<(currentSizePower )) - 1; 
             bool isOverflown=(bck_ptr[hashIndex&bitMask].first!=(int)element.first);
-            //printf("Hashidex= %d, actual elemenet=%d, candidate=%d , result =%d\n",(int)hashIndex&bitMask,(int)bck_ptr[hashIndex&bitMask].first,(int)element.first,(int)isOverflown);
             return isOverflown;
          }
       };
@@ -147,7 +151,7 @@ namespace Hashinator{
           };
       __host__
       Hashmap(const Hashmap<KEY_TYPE, VAL_TYPE>& other)
-          : sizePower(other.sizePower), fill(other.fill), buckets(other.buckets){
+          : sizePower(other.sizePower), fill(other.fill), tombstoneCounter(other.tombstoneCounter) ,buckets(other.buckets){
             preallocate_device_handles();
           };
       __host__
@@ -156,15 +160,19 @@ namespace Hashinator{
       };
 
 
+      //Uses Hasher's insert_kernel to insert all elements
       __host__
-      void insert(KEY_TYPE* keys,VAL_TYPE* vals,size_t len,int power){
-         resize(power+1);
+      void insert(KEY_TYPE* keys,VAL_TYPE* vals,size_t len,float targetLF=0.5){
+         //Here we do some calculations to estimate how much if any we need to grow our buckets
+         size_t neededPowerSize=std::ceil(std::log2((fill+len)*(1.0/targetLF)));
+         if (neededPowerSize>sizePower){
+            resize(neededPowerSize);
+         }
          buckets.optimizeGPU();
          cpu_maxBucketOverflow=maxBucketOverflow;
          cudaMemcpy(d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice);
          cudaMemcpy(d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice);
          DeviceHasher::insert(keys,vals,buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,len);
-         cudaDeviceSynchronize();
          cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,0);
          cudaMemcpyAsync(&cpu_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,0);
          if (cpu_maxBucketOverflow>maxBucketOverflow){
@@ -173,11 +181,24 @@ namespace Hashinator{
          return;
       }
       
+      //Uses Hasher's retrieve_kernel to read all elements
       __host__
       void retrieve(KEY_TYPE* keys,VAL_TYPE* vals,size_t len){
          buckets.optimizeGPU();
-         cudaDeviceSynchronize();
          DeviceHasher::retrieve(keys,vals,buckets.data(),sizePower,maxBucketOverflow,len);
+         return;
+      }
+
+      //Uses Hasher's erase_kernel to delete all elements
+      __host__
+      void erase(KEY_TYPE* keys,VAL_TYPE* vals,size_t len){
+         cudaMemsetAsync(d_tombstoneCounter, 0, sizeof(size_t)); //since tombstones do not exist on host code
+         buckets.optimizeGPU();
+         DeviceHasher::erase(keys,vals,buckets.data(),d_tombstoneCounter,sizePower,maxBucketOverflow,len);
+         cudaMemcpy(&tombstoneCounter, d_tombstoneCounter, sizeof(size_t),cudaMemcpyDeviceToHost);
+         if (tombstone_count()>0){
+            clean_tombstones();
+         }
          return;
       }
 

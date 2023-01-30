@@ -117,7 +117,7 @@ namespace Hashinator{
          uint32_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
-            submask=0xFFFFFFFF;
+            submask=SPLIT_VOTING_MASK;
          }else{
             submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
@@ -166,7 +166,10 @@ namespace Hashinator{
                   if (old == EMPTYBUCKET){
                      int overflow = probingindex-optimalindex;
                      atomicExch(&buckets[probingindex].second,candidate.second);
-                     atomicMax((int*)d_overflow,overflow);
+                     //For some reason this is faster than callign atomicMax without the if
+                     if (overflow>*d_overflow){
+                        atomicMax((int*)d_overflow,overflow);
+                     }
                      atomicAdd((unsigned long long int*)d_fill, 1);
                      done=true;
                   }
@@ -241,7 +244,7 @@ namespace Hashinator{
          uint32_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
-            submask=0xFFFFFFFF;
+            submask=SPLIT_VOTING_MASK;
          }else{
             submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
@@ -291,7 +294,10 @@ namespace Hashinator{
                   if (old == EMPTYBUCKET){
                      int overflow = probingindex-optimalindex;
                      atomicExch(&buckets[probingindex].second,candidateVal);
-                     atomicMax((int*)d_overflow,overflow);
+                     //For some reason this is faster than callign atomicMax without the if
+                     if (overflow>*d_overflow){
+                        atomicMax((int*)d_overflow,overflow);
+                     }
                      atomicAdd((unsigned long long int*)d_fill, 1);
                      done=true;
                   }
@@ -308,9 +314,8 @@ namespace Hashinator{
                mask ^= (1UL << winner);
             }
          }
-         return ;
+         assert(false && "Hashmap completely overflown");
       }
-
 
       /*
        * Similarly to the insert_kernel we examine elements in keys and return their value in vals,
@@ -344,7 +349,7 @@ namespace Hashinator{
          uint32_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
-            submask=0xFFFFFFFF;
+            submask=SPLIT_VOTING_MASK;
          }else{
             submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
@@ -392,6 +397,7 @@ namespace Hashinator{
       __global__ 
       void delete_kernel(KEY_TYPE* keys,
                            hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                           size_t* d_tombstoneCounter,
                            int sizePower,
                            int maxoverflow)
       {
@@ -410,7 +416,7 @@ namespace Hashinator{
          uint32_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
-            submask=0xFFFFFFFF;
+            submask=SPLIT_VOTING_MASK;
          }else{
             submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
@@ -434,6 +440,7 @@ namespace Hashinator{
                winner-=(subwarp_relative_index)*VIRTUALWARP;
                if(w_tid==winner){
                   atomicExch(&buckets[probingindex].second, TOMBSTONE);
+                  atomicAdd((unsigned long long int*)d_tombstoneCounter, 1);
                }
                return;
              }
@@ -447,7 +454,8 @@ namespace Hashinator{
                class HashFunction,
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
                int WARP=32,
-               int elementsPerWarp=1>
+               int elementsPerWarp=1,
+               cudaStream_t s = cudaStream_t()>
       class Hasher{
       
       //Make sure we have sane elements per warp
@@ -468,7 +476,7 @@ namespace Hashinator{
             size_t blocks,blockSize;
             launchParams(len,blocks,blockSize);
             insert_kernel<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction,defaults::WARPSIZE,elementsPerWarp>
-                     <<<blocks,blockSize>>>
+                     <<<blocks,blockSize,0,s>>>
                      (keys,vals,buckets,sizePower,maxoverflow,d_overflow,d_fill,len);
             cudaDeviceSynchronize();
          }
@@ -486,7 +494,7 @@ namespace Hashinator{
             size_t blocks,blockSize;
             launchParams(len,blocks,blockSize);
             insert_kernel<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction,defaults::WARPSIZE,elementsPerWarp>
-                     <<<blocks,blockSize>>>
+                     <<<blocks,blockSize,0,s>>>
                      (src,buckets,sizePower,maxoverflow,d_overflow,d_fill,len);
             cudaDeviceSynchronize();
          }
@@ -503,15 +511,16 @@ namespace Hashinator{
             size_t blocks,blockSize;
             launchParams(len,blocks,blockSize);
             retrieve_kernel<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction,defaults::WARPSIZE,elementsPerWarp>
-                     <<<blocks,blockSize>>>
+                     <<<blocks,blockSize,0,s>>>
                      (keys,vals,buckets,sizePower,maxoverflow);
             cudaDeviceSynchronize();
 
          }
 
          //Delete wrapper
-         static void remove(KEY_TYPE* keys,
+         static void erase(KEY_TYPE* keys,
                             hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                            size_t* d_tombstoneCounter,
                             int sizePower,
                             int maxoverflow,
                             size_t len)
@@ -520,8 +529,8 @@ namespace Hashinator{
             size_t blocks,blockSize;
             launchParams(len,blocks,blockSize);
             delete_kernel<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction,defaults::WARPSIZE,elementsPerWarp>
-                     <<<blocks,blockSize>>>
-                     (keys,buckets,sizePower,maxoverflow);
+                     <<<blocks,blockSize,0,s>>>
+                     (keys,buckets,d_tombstoneCounter,sizePower,maxoverflow);
             cudaDeviceSynchronize();
 
          }
