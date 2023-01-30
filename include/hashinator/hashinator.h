@@ -172,6 +172,14 @@ namespace Hashinator{
          }
          return;
       }
+      
+      __host__
+      void retrieve(KEY_TYPE* keys,VAL_TYPE* vals,size_t len){
+         buckets.optimizeGPU();
+         cudaDeviceSynchronize();
+         DeviceHasher::retrieve(keys,vals,buckets.data(),sizePower,maxBucketOverflow,len);
+         return;
+      }
 
       // Resize the table to fit more things. This is automatically invoked once
       // maxBucketOverflow has triggered. This can only be done on host (so far)

@@ -7,6 +7,11 @@
  *    --Hashinator::Hashers::reset_to_empty()
  *    --Hashinator::Hashers::insert
  *    --Hashinator::Hashers::insert_kernel()
+ *    --Hashinator::Hashers::retrieve_kernel()
+ *    --Hashinator::Hashers::delete_kernel()
+ *    --Hashinator::Hashers::insert()
+ *    --Hashinator::Hashers::retrieve()
+ *    --Hashinator::Hashers::remove()
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -347,7 +352,6 @@ namespace Hashinator{
          VAL_TYPE& candidateVal=vals[wid];
          const int bitMask = (1 <<(sizePower )) - 1; 
          const size_t hashIndex = HashFunction::_hash(candidateKey,sizePower);
-         const size_t optimalindex=(hashIndex) & bitMask;
 
          //Check for duplicates
          for(int i=0; i<maxoverflow; i+=VIRTUALWARP){
@@ -413,7 +417,6 @@ namespace Hashinator{
          KEY_TYPE& candidateKey=keys[wid];
          const int bitMask = (1 <<(sizePower )) - 1; 
          const size_t hashIndex = HashFunction::_hash(candidateKey,sizePower);
-         const size_t optimalindex=(hashIndex) & bitMask;
 
          //Check for duplicates
          for(int i=0; i<maxoverflow; i+=VIRTUALWARP){
