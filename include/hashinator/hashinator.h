@@ -110,7 +110,6 @@ namespace Hashinator{
          Hashers::reset_to_empty<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction><<<overflownElements.size(),defaults::MAX_BLOCKSIZE>>> (overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow,overflownElements.size());
          cudaDeviceSynchronize();
          DeviceHasher::insert(overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,overflownElements.size());
-         cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,0);
          cudaMemcpyAsync(&cpu_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,0);
          if (cpu_maxBucketOverflow>maxBucketOverflow){
             rehash(sizePower++);
