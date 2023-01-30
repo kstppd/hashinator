@@ -77,15 +77,20 @@ namespace Hashinator{
        *    d_fill       -> stores the device fill after inserting the elements
        *    len          -> number of elements to read from src
        * */
-      template<typename KEY_TYPE, typename VAL_TYPE,KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),class HashFunction=HashFunctions::Murmur<KEY_TYPE>,int WARPSIZE=32,int elementsPerWarp>
+      template<typename KEY_TYPE, 
+               typename VAL_TYPE,
+               KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
+               class HashFunction=HashFunctions::Murmur<KEY_TYPE>,
+               int WARPSIZE=32,
+               int elementsPerWarp>
       __global__ 
       void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src,
-                    hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
-                    int sizePower,
-                    int maxoverflow,
-                    int* d_overflow,
-                    size_t* d_fill,
-                    size_t len)
+                         hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                         int sizePower,
+                         int maxoverflow,
+                         int* d_overflow,
+                         size_t* d_fill,
+                         size_t len)
       {
          
          const int VIRTUALWARP=WARPSIZE/elementsPerWarp;
@@ -195,16 +200,21 @@ namespace Hashinator{
        *    d_fill       -> stores the device fill after inserting the elements
        *    len          -> number of elements to read from src
        * */
-      template<typename KEY_TYPE, typename VAL_TYPE,KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),class HashFunction=HashFunctions::Murmur<KEY_TYPE>,int WARPSIZE=32,int elementsPerWarp>
+      template<typename KEY_TYPE,
+               typename VAL_TYPE,
+               KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
+               class HashFunction=HashFunctions::Murmur<KEY_TYPE>,
+               int WARPSIZE=32,
+               int elementsPerWarp>
       __global__ 
       void insert_kernel(KEY_TYPE* keys,
-                     VAL_TYPE* vals,
-                     hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
-                     int sizePower,
-                     int maxoverflow,
-                     int* d_overflow,
-                     size_t* d_fill,
-                     size_t len)
+                         VAL_TYPE* vals,
+                         hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                         int sizePower,
+                         int maxoverflow,
+                         int* d_overflow,
+                         size_t* d_fill,
+                         size_t len)
       {
          
          const int VIRTUALWARP=WARPSIZE/elementsPerWarp;
@@ -297,28 +307,134 @@ namespace Hashinator{
       }
 
 
-      template<typename KEY_TYPE, typename VAL_TYPE,KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),class HashFunction=HashFunctions::Murmur<KEY_TYPE>,int WARPSIZE=32,int elementsPerWarp>
+      /*
+       * Similarly to the insert_kernel we examine elements in keys and return their value in vals,
+       * if the do exist in the hashmap. If the elements is not found and invalid key is returned;
+       * */
+      template<typename KEY_TYPE,
+               typename VAL_TYPE,
+               KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
+               class HashFunction=HashFunctions::Murmur<KEY_TYPE>,
+               int WARPSIZE=32,
+               int elementsPerWarp>
       __global__ 
       void retrieve_kernel(KEY_TYPE* keys,
-                     VAL_TYPE* vals,
-                     hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
-                     int sizePower,
-                     int maxoverflow,
-                     size_t len)
+                           VAL_TYPE* vals,
+                           hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                           int sizePower,
+                           int maxoverflow)
       {
+
+         const int VIRTUALWARP=WARPSIZE/elementsPerWarp;
+         const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
+         const size_t wid = tid/VIRTUALWARP;
+         const size_t w_tid=tid%VIRTUALWARP;
+         unsigned int subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
+         
+         auto getIntraWarpMask = [](unsigned int n ,unsigned int l ,unsigned int r)->unsigned int{
+            int num = ((1<<r)-1)^((1<<(l-1))-1);
+            return (n^num);
+         };
+
+         uint32_t submask;
+         if constexpr(elementsPerWarp==1){
+            //TODO mind AMD 64 thread wavefronts
+            submask=0xFFFFFFFF;
+         }else{
+            submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+         }
+         KEY_TYPE& candidateKey=keys[wid];
+         VAL_TYPE& candidateVal=vals[wid];
+         const int bitMask = (1 <<(sizePower )) - 1; 
+         const size_t hashIndex = HashFunction::_hash(candidateKey,sizePower);
+         const size_t optimalindex=(hashIndex) & bitMask;
+
+         //Check for duplicates
+         for(int i=0; i<maxoverflow; i+=VIRTUALWARP){
+            
+            //Get the position we should be looking into
+            size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
+            uint32_t maskExists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidateKey)&submask;
+            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            //If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
+            if (!maskExists && emptyFound){
+               return;
+            }
+            if (maskExists){
+               int winner =__ffs ( maskExists ) -1;
+               winner-=(subwarp_relative_index)*VIRTUALWARP;
+               if(w_tid==winner){
+                  atomicExch(&candidateVal,buckets[probingindex].second);
+               }
+               return;
+             }
+         }
+
       }
 
-      template<typename KEY_TYPE, typename VAL_TYPE,KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),class HashFunction=HashFunctions::Murmur<KEY_TYPE>,int WARPSIZE=32,int elementsPerWarp>
+
+      /*
+       * In a similar way to the insert and retrieve kernels we 
+       * delete keys in "keys" if they do exist in the hasmap.
+       * If the keys do not exist we do nothing.
+       * */
+      template<typename KEY_TYPE,
+               typename VAL_TYPE,
+               KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
+               KEY_TYPE TOMBSTONE=EMPTYBUCKET-1,
+               class HashFunction=HashFunctions::Murmur<KEY_TYPE>,
+               int WARPSIZE=32,
+               int elementsPerWarp>
       __global__ 
       void delete_kernel(KEY_TYPE* keys,
-                     VAL_TYPE* vals,
-                     hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
-                     int sizePower,
-                     int maxoverflow,
-                     int* d_overflow,
-                     size_t* d_fill,
-                     size_t len)
+                           hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                           int sizePower,
+                           int maxoverflow)
       {
+
+         const int VIRTUALWARP=WARPSIZE/elementsPerWarp;
+         const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
+         const size_t wid = tid/VIRTUALWARP;
+         const size_t w_tid=tid%VIRTUALWARP;
+         unsigned int subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
+         
+         auto getIntraWarpMask = [](unsigned int n ,unsigned int l ,unsigned int r)->unsigned int{
+            int num = ((1<<r)-1)^((1<<(l-1))-1);
+            return (n^num);
+         };
+
+         uint32_t submask;
+         if constexpr(elementsPerWarp==1){
+            //TODO mind AMD 64 thread wavefronts
+            submask=0xFFFFFFFF;
+         }else{
+            submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+         }
+         KEY_TYPE& candidateKey=keys[wid];
+         const int bitMask = (1 <<(sizePower )) - 1; 
+         const size_t hashIndex = HashFunction::_hash(candidateKey,sizePower);
+         const size_t optimalindex=(hashIndex) & bitMask;
+
+         //Check for duplicates
+         for(int i=0; i<maxoverflow; i+=VIRTUALWARP){
+            
+            //Get the position we should be looking into
+            size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
+            uint32_t maskExists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidateKey)&submask;
+            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            //If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
+            if (!maskExists && emptyFound){
+               return;
+            }
+            if (maskExists){
+               int winner =__ffs ( maskExists ) -1;
+               winner-=(subwarp_relative_index)*VIRTUALWARP;
+               if(w_tid==winner){
+                  atomicExch(&buckets[probingindex].second, TOMBSTONE);
+               }
+               return;
+             }
+         }
       }
 
 
@@ -335,6 +451,8 @@ namespace Hashinator{
       static_assert(elementsPerWarp>0 && elementsPerWarp<=WARP && "Device hasher cannot be instantiated");
 
       public:
+
+         //Overload with separate input for keys and values.
          static void insert(KEY_TYPE* keys,
                             VAL_TYPE* vals,
                             hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
@@ -351,7 +469,9 @@ namespace Hashinator{
                      (keys,vals,buckets,sizePower,maxoverflow,d_overflow,d_fill,len);
             cudaDeviceSynchronize();
          }
-
+         
+         //Overload with hash_pair<key,val> (k,v) inputs
+         //Used by the tombstone cleaning method.
          static void insert(hash_pair<KEY_TYPE, VAL_TYPE>* src,
                             hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
                             int sizePower,
@@ -367,6 +487,42 @@ namespace Hashinator{
                      (src,buckets,sizePower,maxoverflow,d_overflow,d_fill,len);
             cudaDeviceSynchronize();
          }
+
+         //Retrieve wrapper
+         static void retrieve(KEY_TYPE* keys,
+                              VAL_TYPE* vals,
+                              hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                              int sizePower,
+                              int maxoverflow,
+                              size_t len)
+         {
+
+            size_t blocks,blockSize;
+            launchParams(len,blocks,blockSize);
+            retrieve_kernel<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction,defaults::WARPSIZE,elementsPerWarp>
+                     <<<blocks,blockSize>>>
+                     (keys,vals,buckets,sizePower,maxoverflow);
+            cudaDeviceSynchronize();
+
+         }
+
+         //Delete wrapper
+         static void remove(KEY_TYPE* keys,
+                            hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                            int sizePower,
+                            int maxoverflow,
+                            size_t len)
+         {
+
+            size_t blocks,blockSize;
+            launchParams(len,blocks,blockSize);
+            delete_kernel<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction,defaults::WARPSIZE,elementsPerWarp>
+                     <<<blocks,blockSize>>>
+                     (keys,buckets,sizePower,maxoverflow);
+            cudaDeviceSynchronize();
+
+         }
+
 
       private:
          static void launchParams(size_t N,size_t& blocks,size_t& blockSize){
