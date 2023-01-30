@@ -51,7 +51,7 @@ bool recover_elements(const hashmap& hmap, keyval_type* keys, keyval_type* vals,
    return true;
 }
 
-bool test_hashmap_2(keyval_type power){
+bool test_hashmap_insertionDM(keyval_type power){
    size_t N = 1<<power;
    size_t blocksize=BLOCKSIZE;
    size_t blocks=2*N/blocksize;
@@ -72,17 +72,38 @@ bool test_hashmap_2(keyval_type power){
    cudaMemcpy(dvals,vals.data(),N*sizeof(keyval_type),cudaMemcpyHostToDevice);
 
    hashmap hmap;
-   hmap.insert(dkeys,dvals,N,power);
+   hmap.insert(dkeys,dvals,N); 
    assert(recover_elements(hmap,keys.data(),vals.data(),N) && "Hashmap is illformed!");
    cudaFree(dkeys);
    cudaFree(dvals);
    return true;
 }
 
-bool test_hashmap_1(keyval_type power){
+bool test_hashmap_retrievalUM(keyval_type power){
    size_t N = 1<<power;
-   size_t blocksize=BLOCKSIZE;
-   size_t blocks=2*N/blocksize;
+   vector keys(N);
+   vector vals(N);
+   vector vals2(N);
+   fill_input(keys.data(),vals.data(),N);
+   keys.optimizeGPU();
+   vals.optimizeGPU();
+   vals2.optimizeGPU();
+
+   hashmap hmap;
+   hmap.insert(keys.data(),vals.data(),N); 
+   assert(recover_elements(hmap,keys.data(),vals.data(),N) && "Hashmap is illformed!");
+   keys.optimizeGPU();
+   vals.optimizeGPU();
+   vals2.optimizeGPU();
+   cudaDeviceSynchronize();
+   hmap.retrieve(keys.data(),vals2.data(),N);
+   assert(recover_elements(hmap,keys.data(),vals2.data(),N) && "Hashmap is illformed!");
+   return true;
+}
+
+
+bool test_hashmap_insertionUM(keyval_type power){
+   size_t N = 1<<power;
    vector keys(N);
    vector vals(N);
    fill_input(keys.data(),vals.data(),N);
@@ -90,22 +111,47 @@ bool test_hashmap_1(keyval_type power){
    vals.optimizeGPU();
 
    hashmap hmap;
-   hmap.insert(keys.data(),vals.data(),N,power);
+   hmap.insert(keys.data(),vals.data(),N); 
    assert(recover_elements(hmap,keys.data(),vals.data(),N) && "Hashmap is illformed!");
+   
+   //std::cout<<hmap.load_factor()<<std::endl;
    return true;
 }
 
-TEST(HashmapUnitTets , Device_Insert){
-   int reps=5;
-   for (int power=24; power<25; ++power){
+TEST(HashmapUnitTets , Device_Insert_UM){
+   int reps=10;
+   for (int power=10; power<20; ++power){
       std::string name= "Power= "+std::to_string(power);
       for (int i =0; i< reps; i++){
-         bool retval = execute_and_time(name.c_str(),test_hashmap_2 ,power);
+         bool retval = execute_and_time(name.c_str(),test_hashmap_insertionUM,power );
+         //expect_true(retval);
+      }
+   }
+}
+
+
+TEST(HashmapUnitTets , Device_Insert_DM){
+   int reps=10;
+   for (int power=10; power<20; ++power){
+      std::string name= "Power= "+std::to_string(power);
+      for (int i =0; i< reps; i++){
+         bool retval = execute_and_time(name.c_str(),test_hashmap_insertionDM ,power);
          expect_true(retval);
       }
    }
 }
 
+
+TEST(HashmapUnitTets , Device_Retrieve_UM){
+   int reps=10;
+   for (int power=10; power<20; ++power){
+      std::string name= "Power= "+std::to_string(power);
+      for (int i =0; i< reps; i++){
+         bool retval = execute_and_time(name.c_str(),test_hashmap_retrievalUM ,power);
+         expect_true(retval);
+      }
+   }
+}
 
 int main(int argc, char* argv[]){
    //srand(time(NULL));
