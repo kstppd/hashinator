@@ -31,9 +31,9 @@
  * */
 #pragma once 
 #include "split_allocators.h"
-#define SPLIT_VOTING_MASK 0xFFFFFFFF //32-bit wide for cuda warps not sure what we do on AMD HW
-#define NUM_BANKS 32 //TODO depends on device
-#define LOG_NUM_BANKS 5
+#include "../common.h"
+#define NUM_BANKS HW_SM_BANKS //TODO depends on device
+#define LOG_NUM_BANKS HW_SM_BANKS_LOG
 #define CONFLICT_FREE_OFFSET(n) ((n) >> LOG_NUM_BANKS)
 
 namespace split{
@@ -144,7 +144,7 @@ namespace split{
       }
 
 
-      template <typename T,typename Rule,size_t BLOCKSIZE=1024, size_t WARP=32>
+      template <typename T,typename Rule,size_t BLOCKSIZE=HW_MAXBLOCKSIZE, size_t WARP=HW_WARPSIZE>
       __global__
       void split_compact(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* input,
                          split::SplitVector<uint32_t,split::split_unified_allocator<uint32_t>,split::split_unified_allocator<size_t>>* counts,
@@ -163,7 +163,7 @@ namespace split{
          const unsigned int warps_in_block = blockDim.x/WARP;
          const bool tres=rule(input->at(tid));
 
-         unsigned int  mask= __ballot_sync(SPLIT_VOTING_MASK,tres);
+         unsigned int  mask= __ballot_sync(HW_VOTING_MASK,tres);
          unsigned int n_neighbors= mask & ((1 << w_tid) - 1);
          unsigned int total_valid_in_warp	= __popc(mask);
          if (w_tid==0 ){
@@ -190,7 +190,7 @@ namespace split{
       }
 
 
-      template <typename T, size_t BLOCKSIZE=1024,size_t WARP=32>
+      template <typename T, size_t BLOCKSIZE=HW_MAXBLOCKSIZE,size_t WARP=HW_WARPSIZE>
       void split_prefix_scan(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
                              split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& output )
 
@@ -243,7 +243,7 @@ namespace split{
       }
 
       
-      template <typename T, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=32>
+      template <typename T, typename Rule,size_t BLOCKSIZE=HW_MAXBLOCKSIZE,size_t WARP=HW_WARPSIZE>
       void copy_if(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
                    split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& output,
                    Rule rule)
@@ -294,7 +294,7 @@ namespace split{
       }
 
       
-      template <typename T,typename Rule,size_t BLOCKSIZE=1024, size_t WARP=32>
+      template <typename T,typename Rule,size_t BLOCKSIZE=HW_MAXBLOCKSIZE, size_t WARP=HW_WARPSIZE>
       __global__
       void split_compact_raw(T* input, uint32_t* counts, uint32_t* offsets, T* output, Rule rule,const size_t size,size_t nBlocks,uint32_t* retval){
 
@@ -308,7 +308,7 @@ namespace split{
          const unsigned int warps_in_block = blockDim.x/WARP;
          const bool tres=rule(input[tid]);
 
-         unsigned int  mask= __ballot_sync(SPLIT_VOTING_MASK,tres);
+         unsigned int  mask= __ballot_sync(HW_VOTING_MASK,tres);
          unsigned int n_neighbors= mask & ((1 << w_tid) - 1);
          unsigned int total_valid_in_warp	= __popc(mask);
          if (w_tid==0 ){
@@ -387,7 +387,7 @@ namespace split{
       }
 
 
-      template <typename T, size_t BLOCKSIZE=1024,size_t WARP=32>
+      template <typename T, size_t BLOCKSIZE=HW_MAXBLOCKSIZE,size_t WARP=HW_WARPSIZE>
       void split_prefix_scan_raw(T* input, T* output ,Cuda_mempool& mPool, const size_t input_size){
 
          //Scan is performed in half Blocksizes
@@ -433,7 +433,7 @@ namespace split{
          }
       }
 
-      template <typename T, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=32>
+      template <typename T, typename Rule,size_t BLOCKSIZE=HW_MAXBLOCKSIZE,size_t WARP=HW_WARPSIZE>
       void copy_if_raw(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
                    split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& output,
                    Rule rule)

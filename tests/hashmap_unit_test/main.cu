@@ -67,10 +67,10 @@ __global__
 void gpu_delete_even(hashmap* hmap, hash_pair<val_type,val_type>*src,size_t N){
    size_t index = blockIdx.x * blockDim.x + threadIdx.x;
    if (index<N ){
-      auto kpos=hmap->find(src[index].first);
-      if (kpos==hmap->end()){assert(0 && "Catastrophic crash in deletion");}
+      auto kpos=hmap->device_find(src[index].first);
+      if (kpos==hmap->device_end()){assert(0 && "Catastrophic crash in deletion");}
       if (kpos->second %2==0 ){
-         hmap->erase(kpos);
+         hmap->device_erase(kpos);
       }
    }
    return;

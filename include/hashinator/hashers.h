@@ -30,6 +30,7 @@
 #pragma once
 #include "hashfunctions.h"
 #include "defaults.h"
+#include "../common.h"
 
 namespace Hashinator{
 
@@ -117,7 +118,7 @@ namespace Hashinator{
          uint32_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
-            submask=SPLIT_VOTING_MASK;
+            submask=HW_VOTING_MASK;
          }else{
             submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
@@ -132,8 +133,8 @@ namespace Hashinator{
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
             //If we encounter empty  break as the
-            uint32_t mask_already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidate.first)&submask;
-            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            uint32_t mask_already_exists = __ballot_sync(HW_VOTING_MASK,buckets[probingindex].first==candidate.first)&submask;
+            uint32_t emptyFound = __ballot_sync(HW_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
             //If we encountered empty and there is no duplicate in this probing
             //chain we are done.
             if (!mask_already_exists && emptyFound){
@@ -157,7 +158,7 @@ namespace Hashinator{
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
             //vote for available emptybuckets in warp region
-            uint32_t mask = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            uint32_t mask = __ballot_sync(HW_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
             while(mask){
                int winner =__ffs ( mask ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
@@ -244,7 +245,7 @@ namespace Hashinator{
          uint32_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
-            submask=SPLIT_VOTING_MASK;
+            submask=HW_VOTING_MASK;
          }else{
             submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
@@ -260,8 +261,8 @@ namespace Hashinator{
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
             //If we encounter empty  break as the
-            uint32_t mask_already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidateKey)&submask;
-            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            uint32_t mask_already_exists = __ballot_sync(HW_VOTING_MASK,buckets[probingindex].first==candidateKey)&submask;
+            uint32_t emptyFound = __ballot_sync(HW_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
             //If we encountered empty and there is no duplicate in this probing
             //chain we are done.
             if (!mask_already_exists && emptyFound){
@@ -285,7 +286,7 @@ namespace Hashinator{
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
             //vote for available emptybuckets in warp region
-            uint32_t mask = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            uint32_t mask = __ballot_sync(HW_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
             while(mask){
                int winner =__ffs ( mask ) -1;
                int sub_winner=winner-(subwarp_relative_index)*VIRTUALWARP;
@@ -349,7 +350,7 @@ namespace Hashinator{
          uint32_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
-            submask=SPLIT_VOTING_MASK;
+            submask=HW_VOTING_MASK;
          }else{
             submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
@@ -363,8 +364,8 @@ namespace Hashinator{
             
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
-            uint32_t maskExists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidateKey)&submask;
-            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            uint32_t maskExists = __ballot_sync(HW_VOTING_MASK,buckets[probingindex].first==candidateKey)&submask;
+            uint32_t emptyFound = __ballot_sync(HW_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
             //If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
             if (!maskExists && emptyFound){
                return;
@@ -416,7 +417,7 @@ namespace Hashinator{
          uint32_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
-            submask=SPLIT_VOTING_MASK;
+            submask=HW_VOTING_MASK;
          }else{
             submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
@@ -429,8 +430,8 @@ namespace Hashinator{
             
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
-            uint32_t maskExists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidateKey)&submask;
-            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            uint32_t maskExists = __ballot_sync(HW_VOTING_MASK,buckets[probingindex].first==candidateKey)&submask;
+            uint32_t emptyFound = __ballot_sync(HW_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
             //If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
             if (!maskExists && emptyFound){
                return;

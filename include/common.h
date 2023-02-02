@@ -9,4 +9,8 @@
 #define  DEVICE       
 #endif
 
-
+#define HW_MAXBLOCKSIZE 1024
+#define HW_WARPSIZE 32
+#define HW_SM_BANKS 32
+#define HW_SM_BANKS_LOG 5
+#define HW_VOTING_MASK 0xFFFFFFFF

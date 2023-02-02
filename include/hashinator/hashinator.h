@@ -31,6 +31,7 @@
 #include "defaults.h"
 #include "hashfunctions.h"
 #include "hashers.h"
+#include "../common.h"
 
 namespace Hashinator{
    template <typename KEY_TYPE, 
@@ -62,7 +63,7 @@ namespace Hashinator{
       
 
        // Wrapper over available hash functions 
-      __host__ __device__
+      HOST_DEVICE
       uint32_t hash(KEY_TYPE in) const {
           static_assert(std::is_arithmetic<KEY_TYPE>::value && sizeof(KEY_TYPE) <= sizeof(uint32_t));
           return HashFunction::_hash(in,sizePower);
@@ -70,7 +71,7 @@ namespace Hashinator{
       
       // Used by the constructors. Preallocates the device pointer and bookeepping info for later use on device. 
       // This helps in reducing the number of calls to cudaMalloc
-      __host__
+      HOST
       void preallocate_device_handles(){
          cudaMalloc((void **)&d_sizePower, sizeof(int));
          cudaMalloc((void **)&d_maxBucketOverflow, sizeof(int));
@@ -80,7 +81,7 @@ namespace Hashinator{
       }
 
       // Deallocates the bookeepping info and the device pointer
-      __host__
+      HOST
       void deallocate_device_handles(){
          cudaFree(device_map);
          cudaFree(d_sizePower);
@@ -92,7 +93,7 @@ namespace Hashinator{
 
       //Cleans all tombstones using splitvectors stream compcation and
       //the member Hasher
-      __host__
+      HOST
       void clean_tombstones(){
          //Reset the tomstone counter
          tombstoneCounter=0;
@@ -127,7 +128,7 @@ namespace Hashinator{
    
       explicit Overflown_Predicate(hash_pair<KEY_TYPE, VAL_TYPE>*ptr,int s):bck_ptr(ptr),currentSizePower(s){}
       Overflown_Predicate()=delete;
-         __host__ __device__
+         HOST_DEVICE
          inline bool operator()( hash_pair<T,U>& element)const{
             if (element.first==TOMBSTONE){element.first=EMPTYBUCKET;return false;}
             if (element.first==EMPTYBUCKET){return false;}
@@ -137,30 +138,30 @@ namespace Hashinator{
             return isOverflown;
          }
       };
-      __host__
+      HOST
       Hashmap()
           : sizePower(5), fill(0), buckets(1 << sizePower, hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())){
             preallocate_device_handles();
           };
 
-      __host__
+      HOST
       Hashmap(int sizepower)
           : sizePower(sizepower), fill(0), buckets(1 << sizepower, hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())){
             preallocate_device_handles();
           };
-      __host__
+      HOST
       Hashmap(const Hashmap<KEY_TYPE, VAL_TYPE>& other)
           : sizePower(other.sizePower), fill(other.fill), tombstoneCounter(other.tombstoneCounter) ,buckets(other.buckets){
             preallocate_device_handles();
           };
-      __host__
+      HOST
       ~Hashmap(){     
          deallocate_device_handles();
       };
 
 
       //Uses Hasher's insert_kernel to insert all elements
-      __host__
+      HOST
       void insert(KEY_TYPE* keys,VAL_TYPE* vals,size_t len,float targetLF=0.5){
          //Here we do some calculations to estimate how much if any we need to grow our buckets
          size_t neededPowerSize=std::ceil(std::log2((fill+len)*(1.0/targetLF)));
@@ -181,7 +182,7 @@ namespace Hashinator{
       }
       
       //Uses Hasher's retrieve_kernel to read all elements
-      __host__
+      HOST
       void retrieve(KEY_TYPE* keys,VAL_TYPE* vals,size_t len){
          buckets.optimizeGPU();
          DeviceHasher::retrieve(keys,vals,buckets.data(),sizePower,maxBucketOverflow,len);
@@ -189,7 +190,7 @@ namespace Hashinator{
       }
 
       //Uses Hasher's erase_kernel to delete all elements
-      __host__
+      HOST
       void erase(KEY_TYPE* keys,VAL_TYPE* vals,size_t len){
          cudaMemsetAsync(d_tombstoneCounter, 0, sizeof(size_t)); //since tombstones do not exist on host code
          buckets.optimizeGPU();
@@ -203,7 +204,7 @@ namespace Hashinator{
 
       // Resize the table to fit more things. This is automatically invoked once
       // maxBucketOverflow has triggered. This can only be done on host (so far)
-      __host__
+      HOST
       void rehash(int newSizePower) {
          if (newSizePower > 32) {
             throw std::out_of_range("Hashmap ran into rehashing catastrophe and exceeded 32bit buckets.");
@@ -245,7 +246,7 @@ namespace Hashinator{
       }
 
       // Element access (by reference). Nonexistent elements get created.
-      __host__
+      HOST
       VAL_TYPE& _at(const KEY_TYPE& key) {
          int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
          uint32_t hashIndex = hash(key);
@@ -270,7 +271,7 @@ namespace Hashinator{
          return at(key); // Recursive tail call to try again with larger table.
       }
 
-      __host__
+      HOST
       const VAL_TYPE& _at(const KEY_TYPE& key) const {
          int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
          uint32_t hashIndex = hash(key);
@@ -296,18 +297,18 @@ namespace Hashinator{
       //---------------------------------------
 
       // For STL compatibility: size(), bucket_count(), count(KEY_TYPE), clear()
-      __host__
+      HOST
       size_t size() const { return fill; }
 
-      __host__ __device__
+      HOST_DEVICE
       size_t bucket_count() const {
          return buckets.size();
       }
       
-      __host__
+      HOST
       float load_factor() const {return (float)size()/bucket_count();}
 
-      __host__
+      HOST
       size_t count(const KEY_TYPE& key) const {
          if (find(key) != end()) {
             return 1;
@@ -316,21 +317,21 @@ namespace Hashinator{
          }
       }
 
-      __host__
+      HOST
       void clear() {
          buckets = split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>(1 << sizePower, {EMPTYBUCKET, VAL_TYPE()});
          fill = 0;
       }
 
       //Try to grow our buckets until we achieve a targetLF load factor
-      __host__
+      HOST
       void resize_to_lf(float targetLF=0.5){
          while (load_factor() > targetLF){
             rehash(sizePower+1);
          }
       }
 
-      __host__
+      HOST
       void resize(int newSizePower){
          rehash(newSizePower);     
       }
@@ -341,7 +342,7 @@ namespace Hashinator{
        * The pointer is internally cleaned up by the destructors, however the user **must**
        * call download() after usage on device.
        */
-      __host__
+      HOST
       Hashmap* upload(cudaStream_t stream = 0 ){
          cpu_maxBucketOverflow=maxBucketOverflow;
          this->buckets.optimizeGPU(stream); //already async so can be overlapped if used with streams
@@ -355,7 +356,7 @@ namespace Hashinator{
 
       //Just return the device pointer. Upload should be called fist 
       //othewise map bookeepping info will not be updated on device.
-      __host__
+      HOST
       Hashmap* get_device_pointer(){
          return device_map;
       }
@@ -367,7 +368,7 @@ namespace Hashinator{
        *  • If the hashmap has overflown on device it will try
        *  • If there are Tombstones then those are removed
        * */ 
-      __host__
+      HOST
       void download(cudaStream_t stream = 0){
          //Copy over fill as it might have changed
          cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,stream);
@@ -385,7 +386,7 @@ namespace Hashinator{
          }
       }
 
-      __host__
+      HOST
          void print_pair(const hash_pair<KEY_TYPE, VAL_TYPE>& i)const {
             if (i.first==TOMBSTONE){
                std::cout<<"[╀,-,-] ";
@@ -396,7 +397,7 @@ namespace Hashinator{
                printf("[%d,%d] ",i.first,i.second);
             }
          }
-      __host__
+      HOST
       void dump_buckets()const {
          std::cout<<fill<<" "<<load_factor()<<std::endl;
          std::cout<<"\n";
@@ -406,12 +407,12 @@ namespace Hashinator{
          std::cout<<std::endl;
 
       }
-       __host__
+       HOST
       size_t tombstone_count()const {
          return tombstoneCounter;
       }
 
-      __host__
+      HOST
       void swap(Hashmap<KEY_TYPE, VAL_TYPE>& other) noexcept{
          buckets.swap(other.buckets);
          int tempSizePower = sizePower;
@@ -429,32 +430,32 @@ namespace Hashinator{
 
 
       //Read only  access to reference. 
-      __host__
+      HOST
       const VAL_TYPE& at(const KEY_TYPE& key) const {
          return _at(key);
       }
 
       //See _at(key)
-      __host__
+      HOST
       VAL_TYPE& at(const KEY_TYPE& key) {
          return _at(key);
       }
 
       // Typical array-like access with [] operator
-      __host__
+      HOST
       VAL_TYPE& operator[](const KEY_TYPE& key) {
          return at(key); 
       }
 
 
-      __device__
+      DEVICE
       void set_element(const KEY_TYPE& key,VAL_TYPE val){
          size_t thread_overflowLookup;
          insert_element(key,val,thread_overflowLookup);
          atomicMax(d_maxBucketOverflow,thread_overflowLookup);
       }
 
-      __device__
+      DEVICE
       const VAL_TYPE& read_element(const KEY_TYPE& key) const {
          int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
          uint32_t hashIndex = hash(key);
@@ -489,7 +490,6 @@ namespace Hashinator{
                                 \/    \/   |_| |_|\___/|____/ |_|    \____\___/|____/|_____|   \/    \/  
                                                     
    */
-#ifndef __CUDA_ARCH__
       
       // Iterator type. Iterates through all non-empty buckets.
       class iterator : public std::iterator<std::random_access_iterator_tag, hash_pair<KEY_TYPE, VAL_TYPE>> {
@@ -497,10 +497,10 @@ namespace Hashinator{
          size_t index;
 
       public:
-         __host__
+         HOST
          iterator(Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index) : hashtable(&hashtable), index(index) {}
 
-         __host__
+         HOST
          iterator& operator++() {
             index++;
             while(index < hashtable->buckets.size()){
@@ -512,25 +512,25 @@ namespace Hashinator{
             return *this;
          }
          
-         __host__
+         HOST
          iterator operator++(int) { // Postfix version
             iterator temp = *this;
             ++(*this);
             return temp;
          }
-         __host__
+         HOST
          bool operator==(iterator other) const {
             return &hashtable->buckets[index] == &other.hashtable->buckets[other.index];
          }
-         __host__
+         HOST
          bool operator!=(iterator other) const {
             return &hashtable->buckets[index] != &other.hashtable->buckets[other.index];
          }
-         __host__
+         HOST
          hash_pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
-         __host__
+         HOST
          hash_pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
-         __host__
+         HOST
          size_t getIndex() { return index; }
       };
 
@@ -540,10 +540,10 @@ namespace Hashinator{
          size_t index;
 
       public:
-         __host__
+         HOST
          explicit const_iterator(const Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index)
              : hashtable(&hashtable), index(index) {}
-         __host__
+         HOST
          const_iterator& operator++() {
             index++;
             while(index < hashtable->buckets.size()){
@@ -554,30 +554,30 @@ namespace Hashinator{
             }
             return *this;
          }
-         __host__
+         HOST
          const_iterator operator++(int) { // Postfix version
             const_iterator temp = *this;
             ++(*this);
             return temp;
          }
-         __host__
+         HOST
          bool operator==(const_iterator other) const {
             return &hashtable->buckets[index] == &other.hashtable->buckets[other.index];
          }
-         __host__
+         HOST
          bool operator!=(const_iterator other) const {
             return &hashtable->buckets[index] != &other.hashtable->buckets[other.index];
          }
-         __host__
+         HOST
          const hash_pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
-         __host__
+         HOST
          const hash_pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
-         __host__
+         HOST
          size_t getIndex() { return index; }
       };
 
       // Element access by iterator
-      __host__
+      HOST
       const const_iterator find(KEY_TYPE key) const {
          int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
          uint32_t hashIndex = hash(key);
@@ -600,7 +600,7 @@ namespace Hashinator{
          return end();
       }
 
-      __host__
+      HOST
       iterator find(KEY_TYPE key) {
          int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
          uint32_t hashIndex = hash(key);
@@ -623,7 +623,7 @@ namespace Hashinator{
          return end();
       }
       
-      __host__
+      HOST
       iterator begin() {
          for (size_t i = 0; i < buckets.size(); i++) {
             if (buckets[i].first != EMPTYBUCKET) {
@@ -633,7 +633,7 @@ namespace Hashinator{
          return end();
       }
 
-      __host__
+      HOST
       const_iterator begin() const {
          for (size_t i = 0; i < buckets.size(); i++) {
             if (buckets[i].first != EMPTYBUCKET) {
@@ -643,14 +643,14 @@ namespace Hashinator{
          return end();
       }
 
-      __host__
+      HOST
       iterator end() { return iterator(*this, buckets.size()); }
 
-      __host__
+      HOST
       const_iterator end() const { return const_iterator(*this, buckets.size()); }
 
       // Remove one element from the hash table.
-      __host__
+      HOST
       iterator erase(iterator keyPos) {
          // Due to overflowing buckets, this might require moving quite a bit of stuff around.
          size_t index = keyPos.getIndex();
@@ -692,7 +692,7 @@ namespace Hashinator{
          return keyPos;
       }
 
-      __host__
+      HOST
       hash_pair<iterator, bool> insert(hash_pair<KEY_TYPE, VAL_TYPE> newEntry) {
          bool found = find(newEntry.first) != end();
          if (!found) {
@@ -701,7 +701,7 @@ namespace Hashinator{
          return hash_pair<iterator, bool>(find(newEntry.first), !found);
       }
 
-      __host__
+      HOST
       size_t erase(const KEY_TYPE& key) {
          iterator element = find(key);
          if(element == end()) {
@@ -712,7 +712,7 @@ namespace Hashinator{
          }
       }
       
-#else
+#ifdef __NVCC__
 
    /**
                                             ____  _______     _____ ____ _____    ____ ___  ____  _____ 
@@ -724,19 +724,19 @@ namespace Hashinator{
 
 
       // Device Iterator type. Iterates through all non-empty buckets.
-      class iterator  {
+      class device_iterator  {
       private:
          size_t index;
          Hashmap<KEY_TYPE, VAL_TYPE>* hashtable;
       public:
-         __device__
-         iterator(Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index) : hashtable(&hashtable), index(index) {}
+         DEVICE
+         device_iterator(Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index) : hashtable(&hashtable), index(index) {}
          
-         __device__
+         DEVICE
          size_t getIndex() { return index; }
         
-         __device__
-         iterator& operator++() {
+         DEVICE
+         device_iterator& operator++() {
             index++;
             while(index < hashtable->buckets.size()){
                if (hashtable->buckets[index].first != EMPTYBUCKET&&
@@ -748,43 +748,43 @@ namespace Hashinator{
             return *this;
          }
          
-         __device__
-         iterator operator++(int){
-            iterator temp = *this;
+         DEVICE
+         device_iterator operator++(int){
+            device_iterator temp = *this;
             ++(*this);
             return temp;
          }
          
-         __device__
-         bool operator==(iterator other) const {
+         DEVICE
+         bool operator==(device_iterator other) const {
             return &hashtable->buckets[index] == &other.hashtable->buckets[other.index];
          }
-         __device__
-         bool operator!=(iterator other) const {
+         DEVICE
+         bool operator!=(device_iterator other) const {
             return &hashtable->buckets[index] != &other.hashtable->buckets[other.index];
          }
          
-         __device__
+         DEVICE
          hash_pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
-         __device__
+         DEVICE
          hash_pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
 
       };
 
 
-      class const_iterator  {
+      class const_device_iterator  {
       private:
          size_t index;
          const Hashmap<KEY_TYPE, VAL_TYPE>* hashtable;
       public:
-         __device__
-         explicit const_iterator(const Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index) : hashtable(&hashtable), index(index) {}
+         DEVICE
+         explicit const_device_iterator(const Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index) : hashtable(&hashtable), index(index) {}
          
-         __device__
+         DEVICE
          size_t getIndex() { return index; }
         
-         __device__
-         const_iterator& operator++() {
+         DEVICE
+         const_device_iterator& operator++() {
             index++;
             while(index < hashtable->buckets.size()){
                if (hashtable->buckets[index].first != EMPTYBUCKET &&
@@ -796,32 +796,32 @@ namespace Hashinator{
             return *this;
          }
          
-         __device__
-         const_iterator operator++(int){
-            const_iterator temp = *this;
+         DEVICE
+         const_device_iterator operator++(int){
+            const_device_iterator temp = *this;
             ++(*this);
             return temp;
          }
          
-         __device__
-         bool operator==(const_iterator other) const {
+         DEVICE
+         bool operator==(const_device_iterator other) const {
             return &hashtable->buckets[index] == &other.hashtable->buckets[other.index];
          }
-         __device__
-         bool operator!=(const_iterator other) const {
+         DEVICE
+         bool operator!=(const_device_iterator other) const {
             return &hashtable->buckets[index] != &other.hashtable->buckets[other.index];
          }
          
-         __device__
+         DEVICE
          const hash_pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
-         __device__
+         DEVICE
          const hash_pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
       };
 
 
       // Element access by iterator
-      __device__ 
-      iterator find(KEY_TYPE key) {
+      DEVICE
+      device_iterator device_find(KEY_TYPE key) {
          int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
          uint32_t hashIndex = hash(key);
 
@@ -833,21 +833,21 @@ namespace Hashinator{
 
             if (candidate.first == key) {
                // Found a match, return that
-               return iterator(*this, (hashIndex + i) & bitMask);
+               return device_iterator(*this, (hashIndex + i) & bitMask);
             }
 
             if (candidate.first == EMPTYBUCKET) {
                // Found an empty bucket. Return empty.
-               return end();
+               return device_end();
             }
          }
 
          // Not found
-         return end();
+         return device_end();
       }
 
-      __device__ 
-      const const_iterator find(KEY_TYPE key)const {
+      DEVICE
+      const const_device_iterator device_find(KEY_TYPE key)const {
          int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
          uint32_t hashIndex = hash(key);
 
@@ -859,51 +859,51 @@ namespace Hashinator{
 
             if (candidate.first == key) {
                // Found a match, return that
-               return const_iterator(*this, (hashIndex + i) & bitMask);
+               return const_device_iterator(*this, (hashIndex + i) & bitMask);
             }
 
             if (candidate.first == EMPTYBUCKET) {
                // Found an empty bucket. Return empty.
-               return end();
+               return device_end();
             }
          }
 
          // Not found
-         return end();
+         return device_end();
       }
 
 
-      __device__
-      iterator end() { return iterator(*this, buckets.size()); }
+      DEVICE
+      device_iterator device_end() { return device_iterator(*this, buckets.size()); }
 
-      __device__
-      const_iterator end()const  { return const_iterator(*this, buckets.size()); }
+      DEVICE
+      const_device_iterator device_end()const  { return const_iterator(*this, buckets.size()); }
 
-      __device__
-      iterator begin() {
+      DEVICE
+      device_iterator device_begin() {
          for (size_t i = 0; i < buckets.size(); i++) {
             if (buckets[i].first != EMPTYBUCKET) {
                return iterator(*this, i);
             }
          }
-         return end();
+         return device_end();
       }
 
 
-      __device__
-      size_t erase(const KEY_TYPE& key) {
-         iterator element = find(key);
-         if(element == end()) {
+      DEVICE
+      size_t device_erase(const KEY_TYPE& key) {
+         device_iterator element = device_find(key);
+         if(element == device_end()) {
             return 0;
          } else {
-            erase(element);
+            device_erase(element);
             return 1;
          }
       }
        
       //Remove with tombstones on device
-      __device__
-      iterator erase(iterator keyPos){
+      DEVICE
+      device_iterator device_erase(device_iterator keyPos){
 
          //Get the index of this entry
          size_t index = keyPos.getIndex();
@@ -924,7 +924,7 @@ namespace Hashinator{
       /**Device code for inserting elements. Nonexistent elements get created.
          Tombstones are accounted for.
        */
-      __device__
+      DEVICE
       void insert_element(const KEY_TYPE& key,VAL_TYPE value, size_t &thread_overflowLookup) {
          int bitMask = (1 <<(*d_sizePower )) - 1; // For efficient modulo of the array size
          uint32_t hashIndex = hash(key);
@@ -976,13 +976,13 @@ namespace Hashinator{
          assert(false && "Hashmap completely overflown");
       }
 
-      __device__
-      hash_pair<iterator, bool> insert(hash_pair<KEY_TYPE, VAL_TYPE> newEntry) {
+      DEVICE
+      hash_pair<device_iterator, bool> device_insert(hash_pair<KEY_TYPE, VAL_TYPE> newEntry) {
          bool found = find(newEntry.first) != end();
          if (!found) {
             set_element(newEntry.first,newEntry.second);
          }
-         return hash_pair<iterator, bool>(find(newEntry.first), !found);
+         return hash_pair<device_iterator, bool>(find(newEntry.first), !found);
       }
 
 #endif

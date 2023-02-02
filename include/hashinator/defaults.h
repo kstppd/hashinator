@@ -19,11 +19,12 @@
  * */
 #pragma once
 #include "hashfunctions.h"
+#include "../common.h"
 
 namespace Hashinator{
    namespace defaults{
-      constexpr int WARPSIZE = 32;
-      constexpr int MAX_BLOCKSIZE = 1024;
+      constexpr int WARPSIZE = HW_WARPSIZE;
+      constexpr int MAX_BLOCKSIZE = HW_MAXBLOCKSIZE;
       constexpr int BUCKET_OVERFLOW = 32;
       constexpr int elementsPerWarp =  1;
       template <typename T >
