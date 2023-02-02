@@ -41,25 +41,25 @@ bool recover_elements(const hashmap& hmap, vector& src){
 }
 
 
-void hashmap_benchmark()
+void hashmap_benchmark(int power)
 {
-   int power=24;
    size_t N = 1<<power;
    vector src(N);
    create_input(src);
-   src.optimizeGPU();
    hashmap hmap;
-   for (int i=0; i<5; ++i){
-      hmap.insert(src.data(),src.size(),power);
+   for (int i=0; i<20; ++i){
+      src.optimizeGPU();
+      hmap.insert(src.data(),src.size());
+      bool success=recover_elements(hmap,src);
+      if (!success){assert(false && "Map is illformed");}
       std::cout<<hmap.load_factor()<<std::endl;
       hmap.clear();
    }
 }
 
 
-void hashmap_benchmark_lf()
+void hashmap_benchmark_lf(int power)
 {
-   int power=24;
    int step=1<<20;
    hashmap hmap;
    size_t N = 1<<power;
@@ -68,7 +68,7 @@ void hashmap_benchmark_lf()
    do{
       hmap.clear();
       src.optimizeGPU();
-      hmap.insert(src.data(),src.size(),power);
+      hmap.insert(src.data(),src.size());
       bool success=recover_elements(hmap,src);
       if (!success){assert(false && "Map is illformed");}
       std::cout<<"Load factor= "<<hmap.load_factor()<<std::endl;
@@ -79,8 +79,10 @@ void hashmap_benchmark_lf()
 
 
 
-int main()
+int main(int argc, char** argv)
 {
-   hashmap_benchmark_lf();
+   if (argc<2){return 1;}
+   int N =  atoi(argv[1]);
+   hashmap_benchmark(N);
    return 0;
 }

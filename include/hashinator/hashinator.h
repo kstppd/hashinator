@@ -180,6 +180,27 @@ namespace Hashinator{
          }
          return;
       }
+
+      //Uses Hasher's insert_kernel to insert all elements
+      HOST
+      void insert(hash_pair<KEY_TYPE,VAL_TYPE>*src,size_t len,float targetLF=0.5){
+         //Here we do some calculations to estimate how much if any we need to grow our buckets
+         size_t neededPowerSize=std::ceil(std::log2((fill+len)*(1.0/targetLF)));
+         if (neededPowerSize>sizePower){
+            resize(neededPowerSize);
+         }
+         buckets.optimizeGPU();
+         cpu_maxBucketOverflow=maxBucketOverflow;
+         cudaMemcpy(d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice);
+         cudaMemcpy(d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice);
+         DeviceHasher::insert(src,buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,len);
+         cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,0);
+         cudaMemcpyAsync(&cpu_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,0);
+         if (cpu_maxBucketOverflow>maxBucketOverflow){
+            rehash(sizePower++);
+         }
+         return;
+      }
       
       //Uses Hasher's retrieve_kernel to read all elements
       HOST
