@@ -22,10 +22,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  * */
 #pragma once
-#include <iostream>
 #include <cuda_runtime_api.h>
 #include "split_allocators.h"
 #include <cuda.h>
+#include "../common.h"
+#include <iostream>
 #include <cassert>
 #include <cstring>
 #include <stdlib.h>
@@ -61,7 +62,7 @@ namespace split{
          }
 
          /*Internal range check for use in .at()*/
-         __host__ __device__ void _rangeCheck(size_t index){
+         HOST_DEVICE void _rangeCheck(size_t index){
             if (index>=size()){printf("Tried indexing %d/%d\n",(int)index,(int)size());}
             assert(index<size() &&  "out of range ");
          }
@@ -126,22 +127,22 @@ namespace split{
           * */
 
          /*Constructors*/
-         __host__ explicit   SplitVector(){
+         HOST explicit   SplitVector(){
             this->_allocate(0); //seems counter-intuitive based on stl but it is not!
          }
 
-         __host__ explicit   SplitVector(size_t size){
+         HOST explicit   SplitVector(size_t size){
                this->_allocate(size);
          }
 
-         __host__ explicit  SplitVector(size_t size, const T &val){
+         HOST explicit  SplitVector(size_t size, const T &val){
                this->_allocate(size);
                for (size_t i=0; i<size; i++){
                   _data[i]=val;
                }
             }
 
-         __host__ explicit SplitVector(const SplitVector<T,Allocator,Meta_Allocator> &other){
+         HOST explicit SplitVector(const SplitVector<T,Allocator,Meta_Allocator> &other){
                const size_t size_to_allocate = other.size();
                this->_allocate(size_to_allocate);
                for (size_t i=0; i<size_to_allocate; i++){
@@ -149,14 +150,14 @@ namespace split{
                }
             }
          
-         __host__ SplitVector(SplitVector<T,Allocator,Meta_Allocator> &&other)noexcept{
+         HOST SplitVector(SplitVector<T,Allocator,Meta_Allocator> &&other)noexcept{
                const size_t size_to_allocate = other.size();
                this->_allocate(size_to_allocate);
                std::move(other.begin().data(), other.end().data(), _data);
                other.clear();
             }
 
-         __host__ explicit SplitVector(std::initializer_list<T> init_list){
+         HOST explicit SplitVector(std::initializer_list<T> init_list){
                this->_allocate(init_list.size());
                for (size_t i =0 ; i< size();i++){
                   _data[i]=init_list.begin()[i];
@@ -164,13 +165,13 @@ namespace split{
             }
     
          //Destructor
-         __host__ ~SplitVector(){
+         HOST ~SplitVector(){
             _deallocate();
          }
 
          
          /*Custom Assignment operator*/
-         __host__  SplitVector<T,Allocator,Meta_Allocator>& operator=(const SplitVector<T,Allocator,Meta_Allocator>& other){
+         HOST  SplitVector<T,Allocator,Meta_Allocator>& operator=(const SplitVector<T,Allocator,Meta_Allocator>& other){
             //Match other's size prior to copying
             resize(other.size());
             for (size_t i=0; i< other.size(); i++){
@@ -179,7 +180,7 @@ namespace split{
             return *this;
          }
 
-         __host__  SplitVector<T,Allocator,Meta_Allocator>& operator=(SplitVector<T,Allocator,Meta_Allocator>&& other)noexcept{
+         HOST  SplitVector<T,Allocator,Meta_Allocator>& operator=(SplitVector<T,Allocator,Meta_Allocator>&& other)noexcept{
             if (this==&other){return *this;}
             resize(other.size());
             std::move(other.begin().data(), other.end().data(), _data);
@@ -189,7 +190,7 @@ namespace split{
 
          //Method that return a pointer which can be passed to GPU kernels
          //Has to be cudaFree'd after use otherwise memleak (small one but still)!
-         __host__
+         HOST
          SplitVector<T,Allocator,Meta_Allocator>* upload(cudaStream_t stream = 0 ){
             SplitVector* d_vec;
             optimizeGPU(stream);
@@ -199,7 +200,7 @@ namespace split{
          }
 
          /*Manually prefetch data on Device*/
-         __host__ void optimizeGPU(cudaStream_t stream = 0){
+         HOST void optimizeGPU(cudaStream_t stream = 0){
             int device;
             cudaGetDevice(&device);
             CheckErrors("Prefetch GPU-Device-ID");
@@ -208,7 +209,7 @@ namespace split{
          }
 
          /*Manually prefetch data on Host*/
-         __host__ void optimizeCPU(cudaStream_t stream = 0){
+         HOST void optimizeCPU(cudaStream_t stream = 0){
             cudaMemPrefetchAsync(_data ,capacity()*sizeof(T),cudaCpuDeviceId,stream);
             CheckErrors("Prefetch CPU");
          }
@@ -232,39 +233,39 @@ namespace split{
 
          /************STL compatibility***************/
          /*Returns number of elements in this container*/
-         __host__ __device__ const size_t& size() const{
+         HOST_DEVICE const size_t& size() const{
             return *_size;
          }
 
          /*Bracket accessor - no bounds check*/
-         __host__ __device__ T& operator [](size_t index){
+         HOST_DEVICE T& operator [](size_t index){
                return _data[index];
          } 
                   
          /*Const Bracket accessor - no bounds check*/
-         __host__ __device__ const T& operator [](size_t index)const{
+         HOST_DEVICE const T& operator [](size_t index)const{
                return _data[index];
          } 
 
          /*at accesor with bounds check*/
-         __host__ __device__ T& at(size_t index){
+         HOST_DEVICE T& at(size_t index){
             _rangeCheck(index);
             return _data[index];
          }
          
          /*const at accesor with bounds check*/
-         __host__ __device__ const T& at(size_t index)const{
+         HOST_DEVICE const T& at(size_t index)const{
             _rangeCheck(index);
             return _data[index];
          }
 
          /*Return a raw pointer to our data similar to stl vector*/
-         __host__ __device__ T* data(){
+         HOST_DEVICE T* data(){
             return &(_data[0]);
          }
 
          /*Return a raw pointer to our data similar to stl vector*/
-         __host__ __device__ const T* data() const {
+         HOST_DEVICE const T* data() const {
             return &(_data[0]);
          }
 
@@ -272,7 +273,7 @@ namespace split{
 
          /*Reallocates data to a bigeer chunk of memory. At some point
           * this should be udpated to use move semantics*/
-         __host__ void reallocate(size_t requested_space){
+         HOST void reallocate(size_t requested_space){
             T* _new_data;
             _new_data=_allocate_and_construct(requested_space,T());
             if (_new_data==nullptr){
@@ -304,7 +305,7 @@ namespace split{
           *will be invalidated after a call.
           */
 
-         __host__
+         HOST
          void reserve(size_t requested_space){
             size_t current_space=*_capacity;
             //Vector was default initialized
@@ -330,7 +331,7 @@ namespace split{
             Memory location will change so any old pointers/iterators
             will be invalid from now on.
          */
-         __host__
+         HOST
          void resize(size_t newSize){
             //Let's reserve some space and change our size
             if (newSize<=size()){return;}
@@ -338,12 +339,12 @@ namespace split{
             *_size  =newSize; 
          }
 
-         __host__
+         HOST
          void grow(){
             reserve(capacity()+1);
          }
  
-         __host__
+         HOST
          void shrink_to_fit(){
             size_t curr_cap =*_capacity;
             size_t curr_size=*_size;
@@ -357,7 +358,7 @@ namespace split{
          }
          
          /*Removes the last element of the vector*/
-         __host__ __device__
+         HOST_DEVICE
          void pop_back(){
             if (size()>0){
                remove_from_back(1);
@@ -367,7 +368,7 @@ namespace split{
 
          //Removes n elements from the back of the vector\
          //and properly handles object destruction
-         __host__ __device__
+         HOST_DEVICE
         void remove_from_back(size_t n){
           const size_t end = size() - n;
           for (auto i = size(); i > end;) {
@@ -376,7 +377,7 @@ namespace split{
           *_size = end;
         }
 
-         __host__
+         HOST
          void clear(){
              for (size_t i = 0; i < size();i++) {
                _data[i].~T();
@@ -385,24 +386,24 @@ namespace split{
             return;
          }
 
-         __host__ __device__
+         HOST_DEVICE
          size_t capacity() const {
             return *_capacity;
          }
 
-         __host__ __device__
+         HOST_DEVICE
          T& back(){ return _data[*_size-1]; }
 
-         __host__ __device__
+         HOST_DEVICE
          const T& back() const{return _data[*_size-1];}
          
-         __host__ __device__
+         HOST_DEVICE
          T& front(){return _data[0];}
          
-         __host__ __device__
+         HOST_DEVICE
          const T& front() const{ return _data[0]; }
 
-         __host__ __device__ 
+         HOST_DEVICE 
          bool empty() const{
             return  size()==0;
          }
@@ -416,7 +417,7 @@ namespace split{
             will be invalid from now on.
             Not thread safe
          */      
-         __host__   
+         HOST   
          void push_back(const T& val){
             // If we have no allocated memory because the default ctor was used then 
             // allocate one element, set it and return 
@@ -429,7 +430,7 @@ namespace split{
             return;
          }
          
-         __host__   
+         HOST   
          void push_back(const T&& val)noexcept{
             // If we have no allocated memory because the default ctor was used then 
             // allocate one element, set it and return 
@@ -444,7 +445,7 @@ namespace split{
 
          #else         
 
-         __device__ 
+         DEVICE
          void push_back(const T& val){
             //We need at least capacity=size+1 otherwise this 
             //pushback cannot be done
@@ -455,7 +456,7 @@ namespace split{
             atomicCAS(&(_data[old]), _data[old],val);
          }
 
-         __device__ 
+         DEVICE 
          void push_back(const T&& val)noexcept{
             //We need at least capacity=size+1 otherwise this 
             //pushback cannot be done
@@ -483,34 +484,34 @@ namespace split{
             using reference = T&;
 
             //iterator(){}
-            __host__ __device__
+            HOST_DEVICE
             iterator(pointer data) : _data(data) {}
 
-            __host__ __device__
+            HOST_DEVICE
             pointer data() { return _data; }
-            __host__ __device__
+            HOST_DEVICE
             pointer operator->() { return _data; }
-            __host__ __device__
+            HOST_DEVICE
             reference operator*() { return *_data; }
 
-            __host__ __device__
+            HOST_DEVICE
             bool operator==(const iterator& other)const{
               return _data == other._data;
             }
-            __host__ __device__
+            HOST_DEVICE
             bool operator!=(const iterator& other)const {
               return _data != other._data;
             }
-            __host__ __device__
+            HOST_DEVICE
             iterator& operator++(){
               _data += 1;
               return *this;
             }
-            __host__ __device__
+            HOST_DEVICE
             iterator operator++(int){
               return iterator(_data + 1);
             }
-            __host__ __device__
+            HOST_DEVICE
             iterator operator--(int){
               return iterator(_data - 1);
             }
@@ -529,59 +530,59 @@ namespace split{
             using pointer = const T*;
             using reference = T&;
 
-            __host__ __device__
+            HOST_DEVICE
             const_iterator(pointer data) : _data(data) {}
 
-            __host__ __device__
+            HOST_DEVICE
             pointer data()const { return _data; }
-            __host__ __device__
+            HOST_DEVICE
             pointer operator->()const  { return _data; }
-            __host__ __device__
+            HOST_DEVICE
             reference operator*()const  { return *_data; }
 
-            __host__ __device__
+            HOST_DEVICE
             bool operator==(const const_iterator& other)const{
               return _data == other._data;
             }
-            __host__ __device__
+            HOST_DEVICE
             bool operator!=(const const_iterator& other)const {
               return _data != other._data;
             }
-            __host__ __device__
+            HOST_DEVICE
             const_iterator& operator++(){
               _data += 1;
               return *this;
             }
-            __host__ __device__
+            HOST_DEVICE
             const_iterator operator++(int){
               return const_iterator(_data + 1);
             }
-            __host__ __device__
+            HOST_DEVICE
             const_iterator operator--(int){
               return const_iterator(_data - 1);
             }
          };
          
-         __host__ __device__
+         HOST_DEVICE
          iterator begin(){
             return iterator(_data);
          }
 
-         __host__ __device__
+         HOST_DEVICE
          const_iterator begin()const{
             return const_iterator(_data);
          }
 
-         __host__ __device__
+         HOST_DEVICE
          iterator end(){
             return iterator(_data+size());
          }
-         __host__ __device__
+         HOST_DEVICE
          const_iterator end() const {
             return const_iterator(_data+size());
          }
 
-         __host__
+         HOST
          iterator insert (iterator& it, const T& val){
             
             //If empty or inserting at the end no relocating is needed
@@ -608,7 +609,7 @@ namespace split{
             return iterator(_data+index);
          }
 
-         __host__
+         HOST
          iterator insert(iterator& it,const size_t elements, const T& val){
 
             int64_t index=it.data()-begin().data();
@@ -629,7 +630,7 @@ namespace split{
 
             
          template<typename InputIterator, class = typename std::enable_if< !std::is_integral<InputIterator>::value >::type>
-         __host__ 
+         HOST 
          iterator insert(iterator it, InputIterator p0, InputIterator p1){
 
             const int64_t count = std::distance(p0, p1);
@@ -650,7 +651,7 @@ namespace split{
          }
 
 
-         __host__
+         HOST
          iterator insert(iterator& it, iterator p0, iterator p1) {
          
             const int64_t count = p1.data() - p0.data();
@@ -671,7 +672,7 @@ namespace split{
          }
          
 
-         __host__ __device__ 
+         HOST_DEVICE 
          iterator erase(iterator it){
             const int64_t index = it.data() - begin().data();
             _data[index].~T();
@@ -686,7 +687,7 @@ namespace split{
          }
             
 
-         __host__  __device__
+         HOST_DEVICE
          iterator erase(iterator p0, iterator  p1) {
             const int64_t start = p0.data() - begin().data();
             const int64_t end   =  p1.data() - begin().data();
@@ -705,7 +706,7 @@ namespace split{
          }
 
 
-         __host__ 
+         HOST 
          Allocator get_allocator() const {
             return _allocator;
          }
@@ -733,7 +734,7 @@ namespace split{
 
 	/*Equal operator*/
 	template <typename  T,class Allocator,class Meta_Allocator>
-	static inline __host__  bool operator == (const  SplitVector<T,Allocator,Meta_Allocator> &lhs, const  SplitVector<T,Allocator,Meta_Allocator> &rhs){
+	static inline HOST  bool operator == (const  SplitVector<T,Allocator,Meta_Allocator> &lhs, const  SplitVector<T,Allocator,Meta_Allocator> &rhs){
 		if (lhs.size()!= rhs.size()){
 			return false;
 		}
@@ -748,7 +749,7 @@ namespace split{
 
 	/*Not-Equal operator*/
 	template <typename  T,class Allocator,class Meta_Allocator>
-	static inline __host__  bool operator != (const  SplitVector<T,Allocator,Meta_Allocator> &lhs, const  SplitVector<T,Allocator,Meta_Allocator> &rhs){
+	static inline HOST  bool operator != (const  SplitVector<T,Allocator,Meta_Allocator> &lhs, const  SplitVector<T,Allocator,Meta_Allocator> &rhs){
 		return !(rhs==lhs);
 	}
 }//namespace split
