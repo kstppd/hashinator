@@ -22,9 +22,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  * */
 #pragma once
-#include <cuda_runtime_api.h>
-#include "split_allocators.h"
-#include <cuda.h>
 #include "../common.h"
 #include <iostream>
 #include <cassert>
@@ -32,6 +29,11 @@
 #include <stdlib.h>
 #include <algorithm>
 #include <memory>
+#include "split_allocators.h"
+#ifdef __NVCC__
+#include <cuda_runtime_api.h>
+#include <cuda.h>
+#endif
 
 
 namespace split{
@@ -43,7 +45,21 @@ namespace split{
        t2 = std::move(tmp);
    }
 
-   template<typename T,class Allocator=split::split_unified_allocator<T>,class Meta_Allocator=split::split_unified_allocator<size_t>>
+   //If we compile under nvcc we can enable the UM allocator.
+   #ifdef __NVCC__ 
+   template <typename T >
+   using  DefaultAllocator=split::split_unified_allocator<T>;
+   using  DefaultMetaAllocator=split::split_unified_allocator<size_t>;
+   #else
+   template <typename T >
+   using  DefaultAllocator=split::split_host_allocator<T>;
+   using  DefaultMetaAllocator=split::split_host_allocator<size_t>;
+   #endif
+
+
+   template<typename T,
+            class Allocator=DefaultAllocator<T>,
+            class Meta_Allocator=DefaultMetaAllocator>
    class SplitVector{
       
       private:
@@ -186,32 +202,6 @@ namespace split{
             std::move(other.begin().data(), other.end().data(), _data);
             other.clear();
             return *this;
-         }
-
-         //Method that return a pointer which can be passed to GPU kernels
-         //Has to be cudaFree'd after use otherwise memleak (small one but still)!
-         HOST
-         SplitVector<T,Allocator,Meta_Allocator>* upload(cudaStream_t stream = 0 ){
-            SplitVector* d_vec;
-            optimizeGPU(stream);
-            cudaMalloc((void **)&d_vec, sizeof(SplitVector));
-            cudaMemcpyAsync(d_vec, this, sizeof(SplitVector),cudaMemcpyHostToDevice,stream);
-            return d_vec;
-         }
-
-         /*Manually prefetch data on Device*/
-         HOST void optimizeGPU(cudaStream_t stream = 0){
-            int device;
-            cudaGetDevice(&device);
-            CheckErrors("Prefetch GPU-Device-ID");
-            cudaMemPrefetchAsync(_data ,capacity()*sizeof(T),device,stream);
-            CheckErrors("Prefetch GPU");
-         }
-
-         /*Manually prefetch data on Host*/
-         HOST void optimizeCPU(cudaStream_t stream = 0){
-            cudaMemPrefetchAsync(_data ,capacity()*sizeof(T),cudaCpuDeviceId,stream);
-            CheckErrors("Prefetch CPU");
          }
 
          /* Custom swap mehtod. 
@@ -366,7 +356,7 @@ namespace split{
             return;
          }
 
-         //Removes n elements from the back of the vector\
+         //Removes n elements from the back of the vector
          //and properly handles object destruction
          HOST_DEVICE
         void remove_from_back(size_t n){
@@ -730,6 +720,40 @@ namespace split{
          void emplace_back(Args&&... args) {
             emplace(end(), std::forward<Args>(args)...);
          }
+
+         
+         #ifdef __NVCC__
+
+         //Method that return a pointer which can be passed to GPU kernels
+         //Has to be cudaFree'd after use otherwise memleak (small one but still)!
+         HOST
+         SplitVector<T,Allocator,Meta_Allocator>* upload(cudaStream_t stream = 0 ){
+            SplitVector* d_vec;
+            optimizeGPU(stream);
+            cudaMalloc((void **)&d_vec, sizeof(SplitVector));
+            cudaMemcpyAsync(d_vec, this, sizeof(SplitVector),cudaMemcpyHostToDevice,stream);
+            return d_vec;
+         }
+
+         /*Manually prefetch data on Device*/
+         HOST void optimizeGPU(cudaStream_t stream = 0){
+            int device;
+            cudaGetDevice(&device);
+            CheckErrors("Prefetch GPU-Device-ID");
+            cudaMemPrefetchAsync(_data ,capacity()*sizeof(T),device,stream);
+            CheckErrors("Prefetch GPU");
+         }
+
+         /*Manually prefetch data on Host*/
+         HOST void optimizeCPU(cudaStream_t stream = 0){
+            cudaMemPrefetchAsync(_data ,capacity()*sizeof(T),cudaCpuDeviceId,stream);
+            CheckErrors("Prefetch CPU");
+         }
+
+         #endif
+
+
+
    };//SplitVector
 
 	/*Equal operator*/

@@ -22,6 +22,7 @@
  * */
 #pragma once 
 
+#ifdef __NVCC__
 #ifdef CUDAVEC
    #define CheckErrors(msg) \
       do { \
@@ -39,9 +40,11 @@
    #define CheckErrors(msg) \
       do { }  while (0)
 #endif
+#endif
 
 namespace split{
  
+#ifdef __NVCC__
    template <class T>
    class split_unified_allocator{
       public:
@@ -88,7 +91,7 @@ namespace split{
       }
    };
 
-
+#endif
 
    template <class T>
    class split_host_allocator{
