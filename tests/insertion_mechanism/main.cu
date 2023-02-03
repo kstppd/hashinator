@@ -40,7 +40,7 @@ void fill_input(keyval_type* keys , keyval_type* vals, size_t size){
 
 bool recover_elements(const hashmap& hmap, keyval_type* keys, keyval_type* vals,size_t size){
    for (size_t i=0; i<size; ++i){
-      const hash_pair<keyval_type,keyval_type> kval(keys[i],vals[i]);
+      const std::pair<keyval_type,keyval_type> kval(keys[i],vals[i]);
       auto retval=hmap.find(kval.first);
       if (retval==hmap.end()){assert(0&& "END FOUND");}
       bool sane=retval->first==kval.first  &&  retval->second== kval.second ;

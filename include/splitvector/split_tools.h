@@ -180,7 +180,8 @@ namespace split{
          const unsigned int neighbor_count= __popc(n_neighbors);
          const unsigned int private_index	= buffer[offset+widb] + offsets->at(wid/warps_in_block) + neighbor_count ;
          if (tres && widb!=warps_in_block){
-            output->at(private_index) = input->at(tid);
+            output->at(private_index).first = input->at(tid).first;
+            output->at(private_index).second = input->at(tid).second;
          }
          __syncthreads();
          if (tid==0){

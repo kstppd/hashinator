@@ -40,8 +40,8 @@ namespace Hashinator{
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
                class HashFunction=HashFunctions::Fibonacci<KEY_TYPE>>
       __global__ 
-      void reset_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* src,
-                          hash_pair<KEY_TYPE, VAL_TYPE>* dst,
+      void reset_to_empty(std::pair<KEY_TYPE, VAL_TYPE>* src,
+                          std::pair<KEY_TYPE, VAL_TYPE>* dst,
                           const int sizePower,
                           int maxoverflow,
                           size_t Nsrc)
@@ -49,7 +49,7 @@ namespace Hashinator{
       {
          const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
          if (tid>=Nsrc){return ;}
-         hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[tid];
+         std::pair<KEY_TYPE,VAL_TYPE>&candidate=src[tid];
          int bitMask = (1 <<(sizePower )) - 1; 
          uint32_t hashIndex = HashFunction::_hash(candidate.first,sizePower);
 
@@ -89,8 +89,8 @@ namespace Hashinator{
                int WARPSIZE=32,
                int elementsPerWarp>
       __global__ 
-      void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src,
-                         hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+      void insert_kernel(std::pair<KEY_TYPE, VAL_TYPE>* src,
+                         std::pair<KEY_TYPE, VAL_TYPE>* buckets,
                          int sizePower,
                          int maxoverflow,
                          int* d_overflow,
@@ -121,7 +121,7 @@ namespace Hashinator{
          }else{
             submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
-         hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[wid];
+         std::pair<KEY_TYPE,VAL_TYPE>&candidate=src[wid];
          const int bitMask = (1 <<(sizePower )) - 1; 
          const size_t hashIndex = HashFunction::_hash(candidate.first,sizePower);
          const size_t optimalindex=(hashIndex) & bitMask;
@@ -217,7 +217,7 @@ namespace Hashinator{
       __global__ 
       void insert_kernel(KEY_TYPE* keys,
                          VAL_TYPE* vals,
-                         hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                         std::pair<KEY_TYPE, VAL_TYPE>* buckets,
                          int sizePower,
                          int maxoverflow,
                          int* d_overflow,
@@ -330,7 +330,7 @@ namespace Hashinator{
       __global__ 
       void retrieve_kernel(KEY_TYPE* keys,
                            VAL_TYPE* vals,
-                           hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                           std::pair<KEY_TYPE, VAL_TYPE>* buckets,
                            int sizePower,
                            int maxoverflow)
       {
@@ -396,7 +396,7 @@ namespace Hashinator{
                int elementsPerWarp>
       __global__ 
       void delete_kernel(KEY_TYPE* keys,
-                           hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                           std::pair<KEY_TYPE, VAL_TYPE>* buckets,
                            size_t* d_tombstoneCounter,
                            int sizePower,
                            int maxoverflow)
@@ -466,7 +466,7 @@ namespace Hashinator{
          //Overload with separate input for keys and values.
          static void insert(KEY_TYPE* keys,
                             VAL_TYPE* vals,
-                            hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                            std::pair<KEY_TYPE, VAL_TYPE>* buckets,
                             int sizePower,
                             int maxoverflow,
                             int* d_overflow,
@@ -481,10 +481,10 @@ namespace Hashinator{
             cudaDeviceSynchronize();
          }
          
-         //Overload with hash_pair<key,val> (k,v) inputs
+         //Overload with std::pair<key,val> (k,v) inputs
          //Used by the tombstone cleaning method.
-         static void insert(hash_pair<KEY_TYPE, VAL_TYPE>* src,
-                            hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+         static void insert(std::pair<KEY_TYPE, VAL_TYPE>* src,
+                            std::pair<KEY_TYPE, VAL_TYPE>* buckets,
                             int sizePower,
                             int maxoverflow,
                             int* d_overflow,
@@ -502,7 +502,7 @@ namespace Hashinator{
          //Retrieve wrapper
          static void retrieve(KEY_TYPE* keys,
                               VAL_TYPE* vals,
-                              hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                              std::pair<KEY_TYPE, VAL_TYPE>* buckets,
                               int sizePower,
                               int maxoverflow,
                               size_t len)
@@ -519,7 +519,7 @@ namespace Hashinator{
 
          //Delete wrapper
          static void erase(KEY_TYPE* keys,
-                            hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                            std::pair<KEY_TYPE, VAL_TYPE>* buckets,
                             size_t* d_tombstoneCounter,
                             int sizePower,
                             int maxoverflow,
