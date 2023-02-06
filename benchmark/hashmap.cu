@@ -2,7 +2,6 @@
 #include <random>
 #include <stdlib.h>
 #include "../include/hashinator/hashinator.h"
-
 typedef uint32_t val_type;
 using namespace Hashinator;
 typedef split::SplitVector<hash_pair<val_type,val_type>,split::split_unified_allocator<hash_pair<val_type,val_type>>,split::split_unified_allocator<size_t>> vector ;
@@ -40,47 +39,28 @@ bool recover_elements(const hashmap& hmap, vector& src){
    return true;
 }
 
-
-void hashmap_benchmark()
+void hashmap_benchmark(int power)
 {
-   int power=24;
    size_t N = 1<<power;
    vector src(N);
    create_input(src);
-   src.optimizeGPU();
    hashmap hmap;
-   for (int i=0; i<5; ++i){
-      hmap.insert(src.data(),src.size(),power);
+   for (int i=0; i<10; ++i){
+      src.optimizeGPU();
+      hmap.insert(src.data(),src.size());
+      bool success=recover_elements(hmap,src);
+      if (!success){assert(false && "Map is illformed");}
       std::cout<<hmap.load_factor()<<std::endl;
       hmap.clear();
    }
 }
 
 
-void hashmap_benchmark_lf()
+int main(int argc, char** argv)
 {
-   int power=24;
-   int step=1<<20;
-   hashmap hmap;
-   size_t N = 1<<power;
-   vector src(N);
-   create_input(src);
-   do{
-      hmap.clear();
-      src.optimizeGPU();
-      hmap.insert(src.data(),src.size(),power);
-      bool success=recover_elements(hmap,src);
-      if (!success){assert(false && "Map is illformed");}
-      std::cout<<"Load factor= "<<hmap.load_factor()<<std::endl;
-      extend_input(src,step);
-   }while(hmap.load_factor()<0.9);
-}
-
-
-
-
-int main()
-{
-   hashmap_benchmark_lf();
+   if (argc<2){return 1;}
+   int N =  atoi(argv[1]);
+   hashmap_benchmark(N);
    return 0;
 }
+
