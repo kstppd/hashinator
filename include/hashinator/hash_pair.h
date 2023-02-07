@@ -37,16 +37,4 @@ namespace Hashinator{
       hash_pair():first(T()),second(U()){}
       hash_pair(const T& f,const U& s):first(f),second(s){}
    };
-
-   template <typename T, typename U >
-   __host__ __device__
-   bool operator ==(const hash_pair<T,U>& lhs, const hash_pair<T,U>&rhs){
-      return lhs.first==rhs.first && lhs.second==rhs.second;
-   }
-
-   template <typename T, typename U >
-   __host__ __device__
-   bool operator !=(const hash_pair<T,U>& lhs, const hash_pair<T,U>&rhs){
-      return !(lhs==rhs);
-   }
 }//namespace Hashinator

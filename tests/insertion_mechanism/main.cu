@@ -120,7 +120,7 @@ bool test_hashmap_insertionUM(keyval_type power){
 
 TEST(HashmapUnitTets , Device_Insert_UM){
    int reps=10;
-   for (int power=10; power<15; ++power){
+   for (int power=10; power<20; ++power){
       std::string name= "Power= "+std::to_string(power);
       for (int i =0; i< reps; i++){
          bool retval = execute_and_time(name.c_str(),test_hashmap_insertionUM,power );
@@ -132,7 +132,7 @@ TEST(HashmapUnitTets , Device_Insert_UM){
 
 TEST(HashmapUnitTets , Device_Insert_DM){
    int reps=10;
-   for (int power=10; power<15; ++power){
+   for (int power=10; power<20; ++power){
       std::string name= "Power= "+std::to_string(power);
       for (int i =0; i< reps; i++){
          bool retval = execute_and_time(name.c_str(),test_hashmap_insertionDM ,power);
@@ -144,7 +144,7 @@ TEST(HashmapUnitTets , Device_Insert_DM){
 
 TEST(HashmapUnitTets , Device_Retrieve_UM){
    int reps=10;
-   for (int power=10; power<15; ++power){
+   for (int power=10; power<20; ++power){
       std::string name= "Power= "+std::to_string(power);
       for (int i =0; i< reps; i++){
          bool retval = execute_and_time(name.c_str(),test_hashmap_retrievalUM ,power);
