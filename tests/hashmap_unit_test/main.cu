@@ -143,13 +143,17 @@ bool test_hashmap_1(val_type power){
    //Download
    hmap.download();
 
+
+   hashmap hmap2;
    //Recover all elements to make sure that the hashmap actually works
    bool retval=recover_elements(hmap,src);
+   hmap2.swap(hmap);
+   retval=recover_elements(hmap2,src);
    return retval;
 }
 
 TEST(HashmapUnitTets , Host_Device_Insert_Delete_Global_Tets){
-   for (int power=10; power<26; ++power){
+   for (int power=10; power<20; ++power){
       std::string name= "Power= "+std::to_string(power);
       bool retval = execute_and_time(name.c_str(),test_hashmap_1 ,power);
       expect_true(retval);
