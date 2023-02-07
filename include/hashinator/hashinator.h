@@ -27,10 +27,10 @@
 #include <limits>
 #include "../splitvector/splitvec.h"
 #include "../splitvector/split_tools.h"
-#include "hash_pair.h"
 #include "defaults.h"
 #include "hashfunctions.h"
 #include "hashers.h"
+#include <cuda/std/utility>
 
 namespace Hashinator{
    template <typename KEY_TYPE, 
@@ -61,7 +61,7 @@ namespace Hashinator{
       int sizePower; // Logarithm (base two) of the size of the table
       int cpu_maxBucketOverflow;
       size_t fill;   // Number of filled buckets
-      split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>> buckets;
+      split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> buckets;
       //~Host members
       
 
@@ -96,9 +96,9 @@ namespace Hashinator{
          tombstoneCounter=0;
          //Allocate memory for overflown elements. So far this is the same size as our buckets but we can be better than this 
          //TODO size of overflown elements is known beforhand.
-         split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>> overflownElements(1 << sizePower, {EMPTYBUCKET, VAL_TYPE()});
+         split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> overflownElements(1 << sizePower, {EMPTYBUCKET, VAL_TYPE()});
          //Extract all overflown elements-This also resets TOMSBTONES to EMPTYBUCKET!
-         split::tools::copy_if<hash_pair<KEY_TYPE, VAL_TYPE>,Overflown_Predicate<KEY_TYPE,VAL_TYPE>,32,defaults::WARPSIZE>(buckets,overflownElements,Overflown_Predicate<KEY_TYPE,VAL_TYPE>(buckets.data(),sizePower));
+         split::tools::copy_if<cuda::std::pair<KEY_TYPE, VAL_TYPE>,Overflown_Predicate<KEY_TYPE,VAL_TYPE>,32,defaults::WARPSIZE>(buckets,overflownElements,Overflown_Predicate<KEY_TYPE,VAL_TYPE>(buckets.data(),sizePower));
          size_t nOverflownElements=overflownElements.size();
          if (nOverflownElements ==0 ){
             std::cout<<"No cleaning needed!"<<std::endl;
@@ -120,13 +120,13 @@ namespace Hashinator{
       template <typename T, typename U>
       struct Overflown_Predicate{
 
-      hash_pair<KEY_TYPE, VAL_TYPE> *bck_ptr;
+      cuda::std::pair<KEY_TYPE, VAL_TYPE> *bck_ptr;
       int currentSizePower;
    
-      explicit Overflown_Predicate(hash_pair<KEY_TYPE, VAL_TYPE>*ptr,int s):bck_ptr(ptr),currentSizePower(s){}
+      explicit Overflown_Predicate(cuda::std::pair<KEY_TYPE, VAL_TYPE>*ptr,int s):bck_ptr(ptr),currentSizePower(s){}
       Overflown_Predicate()=delete;
          __host__ __device__
-         inline bool operator()( hash_pair<T,U>& element)const{
+         inline bool operator()( cuda::std::pair<T,U>& element)const{
             if (element.first==TOMBSTONE){element.first=EMPTYBUCKET;return false;}
             if (element.first==EMPTYBUCKET){return false;}
             const size_t hashIndex = HashFunction::_hash(element.first,currentSizePower);
@@ -137,13 +137,13 @@ namespace Hashinator{
       };
       __host__
       Hashmap()
-          : sizePower(5), fill(0), buckets(1 << sizePower, hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())){
+          : sizePower(5), fill(0), buckets(1 << sizePower, cuda::std::pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())){
             preallocate_device_handles();
           };
 
       __host__
       Hashmap(int sizepower)
-          : sizePower(sizepower), fill(0), buckets(1 << sizepower, hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())){
+          : sizePower(sizepower), fill(0), buckets(1 << sizepower, cuda::std::pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())){
             preallocate_device_handles();
           };
       __host__
@@ -181,7 +181,7 @@ namespace Hashinator{
      
       //Uses Hasher's insert_kernel to insert all elements
       __host__
-      void insert(hash_pair<KEY_TYPE,VAL_TYPE>* src, size_t len,float targetLF=0.5){
+      void insert(cuda::std::pair<KEY_TYPE,VAL_TYPE>* src, size_t len,float targetLF=0.5){
          //Here we do some calculations to estimate how much if any we need to grow our buckets
          size_t neededPowerSize=std::ceil(std::log2((fill+len)*(1.0/targetLF)));
          if (neededPowerSize>sizePower){
@@ -229,8 +229,8 @@ namespace Hashinator{
          if (newSizePower > 32) {
             throw std::out_of_range("Hashmap ran into rehashing catastrophe and exceeded 32bit buckets.");
          }
-         split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>> newBuckets(1 << newSizePower,
-                                                     hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE()));
+         split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> newBuckets(1 << newSizePower,
+                                                     cuda::std::pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE()));
          sizePower = newSizePower;
          int bitMask = (1 << sizePower) - 1; // For efficient modulo of the array size
 
@@ -245,7 +245,7 @@ namespace Hashinator{
             uint32_t newHash = hash(e.first);
             bool found = false;
             for (int i = 0; i < maxBucketOverflow; i++) {
-               hash_pair<KEY_TYPE, VAL_TYPE>& candidate = newBuckets[(newHash + i) & bitMask];
+               cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = newBuckets[(newHash + i) & bitMask];
                if (candidate.first == EMPTYBUCKET) {
                   // Found an empty bucket, assign that one.
                   candidate = e;
@@ -273,7 +273,7 @@ namespace Hashinator{
 
          // Try to find the matching bucket.
          for (int i = 0; i < maxBucketOverflow; i++) {
-            hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
+            cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
             if (candidate.first == key) {
                // Found a match, return that
                return candidate.second;
@@ -298,7 +298,7 @@ namespace Hashinator{
 
          // Try to find the matching bucket.
          for (int i = 0; i < maxBucketOverflow; i++) {
-            const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
+            const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
             if (candidate.first == key) {
                // Found a match, return that
                return candidate.second;
@@ -339,7 +339,7 @@ namespace Hashinator{
 
       __host__
       void clear() {
-         buckets = split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>(1 << sizePower, {EMPTYBUCKET, VAL_TYPE()});
+         buckets = split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>>(1 << sizePower, {EMPTYBUCKET, VAL_TYPE()});
          fill = 0;
       }
 
@@ -407,7 +407,7 @@ namespace Hashinator{
       }
 
       __host__
-         void print_pair(const hash_pair<KEY_TYPE, VAL_TYPE>& i)const {
+         void print_pair(const cuda::std::pair<KEY_TYPE, VAL_TYPE>& i)const {
             if (i.first==TOMBSTONE){
                std::cout<<"[╀,-,-] ";
             }else if (i.first == EMPTYBUCKET){
@@ -474,7 +474,7 @@ namespace Hashinator{
          // Try to find the matching bucket.
          for (int i = 0; i < devHandles->d_maxBucketOverflow; i++) {
             uint32_t vecindex=(hashIndex + i) & bitMask;
-            const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[vecindex];
+            const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[vecindex];
             if (candidate.first == key) {
                // Found a match, return that
                return candidate.second;
@@ -490,7 +490,7 @@ namespace Hashinator{
       
       
       // Iterator type. Iterates through all non-empty buckets.
-      class iterator : public std::iterator<std::random_access_iterator_tag, hash_pair<KEY_TYPE, VAL_TYPE>> {
+      class iterator : public std::iterator<std::random_access_iterator_tag, cuda::std::pair<KEY_TYPE, VAL_TYPE>> {
          Hashmap<KEY_TYPE, VAL_TYPE>* hashtable;
          size_t index;
 
@@ -525,15 +525,15 @@ namespace Hashinator{
             return &hashtable->buckets[index] != &other.hashtable->buckets[other.index];
          }
          __host__
-         hash_pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
+         cuda::std::pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
          __host__
-         hash_pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
+         cuda::std::pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
          __host__
          size_t getIndex() { return index; }
       };
 
       // Const iterator.
-      class const_iterator : public std::iterator<std::random_access_iterator_tag, hash_pair<KEY_TYPE, VAL_TYPE>> {
+      class const_iterator : public std::iterator<std::random_access_iterator_tag, cuda::std::pair<KEY_TYPE, VAL_TYPE>> {
          const Hashmap<KEY_TYPE, VAL_TYPE>* hashtable;
          size_t index;
 
@@ -567,9 +567,9 @@ namespace Hashinator{
             return &hashtable->buckets[index] != &other.hashtable->buckets[other.index];
          }
          __host__
-         const hash_pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
+         const cuda::std::pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
          __host__
-         const hash_pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
+         const cuda::std::pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
          __host__
          size_t getIndex() { return index; }
       };
@@ -582,7 +582,7 @@ namespace Hashinator{
 
          // Try to find the matching bucket.
          for (int i = 0; i < maxBucketOverflow; i++) {
-            const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
+            const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
             if (candidate.first == key) {
                // Found a match, return that
                return const_iterator(*this, (hashIndex + i) & bitMask);
@@ -605,7 +605,7 @@ namespace Hashinator{
 
          // Try to find the matching bucket.
          for (int i = 0; i < maxBucketOverflow; i++) {
-            const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
+            const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
             if (candidate.first == key) {
                // Found a match, return that
                return iterator(*this, (hashIndex + i) & bitMask);
@@ -678,7 +678,7 @@ namespace Hashinator{
                      // Copy this entry to the current newly empty bucket, then continue with deleting
                      // this overflown entry and continue searching for overflown entries
                      VAL_TYPE moveValue = buckets[(index+i)&bitMask].second;
-                     buckets[targetPos] = hash_pair<KEY_TYPE, VAL_TYPE>(nextBucket,moveValue);
+                     buckets[targetPos] = cuda::std::pair<KEY_TYPE, VAL_TYPE>(nextBucket,moveValue);
                      targetPos = ((index+i)&bitMask);
                      buckets[targetPos].first = EMPTYBUCKET;
                   }
@@ -691,12 +691,12 @@ namespace Hashinator{
       }
 
       __host__
-      hash_pair<iterator, bool> insert(hash_pair<KEY_TYPE, VAL_TYPE> newEntry) {
+      cuda::std::pair<iterator, bool> insert(cuda::std::pair<KEY_TYPE, VAL_TYPE> newEntry) {
          bool found = find(newEntry.first) != end();
          if (!found) {
             at(newEntry.first) = newEntry.second;
          }
-         return hash_pair<iterator, bool>(find(newEntry.first), !found);
+         return cuda::std::pair<iterator, bool>(find(newEntry.first), !found);
       }
 
       __host__
@@ -754,9 +754,9 @@ namespace Hashinator{
          }
          
          __device__
-         hash_pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
+         cuda::std::pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
          __device__
-         hash_pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
+         cuda::std::pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
 
       };
 
@@ -802,9 +802,9 @@ namespace Hashinator{
          }
          
          __device__
-         const hash_pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
+         const cuda::std::pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
          __device__
-         const hash_pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
+         const cuda::std::pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
       };
 
 
@@ -816,7 +816,7 @@ namespace Hashinator{
 
          // Try to find the matching bucket.
          for (int i = 0; i < devHandles->d_maxBucketOverflow; i++) {
-            const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
+            const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
             if (candidate.first==TOMBSTONE){continue;}
 
@@ -842,7 +842,7 @@ namespace Hashinator{
 
          // Try to find the matching bucket.
          for (int i = 0; i < devHandles->d_maxBucketOverflow; i++) {
-            const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
+            const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
             if (candidate.first==TOMBSTONE){continue;}
 
@@ -966,12 +966,12 @@ namespace Hashinator{
       }
 
       __device__
-      hash_pair<device_iterator, bool> device_insert(hash_pair<KEY_TYPE, VAL_TYPE> newEntry) {
+      cuda::std::pair<device_iterator, bool> device_insert(cuda::std::pair<KEY_TYPE, VAL_TYPE> newEntry) {
          bool found = device_find(newEntry.first) != device_end();
          if (!found) {
             set_element(newEntry.first,newEntry.second);
          }
-         return hash_pair<iterator, bool>(device_find(newEntry.first), !found);
+         return cuda::std::pair<iterator, bool>(device_find(newEntry.first), !found);
       }
    };
 }//namespace Hashinator
