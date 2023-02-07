@@ -43,17 +43,21 @@ namespace Hashinator{
    class Hashmap {
 
    private:
+
       //CUDA device handles
-      int* d_sizePower;
-      int* d_maxBucketOverflow;
-      int postDevice_maxBucketOverflow;
-      size_t* d_fill;
-      size_t* d_tombstoneCounter;
-      size_t tombstoneCounter;
+      typedef struct{
+         size_t d_fill;
+         size_t d_tombstoneCounter;
+         int d_maxBucketOverflow;
+         int d_sizePower;
+      }DeviceHandles;
+      DeviceHandles* devHandles;
       Hashmap* device_map;
       //~CUDA device handles
 
       //Host members
+      int postDevice_maxBucketOverflow;
+      size_t tombstoneCounter;
       int sizePower; // Logarithm (base two) of the size of the table
       int cpu_maxBucketOverflow;
       size_t fill;   // Number of filled buckets
@@ -72,21 +76,15 @@ namespace Hashinator{
       // This helps in reducing the number of calls to cudaMalloc
       __host__
       void preallocate_device_handles(){
-         cudaMalloc((void **)&d_sizePower, sizeof(int));
-         cudaMalloc((void **)&d_maxBucketOverflow, sizeof(int));
-         cudaMalloc((void **)&d_fill, sizeof(size_t));
-         cudaMalloc((void **)&d_tombstoneCounter, sizeof(size_t));
+         cudaMalloc((void **)&devHandles, sizeof(DeviceHandles));
          cudaMalloc((void **)&device_map, sizeof(Hashmap));
       }
 
       // Deallocates the bookeepping info and the device pointer
       __host__
       void deallocate_device_handles(){
+         cudaFree(devHandles);
          cudaFree(device_map);
-         cudaFree(d_sizePower);
-         cudaFree(d_maxBucketOverflow);
-         cudaFree(d_fill);
-         cudaFree(d_tombstoneCounter);
       }
 
 
@@ -109,8 +107,8 @@ namespace Hashinator{
          //If we do have overflown elements we put them back in the buckets
          Hashers::reset_to_empty<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction><<<overflownElements.size(),defaults::MAX_BLOCKSIZE>>> (overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow,overflownElements.size());
          cudaDeviceSynchronize();
-         DeviceHasher::insert(overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,overflownElements.size());
-         cudaMemcpyAsync(&cpu_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,0);
+         DeviceHasher::insert(overflownElements.data(),buckets.data(),sizePower,maxBucketOverflow,&devHandles->d_maxBucketOverflow,&devHandles->d_fill,overflownElements.size());
+         cudaMemcpyAsync(&cpu_maxBucketOverflow, &devHandles->d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,0);
          if (cpu_maxBucketOverflow>maxBucketOverflow){
             rehash(sizePower++);
          }
@@ -169,11 +167,11 @@ namespace Hashinator{
          }
          buckets.optimizeGPU();
          cpu_maxBucketOverflow=maxBucketOverflow;
-         cudaMemcpy(d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice);
-         cudaMemcpy(d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice);
-         DeviceHasher::insert(keys,vals,buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,len);
-         cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,0);
-         cudaMemcpyAsync(&cpu_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,0);
+         cudaMemcpy(&devHandles->d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice);
+         cudaMemcpy(&devHandles->d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice);
+         DeviceHasher::insert(keys,vals,buckets.data(),sizePower,maxBucketOverflow,&devHandles->d_maxBucketOverflow,&devHandles->d_fill,len);
+         cudaMemcpyAsync(&fill, &devHandles->d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,0);
+         cudaMemcpyAsync(&cpu_maxBucketOverflow, &devHandles->d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,0);
          if (cpu_maxBucketOverflow>maxBucketOverflow){
             rehash(sizePower++);
          }
@@ -191,11 +189,11 @@ namespace Hashinator{
          }
          buckets.optimizeGPU();
          cpu_maxBucketOverflow=maxBucketOverflow;
-         cudaMemcpy(d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice);
-         cudaMemcpy(d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice);
-         DeviceHasher::insert(src,buckets.data(),sizePower,maxBucketOverflow,d_maxBucketOverflow,d_fill,len);
-         cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,0);
-         cudaMemcpyAsync(&cpu_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,0);
+         cudaMemcpy(&devHandles->d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice);
+         cudaMemcpy(&devHandles->d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice);
+         DeviceHasher::insert(src,buckets.data(),sizePower,maxBucketOverflow,&devHandles->d_maxBucketOverflow,&devHandles->d_fill,len);
+         cudaMemcpyAsync(&fill, &devHandles->d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,0);
+         cudaMemcpyAsync(&cpu_maxBucketOverflow, &devHandles->d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,0);
          if (cpu_maxBucketOverflow>maxBucketOverflow){
             rehash(sizePower++);
          }
@@ -214,10 +212,10 @@ namespace Hashinator{
       //Uses Hasher's erase_kernel to delete all elements
       __host__
       void erase(KEY_TYPE* keys,VAL_TYPE* vals,size_t len){
-         cudaMemsetAsync(d_tombstoneCounter, 0, sizeof(size_t)); //since tombstones do not exist on host code
+         cudaMemsetAsync(&devHandles->d_tombstoneCounter, 0, sizeof(size_t)); //since tombstones do not exist on host code
          buckets.optimizeGPU();
-         DeviceHasher::erase(keys,vals,buckets.data(),d_tombstoneCounter,sizePower,maxBucketOverflow,len);
-         cudaMemcpy(&tombstoneCounter, d_tombstoneCounter, sizeof(size_t),cudaMemcpyDeviceToHost);
+         DeviceHasher::erase(keys,vals,buckets.data(),devHandles->d_tombstoneCounter,sizePower,maxBucketOverflow,len);
+         cudaMemcpy(&tombstoneCounter, &devHandles->d_tombstoneCounter, sizeof(size_t),cudaMemcpyDeviceToHost);
          if (tombstone_count()>0){
             clean_tombstones();
          }
@@ -368,11 +366,11 @@ namespace Hashinator{
       Hashmap* upload(cudaStream_t stream = 0 ){
          cpu_maxBucketOverflow=maxBucketOverflow;
          this->buckets.optimizeGPU(stream); //already async so can be overlapped if used with streams
-         cudaMemcpyAsync(d_sizePower, &sizePower, sizeof(int),cudaMemcpyHostToDevice,stream);
-         cudaMemcpyAsync(d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice,stream);
-         cudaMemcpyAsync(d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice,stream);
+         cudaMemcpyAsync(&devHandles->d_sizePower, &sizePower, sizeof(int),cudaMemcpyHostToDevice,stream);
+         cudaMemcpyAsync(&devHandles->d_maxBucketOverflow,&cpu_maxBucketOverflow, sizeof(int),cudaMemcpyHostToDevice,stream);
+         cudaMemcpyAsync(&devHandles->d_fill, &fill, sizeof(size_t),cudaMemcpyHostToDevice,stream);
          cudaMemcpyAsync(device_map, this, sizeof(Hashmap),cudaMemcpyHostToDevice,stream);
-         cudaMemsetAsync(d_tombstoneCounter, 0, sizeof(size_t)); //since tombstones do not exist on host code
+         cudaMemsetAsync(&devHandles->d_tombstoneCounter, 0, sizeof(size_t)); //since tombstones do not exist on host code
          return device_map;
       }
 
@@ -393,9 +391,9 @@ namespace Hashinator{
       __host__
       void download(cudaStream_t stream = 0){
          //Copy over fill as it might have changed
-         cudaMemcpyAsync(&fill, d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,stream);
-         cudaMemcpyAsync(&tombstoneCounter, d_tombstoneCounter, sizeof(size_t),cudaMemcpyDeviceToHost,stream);
-         cudaMemcpyAsync(&postDevice_maxBucketOverflow, d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,stream);
+         cudaMemcpyAsync(&fill, &devHandles->d_fill, sizeof(size_t),cudaMemcpyDeviceToHost,stream);
+         cudaMemcpyAsync(&tombstoneCounter, &devHandles->d_tombstoneCounter, sizeof(size_t),cudaMemcpyDeviceToHost,stream);
+         cudaMemcpyAsync(&postDevice_maxBucketOverflow, &devHandles->d_maxBucketOverflow, sizeof(int),cudaMemcpyDeviceToHost,stream);
          this->buckets.optimizeCPU(stream);
          if (postDevice_maxBucketOverflow>maxBucketOverflow){
             std::cout<<"Device Overflow"<<std::endl;
@@ -437,19 +435,10 @@ namespace Hashinator{
       __host__
       void swap(Hashmap<KEY_TYPE, VAL_TYPE>& other) noexcept{
          buckets.swap(other.buckets);
-         int tempSizePower = sizePower;
-         sizePower = other.sizePower;
-         other.sizePower = tempSizePower;
-         size_t tempFill = fill;
-         fill = other.fill;
-         other.fill = tempFill;
-         std::swap(d_sizePower,other.d_sizePower);
-         std::swap(d_maxBucketOverflow,other.d_maxBucketOverflow);
-         std::swap(d_fill,other.d_fill);
-         std::swap(device_map,other.device_map);
+         std::swap(sizePower,other.sizePower);
+         std::swap(fill,other.fill);
+         std::swap(devHandles,other.devHandles);
       }
-
-
 
       //Read only  access to reference. 
       __host__
@@ -474,7 +463,7 @@ namespace Hashinator{
       void set_element(const KEY_TYPE& key,VAL_TYPE val){
          size_t thread_overflowLookup;
          insert_element(key,val,thread_overflowLookup);
-         atomicMax(d_maxBucketOverflow,thread_overflowLookup);
+         atomicMax(&devHandles->d_maxBucketOverflow,thread_overflowLookup);
       }
 
       __device__
@@ -483,7 +472,7 @@ namespace Hashinator{
          uint32_t hashIndex = hash(key);
 
          // Try to find the matching bucket.
-         for (int i = 0; i < *d_maxBucketOverflow; i++) {
+         for (int i = 0; i < devHandles->d_maxBucketOverflow; i++) {
             uint32_t vecindex=(hashIndex + i) & bitMask;
             const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[vecindex];
             if (candidate.first == key) {
@@ -826,7 +815,7 @@ namespace Hashinator{
          uint32_t hashIndex = hash(key);
 
          // Try to find the matching bucket.
-         for (int i = 0; i < *d_maxBucketOverflow; i++) {
+         for (int i = 0; i < devHandles->d_maxBucketOverflow; i++) {
             const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
             if (candidate.first==TOMBSTONE){continue;}
@@ -852,7 +841,7 @@ namespace Hashinator{
          uint32_t hashIndex = hash(key);
 
          // Try to find the matching bucket.
-         for (int i = 0; i < *d_maxBucketOverflow; i++) {
+         for (int i = 0; i < devHandles->d_maxBucketOverflow; i++) {
             const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
             if (candidate.first==TOMBSTONE){continue;}
@@ -915,8 +904,8 @@ namespace Hashinator{
 
          //Let's simply add a tombstone here
          atomicExch(&buckets[index].first,TOMBSTONE);
-         atomicSub((unsigned int*)d_fill, 1);
-         atomicAdd((unsigned int*)d_tombstoneCounter, 1);
+         atomicSub((unsigned int*)(&devHandles->d_fill), 1);
+         atomicAdd((unsigned int*)(&devHandles->d_tombstoneCounter), 1);
          ++keyPos;
          return keyPos;
       }
@@ -926,7 +915,7 @@ namespace Hashinator{
        */
       __device__
       void insert_element(const KEY_TYPE& key,VAL_TYPE value, size_t &thread_overflowLookup) {
-         int bitMask = (1 <<(*d_sizePower )) - 1; // For efficient modulo of the array size
+         int bitMask = (1 <<(devHandles->d_sizePower )) - 1; // For efficient modulo of the array size
          uint32_t hashIndex = hash(key);
          size_t i =0;
          while(i<buckets.size()){
@@ -936,7 +925,7 @@ namespace Hashinator{
             if (old == EMPTYBUCKET){
                atomicExch(&buckets[vecindex].first,key);
                atomicExch(&buckets[vecindex].second,value);
-               atomicAdd((unsigned int*)d_fill, 1);
+               atomicAdd((unsigned int*)(&devHandles->d_fill), 1);
                thread_overflowLookup = i+1;
                return;
             }
@@ -964,7 +953,7 @@ namespace Hashinator{
                   if (candidate == EMPTYBUCKET){
                      atomicExch(&buckets[vecindex].first,key);
                      atomicExch(&buckets[vecindex].second,value);
-                     atomicAdd((unsigned int*)d_fill, 1);
+                     atomicAdd((unsigned int*)(&devHandles->d_fill), 1);
                      thread_overflowLookup = i+1;
                      return;
                   }
