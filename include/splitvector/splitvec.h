@@ -436,7 +436,6 @@ namespace split{
             return  size()==0;
          }
 
-         #ifndef __CUDA_ARCH__
          /* 
             PushBack  method:
             Supports only host  pushbacks.
@@ -445,8 +444,16 @@ namespace split{
             will be invalid from now on.
             Not thread safe
          */      
-         HOSTONLY   
+         HOSTDEVICE 
          void push_back(const T& val){
+
+            #ifdef  __CUDA_ARCH__
+            size_t old= atomicAdd((unsigned int*)_size, 1);
+            if (old>=capacity()){
+               assert(0 && "Splitvector has a catastrophic failure trying to pushback on device because the vector has no space available.");
+            }
+            atomicCAS(&(_data[old]), _data[old],val);
+            #else
             // If we have no allocated memory because the default ctor was used then 
             // allocate one element, set it and return 
             if (_data==nullptr){
@@ -455,11 +462,25 @@ namespace split{
             }
             resize(size()+1);
             _data[size()-1] = val;
+            #endif
+
             return;
          }
          
-         HOSTONLY   
+
+         HOSTDEVICE 
          void push_back(const T&& val){
+
+
+            #ifdef  __CUDA_ARCH__
+            //We need at least capacity=size+1 otherwise this 
+            //pushback cannot be done
+            size_t old= atomicAdd((unsigned int*)_size, 1);
+            if (old>=capacity()){
+               assert(0 && "Splitvector has a catastrophic failure trying to pushback on device because the vector has no space available.");
+            }
+            atomicCAS(&(_data[old]), _data[old],std::move(val));
+            #else
             // If we have no allocated memory because the default ctor was used then 
             // allocate one element, set it and return 
             if (_data==nullptr){
@@ -468,33 +489,10 @@ namespace split{
             }
             resize(size()+1);
             _data[size()-1] = std::move(val);
+            #endif
+            
             return;
          }
-
-         #else         
-
-         DEVICEONLY 
-         void push_back(const T& val){
-            //We need at least capacity=size+1 otherwise this 
-            //pushback cannot be done
-            size_t old= atomicAdd((unsigned int*)_size, 1);
-            if (old>=capacity()){
-               assert(0 && "Splitvector has a catastrophic failure trying to pushback on device because the vector has no space available.");
-            }
-            atomicCAS(&(_data[old]), _data[old],val);
-         }
-
-         DEVICEONLY 
-         void push_back(const T&& val){
-            //We need at least capacity=size+1 otherwise this 
-            //pushback cannot be done
-            size_t old= atomicAdd((unsigned int*)_size, 1);
-            if (old>=capacity()){
-               assert(0 && "Splitvector has a catastrophic failure trying to pushback on device because the vector has no space available.");
-            }
-            atomicCAS(&(_data[old]), _data[old],std::move(val));
-         }
-         #endif
 
 
          //Iterators
@@ -748,7 +746,6 @@ namespace split{
             resize(size() + 1);
             iterator it = &_data[index];
             std::move(it.data(), end().data(), it.data() + 1);
-            #warning "TODO-->Not really sure whether we need to destroy first. If not then this is UB if yes then if we do not we end up with a small memleak"
             _allocator.destroy(it.data());
             _allocator.construct(it.data(), args...);
             return it;
