@@ -39,7 +39,7 @@
 namespace split{
    namespace tools{
     
-      bool isPow2(const size_t val ) {
+      inline bool isPow2(const size_t val ) {
          return (val &(val-1))==0;
       }
 
