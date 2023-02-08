@@ -211,6 +211,7 @@ namespace split{
             return *this;
          }
 
+         #ifndef SPLIT_HOST_ONLY
          //Method that return a pointer which can be passed to GPU kernels
          //Has to be cudaFree'd after use otherwise memleak (small one but still)!
          HOSTONLY
@@ -236,6 +237,7 @@ namespace split{
             cudaMemPrefetchAsync(_data ,capacity()*sizeof(T),cudaCpuDeviceId,stream);
             CheckErrors("Prefetch CPU");
          }
+         #endif
 
          /* Custom swap mehtod. 
           * Pointers outside of splitvector's source
