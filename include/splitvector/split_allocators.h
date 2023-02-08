@@ -22,6 +22,7 @@
  * */
 #pragma once 
 
+#ifndef SPLIT_HOST_ONLY
 #ifdef CUDAVEC
    #define CheckErrors(msg) \
       do { \
@@ -39,9 +40,11 @@
    #define CheckErrors(msg) \
       do { }  while (0)
 #endif
+#endif
 
 namespace split{
- 
+
+#ifndef SPLIT_HOST_ONLY
    template <class T>
    class split_unified_allocator{
       public:
@@ -90,6 +93,7 @@ namespace split{
 
 
 
+#endif
    template <class T>
    class split_host_allocator{
       public:
