@@ -69,6 +69,15 @@ bool test_hashmap_insertionDM(keyval_type power,int reps){
       std::cout<<hmap.load_factor()<<std::endl;
       hmap.clear();
    }
+
+
+   
+   //Let's also retrieve the keys
+   hmap.insert(dkeys,dvals,N); 
+   for (int i=0; i<reps;++i){
+      hmap.retrieve(dkeys,dvals,N);
+   }
+
    cudaFree(dkeys);
    cudaFree(dvals);
    return true;
@@ -101,6 +110,15 @@ bool test_hashmap_insertionDM_lf(keyval_type power,int reps,float targetLF){
       std::cout<<hmap.load_factor()<<" "<<hmap.bucket_count()<<std::endl;
       hmap.clear();
    }
+   
+   hmap.insert(dkeys,dvals,N,1); 
+   for (int i=0; i<reps;++i){
+      hmap.retrieve(dkeys,dvals,N); 
+   }
+
+
+
+
    cudaFree(dkeys);
    cudaFree(dvals);
    return true;
