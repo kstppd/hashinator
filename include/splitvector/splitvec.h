@@ -187,6 +187,13 @@ namespace split{
                }
             }
     
+         HOSTONLY explicit  SplitVector(const std::vector<T> &other ){
+               this->_allocate(other.size());
+               for (size_t i=0; i<size(); i++){
+                  _data[i]=other[i];
+               }
+            }
+
          //Destructor
          HOSTONLY ~SplitVector(){
             _deallocate();
