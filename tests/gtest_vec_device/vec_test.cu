@@ -27,7 +27,7 @@ __global__
 void push_back_kernel(vec* a){
 
    int index = blockIdx.x * blockDim.x + threadIdx.x;
-   a->push_back(index);
+   a->dev_push_back(index);
 }
 
 __global__
