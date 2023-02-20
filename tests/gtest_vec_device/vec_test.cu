@@ -39,11 +39,11 @@ void erase_kernel(vec* a){
 
 
 
-void print_vec_elements(vec& v){
+void print_vec_elements(const vec& v){
    std::cout<<"****Vector Contents********"<<std::endl;
    std::cout<<"Size= "<<v.size()<<std::endl;
    std::cout<<"Capacity= "<<v.capacity()<<std::endl;
-   for (auto i:v){
+   for (const auto i:v){
       std::cout<<i<<" ";
    }
 
@@ -372,6 +372,11 @@ TEST(Vector_Functionality , PushBack_And_Erase_Device){
 }
 
 
+TEST(Vector_Functionality , Bug){
+   const vec blocks{1,2,3,4,5,6,7,8,9};
+   vec localToGlobalMap{-1,-1,-1,-1};
+   localToGlobalMap.insert(localToGlobalMap.end(),blocks.begin(),blocks.end());
+}
 
 
 int main(int argc, char* argv[]){

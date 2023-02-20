@@ -570,7 +570,7 @@ namespace split{
             using value_type = T;
             using difference_type = int64_t;
             using pointer = const T*;
-            using reference = T&;
+            using reference = const T&;
 
             HOSTDEVICE
             const_iterator(pointer data) : _data(data) {}
