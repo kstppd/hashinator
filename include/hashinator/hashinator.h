@@ -322,6 +322,9 @@ namespace Hashinator{
       __host__
       size_t size() const { return fill; }
 
+      __device__ 
+      size_t device_size() const {return *d_fill;}
+
       __host__ __device__
       size_t bucket_count() const {
          return buckets.size();
