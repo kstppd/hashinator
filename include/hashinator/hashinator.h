@@ -42,13 +42,11 @@ namespace Hashinator{
    #ifndef HASHINATOR_HOST_ONLY
    template <typename T>
    using DefaultMetaAllocator = split::split_unified_allocator<T>;
-
-   using DefaultHasher=Hashers::Hasher<KEY_TYPE,VAL_TYPE,HashFunction,EMPTYBUCKET,defaults::WARPSIZE,defaults::elementsPerWarp>;
-
+   #define DefaultHasher Hashers::Hasher<KEY_TYPE,VAL_TYPE,HashFunction,EMPTYBUCKET,defaults::WARPSIZE,defaults::elementsPerWarp>
    #else
    template <typename T>
    using DefaultMetaAllocator = split::split_host_allocator<T>;
-   using DefaultHasher=int;
+   #define DefaultHasher int //ugly TOFIX TODO
    #endif
 
    typedef struct Info {
