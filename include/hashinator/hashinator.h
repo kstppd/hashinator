@@ -137,15 +137,16 @@ namespace Hashinator{
       Hashmap(int sizepower){
          preallocate_device_handles();
          _mapInfo=_metaAllocator.allocate(1);
-         *_mapInfo=MapInfo(sizepower);
+         *_mapInfo=MapInfo(5);
          buckets=split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> (1 << _mapInfo->sizePower, cuda::std::pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE()));
        };
 
       HASHINATOR_HOSTONLY
       Hashmap(const Hashmap<KEY_TYPE, VAL_TYPE>& other){
-            preallocate_device_handles();
-            std::swap(_mapInfo, other._mapInfo);
-            buckets=other.buckets;
+         preallocate_device_handles();
+         _mapInfo=_metaAllocator.allocate(1);
+         *_mapInfo=*(other._mapInfo);
+         buckets=other.buckets;
        };
 
       HASHINATOR_HOSTONLY

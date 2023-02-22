@@ -1,6 +1,6 @@
 CC=nvcc  
 LNK=nvcc 
-OPT=  -Xcompiler -O3 
+OPT=  -Xcompiler 
 CXXFLAGS= 
 EXTRA= -g  --std=c++17
 EXTRA+= -gencode arch=compute_60,code=sm_60  -L /usr/lib/x86_64-linux-gnu

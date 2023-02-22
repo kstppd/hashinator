@@ -146,6 +146,8 @@ bool test_hashmap_1(val_type power){
 
    //Recover all elements to make sure that the hashmap actually works
    bool retval=recover_elements(hmap,src);
+   auto hmap2=hmap;
+    retval=retval && recover_elements(hmap2,src);
    return retval;
 }
 
