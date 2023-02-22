@@ -31,6 +31,20 @@
 #include "hashfunctions.h"
 #include "hashers.h"
 #include <cuda/std/utility>
+#include "../splitvector/split_allocators.h"
+
+
+//Proper Members
+typedef struct Info {
+   Info(int sz):sizePower(sz){}
+   int sizePower;
+   size_t fill; 
+   size_t cpu_maxBucketOverflow;
+   size_t postDevice_maxBucketOverflow;
+   size_t tombstoneCounter;
+}MapInfo;
+
+
 
 namespace Hashinator{
    template <typename KEY_TYPE, 
@@ -39,27 +53,33 @@ namespace Hashinator{
              KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(),
              KEY_TYPE TOMBSTONE = EMPTYBUCKET - 1,
              class HashFunction=HashFunctions::Fibonacci<KEY_TYPE>,
-             class DeviceHasher=Hashers::Hasher<KEY_TYPE,VAL_TYPE,HashFunction,EMPTYBUCKET,defaults::WARPSIZE,defaults::elementsPerWarp>>
+             class DeviceHasher=Hashers::Hasher<KEY_TYPE,VAL_TYPE,HashFunction,EMPTYBUCKET,defaults::WARPSIZE,defaults::elementsPerWarp>,
+             class Meta_Allocator=split::split_unified_allocator<MapInfo>>
    class Hashmap {
 
    private:
       //CUDA device handles
-      int* d_sizePower;
-      int* d_maxBucketOverflow;
-      int postDevice_maxBucketOverflow;
-      size_t* d_fill;
-      size_t* d_tombstoneCounter;
-      size_t tombstoneCounter;
+      //int* d_sizePower;
+      //int* d_maxBucketOverflow;
+      //int postDevice_maxBucketOverflow;
+      //size_t* d_fill;
+      //size_t* d_tombstoneCounter;
+      //size_t tombstoneCounter;
       Hashmap* device_map;
       //~CUDA device handles
 
       //Host members
-      int sizePower; // Logarithm (base two) of the size of the table
-      int cpu_maxBucketOverflow;
-      size_t fill;   // Number of filled buckets
+      //int sizePower; // Logarithm (base two) of the size of the table
+      //int cpu_maxBucketOverflow;
+      //size_t fill;   // Number of filled buckets
       split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> buckets;
       //~Host members
       
+         
+      Meta_Allocator _metaAllocator;    // Allocator used to allocate and deallocate memory for metadata
+      MapInfo* _mapInfo;
+
+
 
        // Wrapper over available hash functions 
       __host__ __device__
@@ -141,21 +161,27 @@ namespace Hashinator{
       Hashmap()
           : sizePower(5), fill(0), buckets(1 << sizePower, cuda::std::pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())){
             preallocate_device_handles();
+            _mapInfo=_metaAllocator.allocate(1);
+            *_mapInfo=MapInfo(5);
           };
 
       __host__
       Hashmap(int sizepower)
           : sizePower(sizepower), fill(0), buckets(1 << sizepower, cuda::std::pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())){
             preallocate_device_handles();
+            _mapInfo=_metaAllocator.allocate(1);
+            *_mapInfo=MapInfo(sizepower);
           };
       __host__
       Hashmap(const Hashmap<KEY_TYPE, VAL_TYPE>& other)
           : sizePower(other.sizePower), fill(other.fill), tombstoneCounter(other.tombstoneCounter) ,buckets(other.buckets){
             preallocate_device_handles();
+            std::swap(_mapInfo, other._mapInfo);
           };
       __host__
       ~Hashmap(){     
          deallocate_device_handles();
+         _metaAllocator.deallocate(_mapInfo,1);
       };
 
 
