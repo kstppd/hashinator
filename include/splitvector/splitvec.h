@@ -401,7 +401,7 @@ namespace split{
             return;
          }
 
-         //Removes n elements from the back of the vector\
+         //Removes n elements from the back of the vector
          //and properly handles object destruction
          HOSTDEVICE
         void remove_from_back(size_t n)noexcept{

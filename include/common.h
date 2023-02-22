@@ -1,0 +1,15 @@
+#ifdef HASHINATOR_HOST_ONLY
+
+#define HASHINATOR_HOSTONLY
+#define HASHINATOR_DEVICEONLY
+#define HASHINATOR_HOSTDEVICE
+
+
+#else
+
+
+#define HASHINATOR_HOSTONLY __host__
+#define HASHINATOR_DEVICEONLY __device__
+#define HASHINATOR_HOSTDEVICE __host__ __device__
+
+#endif

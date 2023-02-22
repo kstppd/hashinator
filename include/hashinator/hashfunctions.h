@@ -22,13 +22,14 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  * */
 #pragma once
+#include "../common.h"
 namespace Hashinator{
 
    namespace HashFunctions{
 
       template<typename T>
       struct Murmur{
-         __host__ __device__
+         HOSTDEVICE
          inline static uint32_t _hash(T key,const int sizePower){
             key ^= key >> 16;
             key *= 0x85ebca6b;
@@ -41,7 +42,7 @@ namespace Hashinator{
 
       template<typename T>
       struct Fibonacci{
-         __host__ __device__
+         HOSTDEVICE
          inline static uint32_t _hash(T key,const int sizePower){
             key ^= key >> (32 - sizePower);
             uint32_t retval = (uint64_t)(key * 2654435769ul) >> (32 - sizePower);
