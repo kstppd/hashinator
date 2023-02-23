@@ -966,7 +966,7 @@ namespace Hashinator{
          if (!found) {
             set_element(newEntry.first,newEntry.second);
          }
-         return cuda::std::pair<iterator, bool>(device_find(newEntry.first), !found);
+         return cuda::std::pair<device_iterator, bool>(device_find(newEntry.first), !found);
       }
 
       HASHINATOR_DEVICEONLY
