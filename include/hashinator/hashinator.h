@@ -876,7 +876,7 @@ namespace Hashinator{
 
       HASHINATOR_DEVICEONLY
       size_t device_erase(const KEY_TYPE& key) {
-         iterator element = device_find(key);
+         device_iterator element = device_find(key);
          if(element == device_end()) {
             return 0;
          } else {
