@@ -884,6 +884,15 @@ namespace Hashinator{
             return 1;
          }
       }
+
+      HASHINATOR_DEVICEONLY
+      size_t device_count(const KEY_TYPE& key) const {
+         if (device_find(key) != device_end()) {
+            return 1;
+         } else {
+            return 0;
+         }
+      }
        
       //Remove with tombstones on device
       HASHINATOR_DEVICEONLY
