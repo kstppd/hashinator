@@ -40,6 +40,15 @@ void merge_kernel(vec* a,vec *b ){
 }
 
 __global__
+void merge_kernel_2(vec* a){
+
+   int index = blockIdx.x * blockDim.x + threadIdx.x;
+   if (index==0){
+      a->device_insert(a->begin()++,3,42);
+   }
+}
+
+__global__
 void erase_kernel(vec* a){
    auto it=a->begin();
    a->erase(it);
@@ -393,6 +402,18 @@ TEST(Vector_Functionality , Insert_Device){
       cudaFree(d_a);
       cudaFree(d_b);
       expect_true(a.size()==12);
+}
+
+TEST(Vector_Functionality , Insert_Device_N){
+
+      vec a{0,1,2,3,4,5,6,7,8,9};
+      vec b{0,1,2,3,42,42,42,4,5,6,7,8,9};
+      a.reserve(30);
+      vec* d_a=a.upload();
+      merge_kernel_2<<<1,1>>>(d_a);
+      cudaDeviceSynchronize();
+      cudaFree(d_a);
+      expect_true(a==b);
 }
 
 TEST(Vector_Functionality , Bug){

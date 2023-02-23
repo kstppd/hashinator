@@ -569,6 +569,11 @@ namespace split{
             iterator operator--(int){
               return iterator(_data - 1);
             }
+            HOSTDEVICE
+            iterator operator--(){
+              _data-=1;
+              return *this;
+            }
          };
 
          class const_iterator{
@@ -615,6 +620,11 @@ namespace split{
             const_iterator operator--(int){
               return const_iterator(_data - 1);
             }
+            HOSTDEVICE
+            const_iterator operator--(){
+              _data-=1;
+              return *this;
+            }
          };
          
          HOSTDEVICE
@@ -637,7 +647,7 @@ namespace split{
          }
 
          HOSTONLY
-         iterator insert (iterator& it, const T& val){
+         iterator insert (iterator it, const T& val){
             
             //If empty or inserting at the end no relocating is needed
             if (it==end()){
@@ -664,21 +674,26 @@ namespace split{
          }
 
          HOSTONLY
-         iterator insert(iterator& it,const size_t elements, const T& val){
+         iterator insert(iterator it,const size_t elements, const T& val){
 
             int64_t index=it.data()-begin().data();
+            size_t oldsize=size();
+            size_t newSize=oldsize+elements;
             if (index<0 || index>size()){
                throw std::out_of_range("Insert");
             }
             
             //Do we do need to increase our capacity?
-            if (size()+elements>capacity()){
-               resize(capacity()+elements);
+            if (newSize>size()){
+               resize(newSize);
             }
 
+            it = begin().data() + index;
+            iterator last= it.data()+oldsize;
+            std::copy_backward(it,last,last.data()+elements);
+            last= it.data()+elements;
+            std::fill(it,last,val);
             iterator retval = &_data[index];
-            std::move(retval, end(), retval.data() + elements);
-            std::fill_n(retval, elements, val);
             return retval;
          }
 
@@ -728,7 +743,7 @@ namespace split{
          #ifndef SPLIT_HOST_ONLY 
          template<typename InputIterator, class = typename std::enable_if< !std::is_integral<InputIterator>::value >::type>
          DEVICEONLY 
-         iterator device_insert(iterator it, InputIterator p0, InputIterator p1){
+         iterator device_insert(iterator it, InputIterator p0, InputIterator p1) noexcept{
 
             const int64_t count = p1.data()-p0.data();
             const int64_t index = it.data() - begin().data();
@@ -749,6 +764,70 @@ namespace split{
             iterator retval = &_data[index+count];
             return retval;
          }
+
+         DEVICEONLY
+         iterator device_insert (iterator it, const T& val)noexcept{
+            
+            //If empty or inserting at the end no relocating is needed
+            if (it==end()){
+               device_push_back(val);
+               return end()--;
+            }
+
+            int64_t index=it.data()-begin().data();
+            if (index<0 || index>size()){
+               assert(0 && "Splitvector has a catastrophic failure trying to insert on device because the vector has no space available.");
+            }
+
+            if (size() == capacity()) {
+               assert(0 && "Splitvector has a catastrophic failure trying to insert on device because the vector has no space available.");
+            }
+
+            //Increase size;
+            for(int64_t  i = size() - 1; i >= index; i--){
+               _data[i+1] = _data[i];
+            }
+            _data[index] = val;
+            device_resize(size()+1);
+            return iterator(_data+index);
+         }
+
+         DEVICEONLY
+         iterator device_insert(iterator it,const size_t elements, const T& val){
+
+
+            int64_t index=it.data()-begin().data();
+            size_t oldsize=size();
+            size_t newSize=oldsize+elements;
+            if (index<0 || index>size()){
+               assert(0 && "Splitvector has a catastrophic failure trying to insert on device because the vector has no space available.");
+            }
+            
+            //Do we do need to increase our capacity?
+            if (newSize>size()){
+               device_resize(newSize);
+            }
+
+            it = begin().data() + index;
+            iterator last= it.data()+oldsize;
+            iterator target=last.data()+elements;
+            for (iterator candidate=last; candidate!=it; --candidate){
+               *target=*candidate;
+               --target;
+            }
+
+            last= it.data()+elements;
+            //std::fill(it,last,val);
+            target=last;
+            for (iterator candidate=it; candidate!=last; ++candidate){
+               *target=val;
+               ++target;
+            }
+
+            target = &_data[index];
+            return target;
+         }
+
          #endif
 
          HOSTDEVICE 
