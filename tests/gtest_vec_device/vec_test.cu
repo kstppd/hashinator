@@ -27,7 +27,16 @@ __global__
 void push_back_kernel(vec* a){
 
    int index = blockIdx.x * blockDim.x + threadIdx.x;
-   a->dev_push_back(index);
+   a->device_push_back(index);
+}
+
+__global__
+void merge_kernel(vec* a,vec *b ){
+
+   int index = blockIdx.x * blockDim.x + threadIdx.x;
+   if (index==0){
+      a->device_insert(a->end(),b->begin(),b->end());
+   }
 }
 
 __global__
@@ -371,6 +380,19 @@ TEST(Vector_Functionality , PushBack_And_Erase_Device){
       cudaFree(d_b);
 }
 
+TEST(Vector_Functionality , Insert_Device){
+      vec a{1,2,3,4};
+      a.reserve(20);
+      vec b{5,6,7,8};
+      vec* d_a=a.upload();
+      vec* d_b=b.upload();
+      merge_kernel<<<1,1>>>(d_a,d_b);
+      cudaDeviceSynchronize();
+      merge_kernel<<<1,1>>>(d_a,d_b);
+      cudaDeviceSynchronize();
+      cudaFree(d_a);
+      cudaFree(d_b);
+}
 
 TEST(Vector_Functionality , Bug){
    const vec blocks{1,2,3,4,5,6,7,8,9};

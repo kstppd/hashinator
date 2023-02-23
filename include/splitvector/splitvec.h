@@ -373,6 +373,18 @@ namespace split{
             reserve(newSize,eco);
             *_size  =newSize; 
          }
+         
+         #ifndef SPLIT_HOST_ONLY
+         DEVICEONLY
+         void device_resize(size_t newSize){
+            //Let's reserve some space and change our size
+            if (newSize<=size()){
+               assert(0 && "Splitvector has a catastrophic failure trying to insert on device because the vector has no space available.");
+            }
+            *_size=newSize; 
+         }
+         #endif
+
 
          HOSTONLY
          void grow(){
@@ -487,7 +499,7 @@ namespace split{
             Will crash if it runs out of space
          */      
          DEVICEONLY 
-         void dev_push_back(const T& val){
+         void device_push_back(const T& val){
             size_t old= atomicAdd((unsigned int*)_size, 1);
             if (old>=capacity()){
                assert(0 && "Splitvector has a catastrophic failure trying to pushback on device because the vector has no space available.");
@@ -498,7 +510,7 @@ namespace split{
          
 
          DEVICEONLY 
-         void dev_push_back(const T&& val){
+         void device_push_back(const T&& val){
 
             //We need at least capacity=size+1 otherwise this 
             //pushback cannot be done
@@ -713,6 +725,31 @@ namespace split{
             return retval;
          }
          
+         #ifndef SPLIT_HOST_ONLY 
+         template<typename InputIterator, class = typename std::enable_if< !std::is_integral<InputIterator>::value >::type>
+         DEVICEONLY 
+         iterator device_insert(iterator it, InputIterator p0, InputIterator p1){
+
+            const int64_t count = p1.data()-p0.data();
+            const int64_t index = it.data() - begin().data();
+      
+            if (index<0 || index>size()){
+               assert(0 && "Splitvector has a catastrophic failure trying to insert on device because the vector has no space available.");
+            }
+
+            if (size() + count > capacity()) {
+               assert(0 && "Splitvector has a catastrophic failure trying to insert on device because the vector has no space available.");
+            }
+
+            //Increase size;
+            device_resize(size()+count);
+            for (size_t i=0; i<count; ++i){
+               _data[index+i] = *(p0.data()+i);
+            }
+            iterator retval = &_data[index+count];
+            return retval;
+         }
+         #endif
 
          HOSTDEVICE 
          iterator erase(iterator it)noexcept{

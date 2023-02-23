@@ -60,7 +60,8 @@ __global__
 void gpu_write(hashmap* hmap, cuda::std::pair<val_type,val_type>*src, size_t N){
    size_t index = blockIdx.x * blockDim.x + threadIdx.x;
    if (index < N ){
-      hmap->set_element(src[index].first, src[index].second);
+      //hmap->set_element(src[index].first, src[index].second);
+      hmap->device_insert(cuda::std::make_pair(src[index].first, src[index].second));
    }
 }
 
