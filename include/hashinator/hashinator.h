@@ -46,7 +46,7 @@ namespace Hashinator{
    #else
    template <typename T>
    using DefaultMetaAllocator = split::split_host_allocator<T>;
-   #define DefaultHasher int //ugly TOFIX TODO
+   #define DefaultHasher void //ugly TOFIX TODO
    #endif
 
    typedef struct Info {

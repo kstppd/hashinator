@@ -424,7 +424,7 @@ namespace split{
           *_size = end;
         }
 
-         HOSTONLY
+         HOSTDEVICE
          void clear()noexcept{
              for (size_t i = 0; i < size();i++) {
                _data[i].~T();
