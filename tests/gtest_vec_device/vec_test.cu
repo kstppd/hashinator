@@ -392,6 +392,7 @@ TEST(Vector_Functionality , Insert_Device){
       cudaDeviceSynchronize();
       cudaFree(d_a);
       cudaFree(d_b);
+      expect_true(a.size()==12);
 }
 
 TEST(Vector_Functionality , Bug){
