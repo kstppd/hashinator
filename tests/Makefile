@@ -6,7 +6,7 @@ EXTRA= -g  --std=c++17
 EXTRA+= -gencode arch=compute_60,code=sm_60  -L /usr/lib/x86_64-linux-gnu
 EXTRA+=  -DHASHMAPDEBUG --expt-relaxed-constexpr 
 GTEST=-lgtest -lgtest_main -lpthread
-OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o delete_mechanism.o insertion_mechanism.o hybrid_cpu.o hybrid_gpu.o
+OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o delete_mechanism.o insertion_mechanism.o hybrid_cpu.o hybrid_gpu.o pointer_test.o
 
 default: tests
 tests: ${OBJ}
@@ -22,6 +22,7 @@ allclean:
 	rm delete_mechanism &
 	rm hybrid_cpu & 
 	rm hybrid_gpu &
+	rm pointertest &
 	rm insertion
 
 gtest_hashmap.o: hashmap_unit_test/main.cu
@@ -41,6 +42,9 @@ delete_mechanism.o: delete_by_compaction/main.cu
 
 insertion_mechanism.o: insertion_mechanism/main.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o insertion insertion_mechanism/main.cu
+
+pointer_test.o: pointer_test/main.cu
+	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o pointertest pointer_test/main.cu
 
 hybrid_gpu.o: hybrid/main.cpp
 	${CC} -x cu  ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o hybrid_gpu hybrid/main.cpp
