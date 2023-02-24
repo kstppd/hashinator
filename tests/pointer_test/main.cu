@@ -89,11 +89,13 @@ TEST(Test_GPU,VectorAddition3){
    add_vectors<<<1,N>>>(a,b,c);
    cudaDeviceSynchronize();
 
-
    for (const auto& e:*c){
       expect_true(e==3);
    }
 
+   a->~vec();
+   b->~vec();
+   c->~vec();
    cudaFree(a);
    cudaFree(b);
    cudaFree(c);
