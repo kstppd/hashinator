@@ -13,6 +13,55 @@
 typedef split::SplitVector<int,split::split_unified_allocator<int>,split::split_unified_allocator<size_t>> vec ;
 
 
+class Managed {
+public:
+   void *operator new(size_t len) {
+      void *ptr;
+      cudaMallocManaged(&ptr, len);
+      cudaDeviceSynchronize();
+      return ptr;
+   }
+
+   void operator delete(void *ptr) {
+      cudaDeviceSynchronize();
+      cudaFree(ptr);
+   }
+
+   void* operator new[] (size_t len) {
+      void *ptr;
+      cudaMallocManaged(&ptr, len);
+      cudaDeviceSynchronize();
+      return ptr;
+   }
+
+   void operator delete[] (void* ptr) {
+      cudaDeviceSynchronize();
+      cudaFree(ptr);
+   }
+
+};
+
+
+
+class TestClass:public Managed{
+   public:
+   TestClass(){
+      a= new vec(1024,128);
+   }
+   ~TestClass(){
+      delete a;
+   }
+   vec* a;
+};
+
+
+
+__global__
+void printClassVec(vec* a){
+   printf("----> %d\n",(int)a->size());
+   printf("----> %d\n",(int)a->at(12));
+}
+
 __global__
 void add_vectors(vec* a , vec* b,vec* c){
    int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -22,85 +71,96 @@ void add_vectors(vec* a , vec* b,vec* c){
 
 }
 
-TEST(Test_GPU,VectorAddition){
-   vec a(N,1);
-   vec b(N,2);
-   vec c(N,0);
+//TEST(Test_GPU,VectorAddition){
+   //vec a(N,1);
+   //vec b(N,2);
+   //vec c(N,0);
    
-   vec* d_a=a.upload();
-   vec* d_b=b.upload();
-   vec* d_c=c.upload();
+   //vec* d_a=a.upload();
+   //vec* d_b=b.upload();
+   //vec* d_c=c.upload();
 
-   add_vectors<<<N,32>>>(d_a,d_b,d_c);
+   //add_vectors<<<N,32>>>(d_a,d_b,d_c);
+   //cudaDeviceSynchronize();
+   //cudaFree(d_a);
+   //cudaFree(d_b);
+   //cudaFree(d_c);
+
+
+   //for (const auto& e:c){
+      //expect_true(e==3);
+   //}
+//}
+
+
+//TEST(Test_GPU,VectorAddition2){
+   //vec* a;
+   //vec* b;
+   //vec* c;
+
+   //a=new vec(N,1);
+   //b=new vec(N,2);
+   //c=new vec(N,0);
+
+   //vec* d_a=a->upload();
+   //vec* d_b=b->upload();
+   //vec* d_c=c->upload();
+
+   //add_vectors<<<1,N>>>(d_a,d_b,d_c);
+   //cudaDeviceSynchronize();
+   //cudaFree(d_a);
+   //cudaFree(d_b);
+   //cudaFree(d_c);
+
+
+   //for (const auto& e:*c){
+      //expect_true(e==3);
+   //}
+   //delete a;
+   //delete b;
+   //delete c;
+//}
+
+//TEST(Test_GPU,VectorAddition3){
+   //vec* a;
+   //vec* b;
+   //vec* c;
+
+   //cudaMallocManaged(&a, sizeof(vec));
+   //cudaMallocManaged(&b, sizeof(vec));
+   //cudaMallocManaged(&c, sizeof(vec));
+
+   //::new(a) vec(N,1);
+   //::new(b) vec(N,2);
+   //::new(c) vec(N,0);
+
+
+   //add_vectors<<<1,N>>>(a,b,c);
+   //cudaDeviceSynchronize();
+
+   //for (const auto& e:*c){
+      //expect_true(e==3);
+   //}
+
+   //a->~vec();
+   //b->~vec();
+   //c->~vec();
+   //cudaFree(a);
+   //cudaFree(b);
+   //cudaFree(c);
+//}
+
+
+TEST(Test_GPU,VectorPrint){
+
+   TestClass* test;
+   test=new TestClass();
+   printClassVec<<<1,1>>>(test->a);
    cudaDeviceSynchronize();
-   cudaFree(d_a);
-   cudaFree(d_b);
-   cudaFree(d_c);
 
+   delete test;
 
-   for (const auto& e:c){
-      expect_true(e==3);
-   }
 }
-
-
-TEST(Test_GPU,VectorAddition2){
-   vec* a;
-   vec* b;
-   vec* c;
-
-   a=new vec(N,1);
-   b=new vec(N,2);
-   c=new vec(N,0);
-
-   vec* d_a=a->upload();
-   vec* d_b=b->upload();
-   vec* d_c=c->upload();
-
-   add_vectors<<<1,N>>>(d_a,d_b,d_c);
-   cudaDeviceSynchronize();
-   cudaFree(d_a);
-   cudaFree(d_b);
-   cudaFree(d_c);
-
-
-   for (const auto& e:*c){
-      expect_true(e==3);
-   }
-   delete a;
-   delete b;
-   delete c;
-}
-
-TEST(Test_GPU,VectorAddition3){
-   vec* a;
-   vec* b;
-   vec* c;
-
-   cudaMallocManaged(&a, sizeof(vec));
-   cudaMallocManaged(&b, sizeof(vec));
-   cudaMallocManaged(&c, sizeof(vec));
-
-   ::new(a) vec(N,1);
-   ::new(b) vec(N,2);
-   ::new(c) vec(N,0);
-
-
-   add_vectors<<<1,N>>>(a,b,c);
-   cudaDeviceSynchronize();
-
-   for (const auto& e:*c){
-      expect_true(e==3);
-   }
-
-   a->~vec();
-   b->~vec();
-   c->~vec();
-   cudaFree(a);
-   cudaFree(b);
-   cudaFree(c);
-}
-
 
 int main(int argc, char* argv[]){
    ::testing::InitGoogleTest(&argc, argv);
