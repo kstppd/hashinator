@@ -218,6 +218,28 @@ namespace split{
             return *this;
          }
 
+         HOSTONLY
+         void *operator new(size_t len) {
+            void *ptr=Allocator::allocate_raw(len);
+            return ptr;
+         }
+
+         HOSTONLY
+         void operator delete(void *ptr) {
+            Allocator::deallocate(ptr,1);
+         }
+
+         HOSTONLY
+         void* operator new[] (size_t len) {
+            void *ptr=Allocator::allocate_raw(len);
+            return ptr;
+         }
+
+         HOSTONLY
+         void operator delete[] (void* ptr) {
+            Allocator::deallocate(ptr);
+         }
+
          #ifndef SPLIT_HOST_ONLY
          //Method that return a pointer which can be passed to GPU kernels
          //Has to be cudaFree'd after use otherwise memleak (small one but still)!

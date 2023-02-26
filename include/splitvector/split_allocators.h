@@ -71,9 +71,21 @@ namespace split{
          return ret;
       }
 
+     static void* allocate_raw(size_type n, const void* /*hint*/ = 0){
+         void* ret;
+         cudaMallocManaged((void**)&ret, n );
+         CheckErrors("Managed Allocation");
+         if (ret == nullptr) {throw std::bad_alloc();}
+         return ret;
+      }
+
       void deallocate(pointer p, size_type){
          cudaFree(p);
          CheckErrors("Managed Deallocation");
+      }
+
+      static void deallocate(void* p, size_type){
+         cudaFree(p);
       }
 
       size_type max_size() const throw(){
@@ -118,7 +130,17 @@ namespace split{
          return ret;
       }
 
+      static void* allocate_raw(size_type n, const void* /*hint*/ = 0){
+         void* ret =(void*)malloc(n);
+         if (ret == nullptr) {throw std::bad_alloc();}
+         return ret;
+      }
+
       void deallocate(pointer p, size_type){
+         free(p);
+      }
+
+      static void deallocate(void* p, size_type){
          free(p);
       }
 
