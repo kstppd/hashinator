@@ -156,6 +156,55 @@ namespace Hashinator{
       };
 
 
+      #ifdef HASHINATOR_HOST_ONLY
+      HASHINATOR_HOSTONLY
+      void *operator new(size_t len) {
+         void *ptr = (void*)malloc(len) ;
+         return ptr;
+      }
+
+      HASHINATOR_HOSTONLY
+      void operator delete(void *ptr) {
+         free(ptr);
+      }
+
+      HASHINATOR_HOSTONLY
+      void* operator new[] (size_t len) {
+         void *ptr = (void*)malloc(len);
+         return ptr;
+      }
+
+      HASHINATOR_HOSTONLY
+      void operator delete[] (void* ptr) {
+         free(ptr);
+      }
+
+      #else
+      HASHINATOR_HOSTONLY
+      void *operator new(size_t len) {
+         void *ptr;
+         cudaMallocManaged(&ptr, len);
+         return ptr;
+      }
+
+      HASHINATOR_HOSTONLY
+      void operator delete(void *ptr) {
+         cudaFree(ptr);
+      }
+
+      HASHINATOR_HOSTONLY
+      void* operator new[] (size_t len) {
+         void *ptr;
+         cudaMallocManaged(&ptr, len);
+         return ptr;
+      }
+
+      HASHINATOR_HOSTONLY
+      void operator delete[] (void* ptr) {
+         cudaFree(ptr);
+      }
+      #endif
+
       // Resize the table to fit more things. This is automatically invoked once
       // maxBucketOverflow has triggered. This can only be done on host (so far)
       HASHINATOR_HOSTONLY
