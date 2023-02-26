@@ -9,7 +9,9 @@ for i in "${tests[@]}"
 do
 	echo Building test: $i
    make $i >/dev/null 2>&1
-   if [ $? -eq 1 ]; then
+   if [ $? -eq 0 ]; then
+     echo Compilation of  $i done!
+  else
      echo Compilation of  $i failed!
      exit 1
    fi
