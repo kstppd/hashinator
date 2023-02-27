@@ -402,12 +402,21 @@ namespace Hashinator{
       HASHINATOR_HOSTONLY
       void dump_buckets()const {
          printf("Hashinator Stats \n");
-         printf("Fill= %zu, LoadFActor=%f \n",_mapInfo->fill,load_factor());
+         printf("Fill= %zu, LoadFactor=%f \n",_mapInfo->fill,load_factor());
          printf("Tombstones= %zu\n",_mapInfo->tombstoneCounter);
          for  (int i =0 ; i < buckets.size(); ++i){
             print_pair(buckets[i]);
          }
          std::cout<<std::endl;
+
+      }
+
+      HASHINATOR_HOSTONLY
+      void stats()const {
+         printf("Hashinator Stats \n");
+         printf("Fill= %zu, LoadFactor=%f \n",_mapInfo->fill,load_factor());
+         printf("Tombstones= %zu\n",_mapInfo->tombstoneCounter);
+         printf("Overflow= %zu\n",_mapInfo->currentMaxBucketOverflow);
 
       }
 

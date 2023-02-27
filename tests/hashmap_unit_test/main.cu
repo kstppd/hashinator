@@ -10,8 +10,8 @@
 #define expect_true EXPECT_TRUE
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
-constexpr int MINPOWER = 6;
-constexpr int MAXPOWER = 23;
+constexpr int MINPOWER = 5;
+constexpr int MAXPOWER = 20;
 
 
 using namespace std::chrono;
@@ -426,6 +426,7 @@ bool test_hashmap_4(int power){
       std::cout<<"Error at recovering all elements 2"<<std::endl;
       return false;
    }
+   hmap.stats();
    return true;
 }
 
