@@ -255,15 +255,48 @@ namespace Hashinator{
 
          // Try to find the matching bucket.
          for (int i = 0; i < maxBucketOverflow; i++) {
+            
             cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
+            
             if (candidate.first == key) {
                // Found a match, return that
                return candidate.second;
             }
+
             if (candidate.first == EMPTYBUCKET) {
                // Found an empty bucket, assign and return that.
                candidate.first = key;
                _mapInfo->fill++;
+               return candidate.second;
+            }
+
+            if (candidate.first == TOMBSTONE) {
+               bool alreadyExists=false;
+
+               //We remove this Tombstone 
+               candidate.first = key;
+               _mapInfo->tombstoneCounter--;
+
+               //We look ahead in case candidate was already in the hashmap
+               //If we find it then we swap the duplicate with empty and do not increment fill
+               //but we only reduce the tombstone count
+               for (int j = i+1; j < maxBucketOverflow; ++j) {
+                  cuda::std::pair<KEY_TYPE, VAL_TYPE>& duplicate = buckets[(hashIndex + j) & bitMask];
+                  if (duplicate.first==candidate.first){
+                     alreadyExists=true;
+                     candidate.second=duplicate.second;
+                     if ( buckets[(hashIndex + j+1) & bitMask].first==EMPTYBUCKET || j+1>=maxBucketOverflow){
+                        duplicate.first=EMPTYBUCKET;
+                     }else{
+                        duplicate.first=TOMBSTONE;
+                        _mapInfo->tombstoneCounter++;
+                     }
+                     break;
+                  }
+               }
+               if (!alreadyExists){
+                  _mapInfo->fill++;
+               }
                return candidate.second;
             }
          }
@@ -281,6 +314,11 @@ namespace Hashinator{
          // Try to find the matching bucket.
          for (int i = 0; i < maxBucketOverflow; i++) {
             const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
+
+            if (candidate.first == TOMBSTONE) {
+               continue;
+            }
+
             if (candidate.first == key) {
                // Found a match, return that
                return candidate.second;
@@ -342,19 +380,30 @@ namespace Hashinator{
 
       HASHINATOR_HOSTONLY
          void print_pair(const cuda::std::pair<KEY_TYPE, VAL_TYPE>& i)const {
+            size_t currentSizePower=_mapInfo->sizePower;
+            const size_t hashIndex = HashFunction::_hash(i.first,currentSizePower);
+            const int bitMask = (1 <<(currentSizePower )) - 1; 
+            size_t optimalIndex=hashIndex&bitMask;
+            const_iterator it=find(i.first);
+            size_t overflow=it.getIndex()-optimalIndex;
             if (i.first==TOMBSTONE){
-               std::cout<<"[╀,-,-] ";
+               std::cout<<"[╀] ";
             }else if (i.first == EMPTYBUCKET){
-               std::cout<<"[▢,-,-] ";
+               std::cout<<"[▢] ";
             }
             else{
-               printf("[%d,%d] ",i.first,i.second);
+               if (overflow>0){
+                  printf("[%d,%d,\033[1;31m%zu\033[0m] ",i.first,i.second,overflow);
+               }else{
+                  printf("[%d,%d,%zu] ",i.first,i.second,overflow);
+               }
             }
          }
       HASHINATOR_HOSTONLY
       void dump_buckets()const {
-         std::cout<<_mapInfo->fill<<" "<<load_factor()<<std::endl;
-         std::cout<<"\n";
+         printf("Hashinator Stats \n");
+         printf("Fill= %zu, LoadFActor=%f \n",_mapInfo->fill,load_factor());
+         printf("Tombstones= %zu\n",_mapInfo->tombstoneCounter);
          for  (int i =0 ; i < buckets.size(); ++i){
             print_pair(buckets[i]);
          }
@@ -405,7 +454,7 @@ namespace Hashinator{
          iterator& operator++() {
             index++;
             while(index < hashtable->buckets.size()){
-               if (hashtable->buckets[index].first != EMPTYBUCKET){
+               if (hashtable->buckets[index].first != EMPTYBUCKET && hashtable->buckets[index].first != TOMBSTONE  ){
                   break;
                }
                index++;
@@ -448,7 +497,7 @@ namespace Hashinator{
          const_iterator& operator++() {
             index++;
             while(index < hashtable->buckets.size()){
-               if (hashtable->buckets[index].first != EMPTYBUCKET){
+               if (hashtable->buckets[index].first != EMPTYBUCKET && hashtable->buckets[index].first != TOMBSTONE){
                   break;
                }
                index++;
@@ -486,6 +535,9 @@ namespace Hashinator{
          // Try to find the matching bucket.
          for (int i = 0; i < maxBucketOverflow; i++) {
             const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
+            
+            if(candidate.first==TOMBSTONE){continue;}
+
             if (candidate.first == key) {
                // Found a match, return that
                return const_iterator(*this, (hashIndex + i) & bitMask);
@@ -509,6 +561,9 @@ namespace Hashinator{
          // Try to find the matching bucket.
          for (int i = 0; i < maxBucketOverflow; i++) {
             const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
+
+            if(candidate.first==TOMBSTONE){continue;}
+            
             if (candidate.first == key) {
                // Found a match, return that
                return iterator(*this, (hashIndex + i) & bitMask);
@@ -527,7 +582,7 @@ namespace Hashinator{
       HASHINATOR_HOSTONLY
       iterator begin() {
          for (size_t i = 0; i < buckets.size(); i++) {
-            if (buckets[i].first != EMPTYBUCKET) {
+            if (buckets[i].first != EMPTYBUCKET && buckets[i].first!=TOMBSTONE) {
                return iterator(*this, i);
             }
          }
@@ -537,7 +592,7 @@ namespace Hashinator{
       HASHINATOR_HOSTONLY
       const_iterator begin() const {
          for (size_t i = 0; i < buckets.size(); i++) {
-            if (buckets[i].first != EMPTYBUCKET) {
+            if (buckets[i].first != EMPTYBUCKET && buckets[i].first!=TOMBSTONE) {
                return const_iterator(*this, i);
             }
          }
@@ -553,40 +608,11 @@ namespace Hashinator{
       // Remove one element from the hash table.
       HASHINATOR_HOSTONLY
       iterator erase(iterator keyPos) {
-         // Due to overflowing buckets, this might require moving quite a bit of stuff around.
          size_t index = keyPos.getIndex();
-
-         if (buckets[index].first != EMPTYBUCKET) {
-            // Decrease fill count
+         if (buckets[index].first != EMPTYBUCKET && buckets[index].first !=TOMBSTONE ){
+            buckets[index].first=TOMBSTONE;
             _mapInfo->fill--;
-
-            // Clear the element itself.
-            buckets[index].first = EMPTYBUCKET;
-
-            int bitMask = (1 << _mapInfo->sizePower) - 1; // For efficient modulo of the array size
-            size_t targetPos = index;
-            // Search ahead to verify items are in correct places (until empty bucket is found)
-            for (unsigned int i = 1; i < _mapInfo->fill; i++) {
-               KEY_TYPE nextBucket = buckets[(index + i)&bitMask].first;
-               if (nextBucket == EMPTYBUCKET) {
-                  // The next bucket is empty, we are done.
-                  break;
-               }
-               // Found an entry: is it in the correct bucket?
-               uint32_t hashIndex = hash(nextBucket);
-               if ((hashIndex&bitMask) != ((index + i)&bitMask)) {
-                  // This entry has overflown. Now check if it should be moved:
-                  uint32_t distance =  ((targetPos - hashIndex + (1<<_mapInfo->sizePower) )&bitMask);
-                  if (distance < maxBucketOverflow) {
-                     // Copy this entry to the current newly empty bucket, then continue with deleting
-                     // this overflown entry and continue searching for overflown entries
-                     VAL_TYPE moveValue = buckets[(index+i)&bitMask].second;
-                     buckets[targetPos] = cuda::std::pair<KEY_TYPE, VAL_TYPE>(nextBucket,moveValue);
-                     targetPos = ((index+i)&bitMask);
-                     buckets[targetPos].first = EMPTYBUCKET;
-                  }
-               }
-            }
+            _mapInfo->tombstoneCounter++;
          }
          // return the next valid bucket member
          ++keyPos;
@@ -771,8 +797,7 @@ namespace Hashinator{
          device_iterator& operator++() {
             index++;
             while(index < hashtable->buckets.size()){
-               if (hashtable->buckets[index].first != EMPTYBUCKET&&
-                   hashtable->buckets[index].first != TOMBSTONE){
+               if (hashtable->buckets[index].first != EMPTYBUCKET && hashtable->buckets[index].first != TOMBSTONE){
                   break;
                }
                index++;
@@ -819,8 +844,7 @@ namespace Hashinator{
          const_device_iterator& operator++() {
             index++;
             while(index < hashtable->buckets.size()){
-               if (hashtable->buckets[index].first != EMPTYBUCKET &&
-                   hashtable->buckets[index].first != TOMBSTONE ){
+               if (hashtable->buckets[index].first != EMPTYBUCKET && hashtable->buckets[index].first != TOMBSTONE ){
                   break;
                }
                index++;
@@ -914,13 +938,22 @@ namespace Hashinator{
       HASHINATOR_DEVICEONLY
       device_iterator device_begin() {
          for (size_t i = 0; i < buckets.size(); i++) {
-            if (buckets[i].first != EMPTYBUCKET) {
+            if (buckets[i].first != EMPTYBUCKET && buckets[i].first != TOMBSTONE) {
                return device_iterator(*this, i);
             }
          }
          return device_end();
       }
 
+      HASHINATOR_DEVICEONLY
+      const_device_iterator device_begin() const {
+         for (size_t i = 0; i < buckets.size(); i++) {
+            if (buckets[i].first != EMPTYBUCKET && buckets[i].first!=TOMBSTONE) {
+               return const_device_iterator(*this, i);
+            }
+         }
+         return device_end();
+      }
 
       HASHINATOR_DEVICEONLY
       size_t device_erase(const KEY_TYPE& key) {
