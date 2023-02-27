@@ -661,8 +661,6 @@ namespace Hashinator{
          if (_mapInfo->tombstoneCounter == 0){
             return ;
          }
-
-         std::cout<<"Cleaning Tombstones with ratio "<<tombstone_ratio()<<std::endl;
          //Reset the tomstone counter
          _mapInfo->tombstoneCounter=0;
          //Allocate memory for overflown elements. So far this is the same size as our buckets but we can be better than this 
@@ -672,7 +670,6 @@ namespace Hashinator{
          split::tools::copy_if<cuda::std::pair<KEY_TYPE, VAL_TYPE>,Overflown_Predicate<KEY_TYPE,VAL_TYPE>,32,defaults::WARPSIZE>(buckets,overflownElements,Overflown_Predicate<KEY_TYPE,VAL_TYPE>(buckets.data(),_mapInfo->sizePower));
          size_t nOverflownElements=overflownElements.size();
          if (nOverflownElements ==0 ){
-            std::cout<<"No cleaning needed!"<<std::endl;
             return ;
          }
          //If we do have overflown elements we put them back in the buckets
