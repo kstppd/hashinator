@@ -51,11 +51,10 @@ namespace Hashinator{
 
    typedef struct Info {
       Info(int sz)
-         :sizePower(sz),fill(0),cpu_maxBucketOverflow(0),postDevice_maxBucketOverflow(0),tombstoneCounter(0){}
+         :sizePower(sz),fill(0),currentMaxBucketOverflow(0),tombstoneCounter(0){}
       int sizePower;
       size_t fill; 
-      int cpu_maxBucketOverflow;
-      int postDevice_maxBucketOverflow;
+      int currentMaxBucketOverflow;
       size_t tombstoneCounter;
    }MapInfo;
 
@@ -638,8 +637,8 @@ namespace Hashinator{
          Hashers::reset_to_empty<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction><<<overflownElements.size(),defaults::MAX_BLOCKSIZE>>> (overflownElements.data(),buckets.data(),_mapInfo->sizePower,maxBucketOverflow,overflownElements.size());
          _mapInfo->fill-=overflownElements.size();
          cudaDeviceSynchronize();
-         DeviceHasher::insert(overflownElements.data(),buckets.data(),_mapInfo->sizePower,maxBucketOverflow,&_mapInfo->cpu_maxBucketOverflow,&_mapInfo->fill,overflownElements.size());
-         if (_mapInfo->cpu_maxBucketOverflow>maxBucketOverflow){
+         DeviceHasher::insert(overflownElements.data(),buckets.data(),_mapInfo->sizePower,maxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,overflownElements.size());
+         if (_mapInfo->currentMaxBucketOverflow>maxBucketOverflow){
             rehash(_mapInfo->sizePower++);
          }
          return ;
@@ -654,9 +653,9 @@ namespace Hashinator{
             resize(neededPowerSize);
          }
          buckets.optimizeGPU();
-         _mapInfo->cpu_maxBucketOverflow=maxBucketOverflow;
-         DeviceHasher::insert(keys,vals,buckets.data(),_mapInfo->sizePower,maxBucketOverflow,&_mapInfo->cpu_maxBucketOverflow,&_mapInfo->fill,len);
-         if (_mapInfo->cpu_maxBucketOverflow>maxBucketOverflow){
+         _mapInfo->currentMaxBucketOverflow=maxBucketOverflow;
+         DeviceHasher::insert(keys,vals,buckets.data(),_mapInfo->sizePower,maxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,len);
+         if (_mapInfo->currentMaxBucketOverflow>maxBucketOverflow){
             rehash(_mapInfo->sizePower++);
          }
          return;
@@ -672,9 +671,9 @@ namespace Hashinator{
             resize(neededPowerSize);
          }
          buckets.optimizeGPU();
-         _mapInfo->cpu_maxBucketOverflow=maxBucketOverflow;
-         DeviceHasher::insert(src,buckets.data(),_mapInfo->sizePower,maxBucketOverflow,&_mapInfo->cpu_maxBucketOverflow,&_mapInfo->fill,len);
-         if (_mapInfo->cpu_maxBucketOverflow>maxBucketOverflow){
+         _mapInfo->currentMaxBucketOverflow=maxBucketOverflow;
+         DeviceHasher::insert(src,buckets.data(),_mapInfo->sizePower,maxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,len);
+         if (_mapInfo->currentMaxBucketOverflow>maxBucketOverflow){
             rehash(_mapInfo->sizePower++);
          }
          return;
@@ -706,7 +705,7 @@ namespace Hashinator{
        */
       HASHINATOR_HOSTONLY
       Hashmap* upload(cudaStream_t stream = 0 ){
-         _mapInfo->cpu_maxBucketOverflow=maxBucketOverflow;
+         _mapInfo->currentMaxBucketOverflow=maxBucketOverflow;
          optimizeGPU(stream);
          cudaMemcpyAsync(device_map, this, sizeof(Hashmap),cudaMemcpyHostToDevice,stream);
          return device_map;
@@ -745,7 +744,7 @@ namespace Hashinator{
       void download(cudaStream_t stream = 0){
          //Copy over fill as it might have changed
          optimizeCPU(stream);
-         if (_mapInfo->cpu_maxBucketOverflow>maxBucketOverflow){
+         if (_mapInfo->currentMaxBucketOverflow>maxBucketOverflow){
             std::cout<<"Device Overflow"<<std::endl;
             rehash(_mapInfo->sizePower+1);
          }else{
@@ -859,7 +858,7 @@ namespace Hashinator{
          uint32_t hashIndex = hash(key);
 
          // Try to find the matching bucket.
-         for (int i = 0; i < _mapInfo->cpu_maxBucketOverflow; i++) {
+         for (int i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
             const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
             if (candidate.first==TOMBSTONE){continue;}
@@ -885,7 +884,7 @@ namespace Hashinator{
          uint32_t hashIndex = hash(key);
 
          // Try to find the matching bucket.
-         for (int i = 0; i < _mapInfo->cpu_maxBucketOverflow; i++) {
+         for (int i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
             const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
             if (candidate.first==TOMBSTONE){continue;}
@@ -1031,7 +1030,7 @@ namespace Hashinator{
       void set_element(const KEY_TYPE& key,VAL_TYPE val){
          size_t thread_overflowLookup;
          insert_element(key,val,thread_overflowLookup);
-         atomicMax(&(_mapInfo->cpu_maxBucketOverflow),thread_overflowLookup);
+         atomicMax(&(_mapInfo->currentMaxBucketOverflow),thread_overflowLookup);
       }
 
       HASHINATOR_DEVICEONLY
@@ -1040,7 +1039,7 @@ namespace Hashinator{
          uint32_t hashIndex = hash(key);
 
          // Try to find the matching bucket.
-         for (int i = 0; i < _mapInfo->cpu_maxBucketOverflow; i++) {
+         for (int i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
             uint32_t vecindex=(hashIndex + i) & bitMask;
             const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[vecindex];
             if (candidate.first == key) {
