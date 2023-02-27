@@ -102,7 +102,7 @@ namespace Hashinator{
          #ifndef HASHINATOR_HOST_ONLY
          cudaFree(device_map);
          #endif
-      }
+      }   
 
    public:
       template <typename T, typename U>
@@ -246,6 +246,7 @@ namespace Hashinator{
 
          // Replace our buckets with the new ones
          buckets = newBuckets;
+         _mapInfo->currentMaxBucketOverflow=Hashinator::defaults::BUCKET_OVERFLOW;
       }
 
       // Element access (by reference). Nonexistent elements get created.
@@ -441,21 +442,32 @@ namespace Hashinator{
          std::swap(device_map,other.device_map);
       }
 
+      //Try to get the overdlow back to the original one
+      HASHINATOR_HOSTONLY
+      void resetOverlow(){
+         while (_mapInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW){
+            rehash(_mapInfo->sizePower+1);
+         }
+      }
+
       //Read only  access to reference. 
       HASHINATOR_HOSTONLY
       const VAL_TYPE& at(const KEY_TYPE& key) const {
+         resetOverlow();
          return _at(key);
       }
 
       //See _at(key)
       HASHINATOR_HOSTONLY
       VAL_TYPE& at(const KEY_TYPE& key) {
+         resetOverlow();
          return _at(key);
       }
 
       // Typical array-like access with [] operator
       HASHINATOR_HOSTONLY
       VAL_TYPE& operator[](const KEY_TYPE& key) {
+         resetOverlow();
          return at(key); 
       }
       
@@ -574,6 +586,7 @@ namespace Hashinator{
 
       HASHINATOR_HOSTONLY
       iterator find(KEY_TYPE key) {
+         resetOverlow();
          int bitMask = (1 << _mapInfo->sizePower) - 1; // For efficient modulo of the array size
          uint32_t hashIndex = hash(key);
 
