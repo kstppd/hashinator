@@ -42,11 +42,11 @@ namespace Hashinator{
    #ifndef HASHINATOR_HOST_ONLY
    template <typename T>
    using DefaultMetaAllocator = split::split_unified_allocator<T>;
-   #define DefaultHasher Hashers::Hasher<KEY_TYPE,VAL_TYPE,HashFunction,EMPTYBUCKET,defaults::WARPSIZE,defaults::elementsPerWarp>
+   #define DefaultHasher Hashers::Hasher<KEY_TYPE,VAL_TYPE,HashFunction,EMPTYBUCKET,TOMBSTONE,defaults::WARPSIZE,defaults::elementsPerWarp>
    #else
    template <typename T>
    using DefaultMetaAllocator = split::split_host_allocator<T>;
-   #define DefaultHasher void //ugly TOFIX TODO
+   #define DefaultHasher void
    #endif
 
    typedef struct Info {
@@ -54,13 +54,12 @@ namespace Hashinator{
          :sizePower(sz),fill(0),currentMaxBucketOverflow(0),tombstoneCounter(0){}
       int sizePower;
       size_t fill; 
-      int currentMaxBucketOverflow;
+      size_t currentMaxBucketOverflow;
       size_t tombstoneCounter;
    }MapInfo;
 
    template <typename KEY_TYPE, 
              typename VAL_TYPE, 
-             int maxBucketOverflow = Hashinator::defaults::BUCKET_OVERFLOW, 
              KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(),
              KEY_TYPE TOMBSTONE = EMPTYBUCKET - 1,
              class HashFunction=HashFunctions::Fibonacci<KEY_TYPE>,
@@ -129,6 +128,7 @@ namespace Hashinator{
          preallocate_device_handles();
          _mapInfo=_metaAllocator.allocate(1);
          *_mapInfo=MapInfo(5);
+         _mapInfo->currentMaxBucketOverflow=Hashinator::defaults::BUCKET_OVERFLOW;
          buckets=split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> (1 << _mapInfo->sizePower, cuda::std::pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE()));
        };
 
@@ -137,6 +137,7 @@ namespace Hashinator{
          preallocate_device_handles();
          _mapInfo=_metaAllocator.allocate(1);
          *_mapInfo=MapInfo(5);
+         _mapInfo->currentMaxBucketOverflow=Hashinator::defaults::BUCKET_OVERFLOW;
          buckets=split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> (1 << _mapInfo->sizePower, cuda::std::pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE()));
        };
 
@@ -226,7 +227,7 @@ namespace Hashinator{
 
             uint32_t newHash = hash(e.first);
             bool found = false;
-            for (int i = 0; i < maxBucketOverflow; i++) {
+            for (int i = 0; i < Hashinator::defaults::BUCKET_OVERFLOW; i++) {
                cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = newBuckets[(newHash + i) & bitMask];
                if (candidate.first == EMPTYBUCKET) {
                   // Found an empty bucket, assign that one.
@@ -254,7 +255,7 @@ namespace Hashinator{
          uint32_t hashIndex = hash(key);
 
          // Try to find the matching bucket.
-         for (int i = 0; i < maxBucketOverflow; i++) {
+         for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
             
             cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
             
@@ -280,12 +281,12 @@ namespace Hashinator{
                //We look ahead in case candidate was already in the hashmap
                //If we find it then we swap the duplicate with empty and do not increment fill
                //but we only reduce the tombstone count
-               for (int j = i+1; j < maxBucketOverflow; ++j) {
+               for (size_t j = i+1; j < _mapInfo->currentMaxBucketOverflow; ++j) {
                   cuda::std::pair<KEY_TYPE, VAL_TYPE>& duplicate = buckets[(hashIndex + j) & bitMask];
                   if (duplicate.first==candidate.first){
                      alreadyExists=true;
                      candidate.second=duplicate.second;
-                     if ( buckets[(hashIndex + j+1) & bitMask].first==EMPTYBUCKET || j+1>=maxBucketOverflow){
+                     if ( buckets[(hashIndex + j+1) & bitMask].first==EMPTYBUCKET || j+1>=_mapInfo->currentMaxBucketOverflow){
                         duplicate.first=EMPTYBUCKET;
                      }else{
                         duplicate.first=TOMBSTONE;
@@ -312,7 +313,7 @@ namespace Hashinator{
          uint32_t hashIndex = hash(key);
 
          // Try to find the matching bucket.
-         for (int i = 0; i < maxBucketOverflow; i++) {
+         for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
             const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
             if (candidate.first == TOMBSTONE) {
@@ -376,8 +377,6 @@ namespace Hashinator{
          rehash(newSizePower);     
       }
 
-
-
       HASHINATOR_HOSTONLY
          void print_pair(const cuda::std::pair<KEY_TYPE, VAL_TYPE>& i)const {
             size_t currentSizePower=_mapInfo->sizePower;
@@ -385,7 +384,7 @@ namespace Hashinator{
             const int bitMask = (1 <<(currentSizePower )) - 1; 
             size_t optimalIndex=hashIndex&bitMask;
             const_iterator it=find(i.first);
-            size_t overflow=it.getIndex()-optimalIndex;
+            int64_t overflow=it.getIndex()-optimalIndex;
             if (i.first==TOMBSTONE){
                std::cout<<"[╀] ";
             }else if (i.first == EMPTYBUCKET){
@@ -393,12 +392,13 @@ namespace Hashinator{
             }
             else{
                if (overflow>0){
-                  printf("[%d,%d,\033[1;31m%zu\033[0m] ",i.first,i.second,overflow);
+                  printf("[%d,%d,\033[1;31m%li\033[0m] ",i.first,i.second,overflow);
                }else{
                   printf("[%d,%d,%zu] ",i.first,i.second,overflow);
                }
             }
          }
+
       HASHINATOR_HOSTONLY
       void dump_buckets()const {
          printf("Hashinator Stats \n");
@@ -410,9 +410,19 @@ namespace Hashinator{
          std::cout<<std::endl;
 
       }
-       HASHINATOR_HOSTONLY
+
+      HASHINATOR_HOSTONLY
       size_t tombstone_count()const {
          return _mapInfo->tombstoneCounter;
+      }
+
+      HASHINATOR_HOSTONLY
+      float tombstone_ratio()const {
+         if (tombstone_count()==0){
+            return 0.0;
+         }
+
+         return (float)_mapInfo->tombstoneCounter/(float)buckets.size();
       }
 
       HASHINATOR_HOSTONLY
@@ -533,7 +543,7 @@ namespace Hashinator{
          uint32_t hashIndex = hash(key);
 
          // Try to find the matching bucket.
-         for (int i = 0; i < maxBucketOverflow; i++) {
+         for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
             const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
             
             if(candidate.first==TOMBSTONE){continue;}
@@ -559,7 +569,7 @@ namespace Hashinator{
          uint32_t hashIndex = hash(key);
 
          // Try to find the matching bucket.
-         for (int i = 0; i < maxBucketOverflow; i++) {
+         for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
             const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
             if(candidate.first==TOMBSTONE){continue;}
@@ -647,6 +657,12 @@ namespace Hashinator{
       //the member Hasher
       HASHINATOR_HOSTONLY
       void clean_tombstones(){
+
+         if (_mapInfo->tombstoneCounter == 0){
+            return ;
+         }
+
+         std::cout<<"Cleaning Tombstones with ratio "<<tombstone_ratio()<<std::endl;
          //Reset the tomstone counter
          _mapInfo->tombstoneCounter=0;
          //Allocate memory for overflown elements. So far this is the same size as our buckets but we can be better than this 
@@ -660,11 +676,25 @@ namespace Hashinator{
             return ;
          }
          //If we do have overflown elements we put them back in the buckets
-         Hashers::reset_to_empty<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction><<<overflownElements.size(),defaults::MAX_BLOCKSIZE>>> (overflownElements.data(),buckets.data(),_mapInfo->sizePower,maxBucketOverflow,overflownElements.size());
+         Hashers::reset_to_empty<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction>
+                                 <<<overflownElements.size(),defaults::MAX_BLOCKSIZE>>>
+                                 (overflownElements.data(),
+                                  buckets.data(),
+                                  _mapInfo->sizePower,
+                                  _mapInfo->currentMaxBucketOverflow,
+                                  overflownElements.size());
          _mapInfo->fill-=overflownElements.size();
          cudaDeviceSynchronize();
-         DeviceHasher::insert(overflownElements.data(),buckets.data(),_mapInfo->sizePower,maxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,overflownElements.size());
-         if (_mapInfo->currentMaxBucketOverflow>maxBucketOverflow){
+
+         DeviceHasher::insert(overflownElements.data(),
+                              buckets.data(),
+                              _mapInfo->sizePower,
+                              _mapInfo->currentMaxBucketOverflow,
+                              &_mapInfo->currentMaxBucketOverflow,
+                              &_mapInfo->fill,
+                              overflownElements.size());
+
+         if (_mapInfo->currentMaxBucketOverflow>Hashinator::defaults::BUCKET_OVERFLOW){
             rehash(_mapInfo->sizePower++);
          }
          return ;
@@ -679,9 +709,9 @@ namespace Hashinator{
             resize(neededPowerSize);
          }
          buckets.optimizeGPU();
-         _mapInfo->currentMaxBucketOverflow=maxBucketOverflow;
-         DeviceHasher::insert(keys,vals,buckets.data(),_mapInfo->sizePower,maxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,len);
-         if (_mapInfo->currentMaxBucketOverflow>maxBucketOverflow){
+         _mapInfo->currentMaxBucketOverflow=_mapInfo->currentMaxBucketOverflow;
+         DeviceHasher::insert(keys,vals,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,len);
+         if (_mapInfo->currentMaxBucketOverflow>Hashinator::defaults::BUCKET_OVERFLOW){
             rehash(_mapInfo->sizePower++);
          }
          return;
@@ -697,9 +727,9 @@ namespace Hashinator{
             resize(neededPowerSize);
          }
          buckets.optimizeGPU();
-         _mapInfo->currentMaxBucketOverflow=maxBucketOverflow;
-         DeviceHasher::insert(src,buckets.data(),_mapInfo->sizePower,maxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,len);
-         if (_mapInfo->currentMaxBucketOverflow>maxBucketOverflow){
+         _mapInfo->currentMaxBucketOverflow=_mapInfo->currentMaxBucketOverflow;
+         DeviceHasher::insert(src,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,len);
+         if (_mapInfo->currentMaxBucketOverflow>Hashinator::defaults::BUCKET_OVERFLOW  ){
             rehash(_mapInfo->sizePower++);
          }
          return;
@@ -709,18 +739,20 @@ namespace Hashinator{
       HASHINATOR_HOSTONLY
       void retrieve(KEY_TYPE* keys,VAL_TYPE* vals,size_t len){
          buckets.optimizeGPU();
-         DeviceHasher::retrieve(keys,vals,buckets.data(),_mapInfo->sizePower,maxBucketOverflow,len);
+         DeviceHasher::retrieve(keys,vals,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,len);
          return;
       }
 
       //Uses Hasher's erase_kernel to delete all elements
       HASHINATOR_HOSTONLY
-      void erase(KEY_TYPE* keys,VAL_TYPE* vals,size_t len){
+      void erase(KEY_TYPE* keys,size_t len){
          buckets.optimizeGPU();
-         DeviceHasher::erase(keys,vals,buckets.data(),_mapInfo->tombstoneCounter,_mapInfo->sizePower,maxBucketOverflow,len);
-         if (tombstone_count()>0){
-            clean_tombstones();
-         }
+         //Remember the last numeber of tombstones
+         size_t tbStore=tombstone_count();
+         DeviceHasher::erase(keys,buckets.data(),&_mapInfo->tombstoneCounter,_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,len);
+         size_t tombstonesAdded=tombstone_count()-tbStore;
+         //Fill should be decremented by the number of tombstones added;
+         _mapInfo->fill-=tombstonesAdded;
          return;
       }
 
@@ -731,7 +763,6 @@ namespace Hashinator{
        */
       HASHINATOR_HOSTONLY
       Hashmap* upload(cudaStream_t stream = 0 ){
-         _mapInfo->currentMaxBucketOverflow=maxBucketOverflow;
          optimizeGPU(stream);
          cudaMemcpyAsync(device_map, this, sizeof(Hashmap),cudaMemcpyHostToDevice,stream);
          return device_map;
@@ -770,7 +801,7 @@ namespace Hashinator{
       void download(cudaStream_t stream = 0){
          //Copy over fill as it might have changed
          optimizeCPU(stream);
-         if (_mapInfo->currentMaxBucketOverflow>maxBucketOverflow){
+         if (_mapInfo->currentMaxBucketOverflow>Hashinator::defaults::BUCKET_OVERFLOW){
             std::cout<<"Device Overflow"<<std::endl;
             rehash(_mapInfo->sizePower+1);
          }else{
@@ -1022,29 +1053,6 @@ namespace Hashinator{
                return;
             }
 
-            //Tombstone encounter. Fill gets inceremented and we look ahead for 
-            //duplicates. If we find a duplicate we overwrite that otherwise we 
-            //replace the tombstone with the new element
-            if (old==TOMBSTONE){
-               for (size_t j=i; j< thread_overflowLookup; j++){
-                  uint32_t next_index=(hashIndex + j) & bitMask;
-                  KEY_TYPE candidate;
-                  atomicExch(&candidate,buckets[next_index].first);
-                  if (candidate == key){
-                     atomicExch(&buckets[vecindex].second,value);
-                     thread_overflowLookup = i+1;
-                     return;
-                  }
-                  if (candidate == EMPTYBUCKET){
-                     atomicExch(&buckets[vecindex].first,key);
-                     atomicExch(&buckets[vecindex].second,value);
-                     atomicAdd((unsigned int*)(&_mapInfo->fill), 1);
-                     thread_overflowLookup = i+1;
-                     return;
-                  }
-               }
-
-            }
             i++;
          }
          assert(false && "Hashmap completely overflown");
@@ -1063,7 +1071,7 @@ namespace Hashinator{
       void set_element(const KEY_TYPE& key,VAL_TYPE val){
          size_t thread_overflowLookup;
          insert_element(key,val,thread_overflowLookup);
-         atomicMax(&(_mapInfo->currentMaxBucketOverflow),thread_overflowLookup);
+         atomicMax((unsigned long long*)&(_mapInfo->currentMaxBucketOverflow),thread_overflowLookup);
       }
 
       HASHINATOR_DEVICEONLY

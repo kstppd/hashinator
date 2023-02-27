@@ -44,7 +44,7 @@ namespace Hashinator{
       void reset_to_empty(cuda::std::pair<KEY_TYPE, VAL_TYPE>* src,
                           cuda::std::pair<KEY_TYPE, VAL_TYPE>* dst,
                           const int sizePower,
-                          int maxoverflow,
+                          size_t maxoverflow,
                           size_t Nsrc)
 
       {
@@ -93,8 +93,8 @@ namespace Hashinator{
       void insert_kernel(cuda::std::pair<KEY_TYPE, VAL_TYPE>* src,
                          cuda::std::pair<KEY_TYPE, VAL_TYPE>* buckets,
                          int sizePower,
-                         int maxoverflow,
-                         int* d_overflow,
+                         size_t maxoverflow,
+                         size_t* d_overflow,
                          size_t* d_fill,
                          size_t len)
       {
@@ -128,7 +128,7 @@ namespace Hashinator{
          const size_t optimalindex=(hashIndex) & bitMask;
 
          //Check for duplicates
-         for(int i=0; i<(*d_overflow); i+=VIRTUALWARP){
+         for(size_t i=0; i<(*d_overflow); i+=VIRTUALWARP){
             
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
@@ -153,7 +153,7 @@ namespace Hashinator{
 
          //No duplicates so we insert
          bool done=false;
-         for(int i=0; i<(1<<sizePower); i+=VIRTUALWARP){
+         for(size_t i=0; i<(1<<sizePower); i+=VIRTUALWARP){
 
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
@@ -187,7 +187,7 @@ namespace Hashinator{
                mask ^= (1UL << winner);
             }
          }
-         return ;
+         assert(0 && "Hashmap Completely Overflown!");
       }
 
 
@@ -220,8 +220,8 @@ namespace Hashinator{
                          VAL_TYPE* vals,
                          cuda::std::pair<KEY_TYPE, VAL_TYPE>* buckets,
                          int sizePower,
-                         int maxoverflow,
-                         int* d_overflow,
+                         size_t maxoverflow,
+                         size_t* d_overflow,
                          size_t* d_fill,
                          size_t len)
       {
@@ -256,7 +256,7 @@ namespace Hashinator{
          const size_t optimalindex=(hashIndex) & bitMask;
 
          //Check for duplicates
-         for(int i=0; i<(*d_overflow); i+=VIRTUALWARP){
+         for(size_t i=0; i<(*d_overflow); i+=VIRTUALWARP){
             
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
@@ -281,7 +281,7 @@ namespace Hashinator{
 
          //No duplicates so we insert
          bool done=false;
-         for(int i=0; i<(1<<sizePower); i+=VIRTUALWARP){
+         for(size_t i=0; i<(1<<sizePower); i+=VIRTUALWARP){
 
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
@@ -333,7 +333,7 @@ namespace Hashinator{
                            VAL_TYPE* vals,
                            cuda::std::pair<KEY_TYPE, VAL_TYPE>* buckets,
                            int sizePower,
-                           int maxoverflow)
+                           size_t maxoverflow)
       {
 
          const int VIRTUALWARP=WARPSIZE/elementsPerWarp;
@@ -360,7 +360,7 @@ namespace Hashinator{
          const size_t hashIndex = HashFunction::_hash(candidateKey,sizePower);
 
          //Check for duplicates
-         for(int i=0; i<maxoverflow; i+=VIRTUALWARP){
+         for(size_t i=0; i<maxoverflow; i+=VIRTUALWARP){
             
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
@@ -400,7 +400,8 @@ namespace Hashinator{
                            cuda::std::pair<KEY_TYPE, VAL_TYPE>* buckets,
                            size_t* d_tombstoneCounter,
                            int sizePower,
-                           int maxoverflow)
+                           size_t maxoverflow,
+                           size_t len)
       {
 
          const int VIRTUALWARP=WARPSIZE/elementsPerWarp;
@@ -409,6 +410,11 @@ namespace Hashinator{
          const size_t w_tid=tid%VIRTUALWARP;
          unsigned int subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
          
+         //Early quit if we have more warps than elements to insert
+         if (wid>=len){
+            return;
+         }
+
          auto getIntraWarpMask = [](unsigned int n ,unsigned int l ,unsigned int r)->unsigned int{
             int num = ((1<<r)-1)^((1<<(l-1))-1);
             return (n^num);
@@ -426,7 +432,7 @@ namespace Hashinator{
          const size_t hashIndex = HashFunction::_hash(candidateKey,sizePower);
 
          //Check for duplicates
-         for(int i=0; i<maxoverflow; i+=VIRTUALWARP){
+         for(size_t i=0; i<maxoverflow; i+=VIRTUALWARP){
             
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
@@ -440,7 +446,7 @@ namespace Hashinator{
                int winner =__ffs ( maskExists ) -1;
                winner-=(subwarp_relative_index)*VIRTUALWARP;
                if(w_tid==winner){
-                  atomicExch(&buckets[probingindex].second, TOMBSTONE);
+                  atomicExch(&buckets[probingindex].first, TOMBSTONE);
                   atomicAdd((unsigned long long int*)d_tombstoneCounter, 1);
                }
                return;
@@ -454,6 +460,7 @@ namespace Hashinator{
                typename VAL_TYPE,
                class HashFunction,
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
+               KEY_TYPE TOMBSTONE=EMPTYBUCKET=1,
                int WARP=32,
                int elementsPerWarp=1,
                cudaStream_t s = cudaStream_t()>
@@ -469,8 +476,8 @@ namespace Hashinator{
                             VAL_TYPE* vals,
                             cuda::std::pair<KEY_TYPE, VAL_TYPE>* buckets,
                             int sizePower,
-                            int maxoverflow,
-                            int* d_overflow,
+                            size_t maxoverflow,
+                            size_t* d_overflow,
                             size_t* d_fill,
                             size_t len)
          {
@@ -487,8 +494,8 @@ namespace Hashinator{
          static void insert(cuda::std::pair<KEY_TYPE, VAL_TYPE>* src,
                             cuda::std::pair<KEY_TYPE, VAL_TYPE>* buckets,
                             int sizePower,
-                            int maxoverflow,
-                            int* d_overflow,
+                            size_t maxoverflow,
+                            size_t* d_overflow,
                             size_t* d_fill,
                             size_t len)
          {
@@ -505,7 +512,7 @@ namespace Hashinator{
                               VAL_TYPE* vals,
                               cuda::std::pair<KEY_TYPE, VAL_TYPE>* buckets,
                               int sizePower,
-                              int maxoverflow,
+                              size_t maxoverflow,
                               size_t len)
          {
 
@@ -520,22 +527,21 @@ namespace Hashinator{
 
          //Delete wrapper
          static void erase(KEY_TYPE* keys,
-                            cuda::std::pair<KEY_TYPE, VAL_TYPE>* buckets,
-                            size_t* d_tombstoneCounter,
-                            int sizePower,
-                            int maxoverflow,
-                            size_t len)
+                           cuda::std::pair<KEY_TYPE, VAL_TYPE>* buckets,
+                           size_t* d_tombstoneCounter,
+                           int sizePower,
+                           size_t maxoverflow,
+                           size_t len)
          {
 
             size_t blocks,blockSize;
             launchParams(len,blocks,blockSize);
-            delete_kernel<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction,defaults::WARPSIZE,elementsPerWarp>
+            delete_kernel<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,TOMBSTONE,HashFunction,defaults::WARPSIZE,elementsPerWarp>
                      <<<blocks,blockSize,0,s>>>
-                     (keys,buckets,d_tombstoneCounter,sizePower,maxoverflow);
+                     (keys,buckets,d_tombstoneCounter,sizePower,maxoverflow,len);
             cudaDeviceSynchronize();
 
          }
-
 
       private:
          static void launchParams(size_t N,size_t& blocks,size_t& blockSize){

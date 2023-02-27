@@ -10,14 +10,25 @@
 #define expect_true EXPECT_TRUE
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
+constexpr int MINPOWER = 6;
+constexpr int MAXPOWER = 23;
+
 
 using namespace std::chrono;
 using namespace Hashinator;
 typedef uint32_t val_type;
 typedef uint32_t key_type;
 typedef split::SplitVector<cuda::std::pair<key_type,val_type>,split::split_unified_allocator<cuda::std::pair<val_type,val_type>>,split::split_unified_allocator<size_t>> vector ;
+typedef split::SplitVector<key_type,split::split_unified_allocator<key_type>,split::split_unified_allocator<size_t>> ivector ;
 typedef Hashmap<key_type,val_type> hashmap;
 
+
+struct Predicate{
+   HASHINATOR_HOSTDEVICE
+   inline bool operator()( cuda::std::pair<key_type,val_type>& element)const{
+      return element.second%2==0;
+   }
+};
 
 template <class Fn, class ... Args>
 auto execute_and_time(const char* name,Fn fn, Args && ... args) ->bool{
@@ -203,7 +214,7 @@ bool test_hashmap_1(int power){
    //Quick check to verify there are no even elements
    for (const auto& kval : hmap){
       if (kval.second%2==0){
-         std::cerr<<kval.first<<" "<<kval.second<<std::endl;
+         std::cout<<kval.first<<" "<<kval.second<<std::endl;
          return false;
       }
    }
@@ -249,7 +260,7 @@ bool test_hashmap_2(int power){
 
 
    hashmap* hmap = new hashmap();
-   hmap->resize(power++);
+   hmap->resize(power+1);
 
    //Upload to device and insert input
    gpu_write<<<blocks,blocksize>>>(hmap,src.data(),src.size());
@@ -267,10 +278,27 @@ bool test_hashmap_2(int power){
    gpu_delete_even<<<blocks,blocksize>>>(hmap,src.data(),src.size());
    cudaDeviceSynchronize();
 
+
+
+   //Upload to device and insert input
+   gpu_write<<<blocks,blocksize>>>(hmap,src.data(),src.size());
+   cudaDeviceSynchronize();
+
+   //Upload to device and insert input
+   gpu_write<<<blocks,blocksize>>>(hmap,src.data(),src.size());
+   cudaDeviceSynchronize();
+
+
+   //Delete some selection of the source data
+   gpu_delete_even<<<blocks,blocksize>>>(hmap,src.data(),src.size());
+   cudaDeviceSynchronize();
+
+
+
    //Quick check to verify there are no even elements
    for (const auto& kval : *hmap){
       if (kval.second%2==0){
-         std::cerr<<kval.first<<" "<<kval.second<<std::endl;
+         std::cout<<kval.first<<" "<<kval.second<<std::endl;
          return false;
       }
    }
@@ -278,12 +306,13 @@ bool test_hashmap_2(int power){
    //Verify odd elements;
    cpuOK=recover_odd_elements(hmap,src);
    gpu_recover_odd_elements<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   cudaDeviceSynchronize();
+   //cudaDeviceSynchronize();
    if (!cpuOK){
       return false;
    }
 
-   //Reinsert so that we can also test duplicate insertion
+   //Clean Tomstones and reinsert so that we can also test duplicate insertion
+   hmap->clean_tombstones();
    gpu_write<<<blocks,blocksize>>>(hmap,src.data(),src.size());
    cudaDeviceSynchronize();
 
@@ -295,21 +324,140 @@ bool test_hashmap_2(int power){
       return false;
    }
 
-
    delete hmap;
    hmap=nullptr;
    return true;
-
 }
 
 
 
+bool test_hashmap_3(int power){
+   size_t N = 1<<power;
+
+   //Create some input data
+   vector src(N);
+   create_input(src);
+   hashmap hmap;
+   bool cpuOK;
+
+   for (auto i : src){
+      hmap.insert(i);
+   }
+
+   cpuOK=recover_all_elements(hmap,src);
+   if (!cpuOK){
+      std::cout<<"Error at recovering all elements 1"<<std::endl;
+      return false;
+   }
+
+   for (auto i:hmap){
+      if (i.second%2==0){
+         hmap.erase(i.first);
+      }
+   }
+
+   cpuOK=recover_odd_elements(hmap,src);
+   if (!cpuOK){
+      std::cout<<"Error at recovering odd elements 2"<<std::endl;
+      return false;
+   }
+
+   for (auto i : src){
+      hmap.insert(i);
+   }
+
+   cpuOK=recover_all_elements(hmap,src);
+   if (!cpuOK){
+      std::cout<<"Error at recovering all elements 2"<<std::endl;
+      return false;
+   }
+   return true;
+}
 
 
-TEST(HashmapUnitTets , Host_Device_Insert_Delete_Global_Tets){
-   for (int power=5; power<6; ++power){
+bool test_hashmap_4(int power){
+   size_t N = 1<<power;
+
+   //Create some input data
+   vector src(N);
+   create_input(src);
+   hashmap hmap;
+   bool cpuOK;
+
+   hmap.insert(src.data(),src.size());
+
+   cpuOK=recover_all_elements(hmap,src);
+   if (!cpuOK){
+      std::cout<<"Error at recovering all elements 1"<<std::endl;
+      return false;
+   }
+
+   //Get all even elements in src
+   vector evenBuffer(src.size());
+   ivector keyBuffer;
+   split::tools::copy_if<cuda::std::pair<key_type, val_type>,Predicate>(src,evenBuffer,Predicate());
+   for (auto i:evenBuffer){
+      keyBuffer.push_back(i.first);
+   }
+
+
+   //Erase using device
+   hmap.erase(keyBuffer.data(),keyBuffer.size());
+
+   cpuOK=recover_odd_elements(hmap,src);
+   if (!cpuOK){
+      std::cout<<"Error at recovering odd elements 2"<<std::endl;
+      return false;
+   }
+
+   //Quick check to verify there are no even elements
+   for (const auto& kval : hmap){
+      if (kval.second%2==0){
+         std::cout<<kval.first<<" "<<kval.second<<std::endl;
+         return false;
+      }
+   }
+
+   hmap.clean_tombstones();
+   hmap.insert(src.data(),src.size());
+
+   cpuOK=recover_all_elements(hmap,src);
+   if (!cpuOK){
+      std::cout<<"Error at recovering all elements 2"<<std::endl;
+      return false;
+   }
+   return true;
+}
+
+
+TEST(HashmapUnitTets , Test1_HostDevice_UploadDownload){
+   for (int power=MINPOWER; power<MAXPOWER; ++power){
+      std::string name= "Power= "+std::to_string(power);
+      bool retval = execute_and_time(name.c_str(),test_hashmap_1 ,power);
+      expect_true(retval);
+   }
+}
+
+TEST(HashmapUnitTets , Test2_HostDevice_New_Unified_Ptr){
+   for (int power=MINPOWER; power<MAXPOWER; ++power){
       std::string name= "Power= "+std::to_string(power);
       bool retval = execute_and_time(name.c_str(),test_hashmap_2 ,power);
+      expect_true(retval);
+   }
+}
+
+TEST(HashmapUnitTets , Test3_Host){
+   for (int power=MINPOWER; power<MAXPOWER; ++power){
+      std::string name= "Power= "+std::to_string(power);
+      bool retval = execute_and_time(name.c_str(),test_hashmap_3 ,power);
+      expect_true(retval);
+   }
+}
+
+TEST(HashmapUnitTets , Test4_DeviceKernels){
+   for (int power=MINPOWER; power<MAXPOWER; ++power){
+      std::string name= "Power= "+std::to_string(power);
+      bool retval = execute_and_time(name.c_str(),test_hashmap_4 ,power);
       expect_true(retval);
    }
 }
