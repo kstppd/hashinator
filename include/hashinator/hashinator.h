@@ -247,6 +247,7 @@ namespace Hashinator{
          // Replace our buckets with the new ones
          buckets = newBuckets;
          _mapInfo->currentMaxBucketOverflow=Hashinator::defaults::BUCKET_OVERFLOW;
+         _mapInfo->tombstoneCounter=0;
       }
 
       // Element access (by reference). Nonexistent elements get created.
@@ -444,30 +445,35 @@ namespace Hashinator{
 
       //Try to get the overdlow back to the original one
       HASHINATOR_HOSTONLY
-      void resetOverlow(){
+      void performCleanupTasks(){
          while (_mapInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW){
             rehash(_mapInfo->sizePower+1);
          }
+         #ifndef HASHINATOR_HOST_ONLY
+         if (tombstone_ratio()>0.25){
+            clean_tombstones();
+         }
+         #endif
       }
 
       //Read only  access to reference. 
       HASHINATOR_HOSTONLY
       const VAL_TYPE& at(const KEY_TYPE& key) const {
-         resetOverlow();
+         performCleanupTasks();
          return _at(key);
       }
 
       //See _at(key)
       HASHINATOR_HOSTONLY
       VAL_TYPE& at(const KEY_TYPE& key) {
-         resetOverlow();
+         performCleanupTasks();
          return _at(key);
       }
 
       // Typical array-like access with [] operator
       HASHINATOR_HOSTONLY
       VAL_TYPE& operator[](const KEY_TYPE& key) {
-         resetOverlow();
+         performCleanupTasks();
          return at(key); 
       }
       
@@ -586,7 +592,7 @@ namespace Hashinator{
 
       HASHINATOR_HOSTONLY
       iterator find(KEY_TYPE key) {
-         resetOverlow();
+         performCleanupTasks();
          int bitMask = (1 << _mapInfo->sizePower) - 1; // For efficient modulo of the array size
          uint32_t hashIndex = hash(key);
 
