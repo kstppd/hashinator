@@ -964,7 +964,7 @@ namespace Hashinator{
          uint32_t hashIndex = hash(key);
 
          // Try to find the matching bucket.
-         for (int i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
+         for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
             const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
             if (candidate.first==TOMBSTONE){continue;}
@@ -1105,7 +1105,7 @@ namespace Hashinator{
          uint32_t hashIndex = hash(key);
 
          // Try to find the matching bucket.
-         for (int i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
+         for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
             uint32_t vecindex=(hashIndex + i) & bitMask;
             const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[vecindex];
             if (candidate.first == key) {
