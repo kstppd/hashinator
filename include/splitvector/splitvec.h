@@ -174,10 +174,12 @@ namespace split{
             }
          
          HOSTONLY SplitVector(SplitVector<T,Allocator,Meta_Allocator> &&other)noexcept{
-               const size_t size_to_allocate = other.size();
-               this->_allocate(size_to_allocate);
-               std::move(other.begin().data(), other.end().data(), _data);
-               other.clear();
+               _data=other._data;
+               *_size=other.size();
+               *_capacity=other.capacity();
+               *(other._capacity)=0;
+               *(other._size)=0;
+               other._data=nullptr;
             }
 
          HOSTONLY explicit SplitVector(std::initializer_list<T> init_list){
@@ -211,10 +213,17 @@ namespace split{
          }
 
          HOSTONLY  SplitVector<T,Allocator,Meta_Allocator>& operator=(SplitVector<T,Allocator,Meta_Allocator>&& other)noexcept{
-            if (this==&other){return *this;}
-            resize(other.size());
-            std::move(other.begin().data(), other.end().data(), _data);
-            other.clear();
+            if (this==&other){
+               return *this;
+            }
+
+            _deallocate_and_destroy(capacity(),_data);
+            _data=other._data;
+            *_size=other.size();
+            *_capacity=other.capacity();
+            *(other._capacity)=0;
+            *(other._size)=0;
+            other._data=nullptr;
             return *this;
          }
 
