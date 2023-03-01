@@ -10,8 +10,8 @@
 #define expect_true EXPECT_TRUE
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
-constexpr int MINPOWER = 10;
-constexpr int MAXPOWER = 20;
+constexpr int MINPOWER = 5;
+constexpr int MAXPOWER = 18;
 
 
 using namespace std::chrono;
@@ -136,6 +136,16 @@ void gpu_recover_odd_elements(hashmap* hmap,cuda::std::pair<key_type,val_type>* 
          }
          if (it->first!=key || it->second!=val){
             assert( 0 && "Failed in GPU RECOVER ALL ");
+         }
+      }
+   }
+
+   //Iterate over all elements with 1 thread and check for evens;
+   if (index==0){
+      for (auto it=hmap->device_begin(); it!=hmap->device_end(); ++it){
+         if (it->second%2==0 ){
+            printf("Found even when there should not be any!\n");
+            assert(0);
          }
       }
    }
@@ -450,18 +460,17 @@ bool test_hashmap_4(int power){
       std::cout<<"Error at recovering all elements 2"<<std::endl;
       return false;
    }
-   hmap.stats();
    return true;
 }
 
 
-//TEST(HashmapUnitTets , Test1_HostDevice_UploadDownload){
-   //for (int power=MINPOWER; power<MAXPOWER; ++power){
-      //std::string name= "Power= "+std::to_string(power);
-      //bool retval = execute_and_time(name.c_str(),test_hashmap_1 ,power);
-      //expect_true(retval);
-   //}
-//}
+TEST(HashmapUnitTets , Test1_HostDevice_UploadDownload){
+   for (int power=MINPOWER; power<MAXPOWER; ++power){
+      std::string name= "Power= "+std::to_string(power);
+      bool retval = execute_and_time(name.c_str(),test_hashmap_1 ,power);
+      expect_true(retval);
+   }
+}
 
 TEST(HashmapUnitTets , Test2_HostDevice_New_Unified_Ptr){
    for (int power=MINPOWER; power<MAXPOWER; ++power){
@@ -471,21 +480,21 @@ TEST(HashmapUnitTets , Test2_HostDevice_New_Unified_Ptr){
    }
 }
 
-//TEST(HashmapUnitTets , Test3_Host){
-   //for (int power=MINPOWER; power<MAXPOWER; ++power){
-      //std::string name= "Power= "+std::to_string(power);
-      //bool retval = execute_and_time(name.c_str(),test_hashmap_3 ,power);
-      //expect_true(retval);
-   //}
-//}
+TEST(HashmapUnitTets , Test3_Host){
+   for (int power=MINPOWER; power<MAXPOWER; ++power){
+      std::string name= "Power= "+std::to_string(power);
+      bool retval = execute_and_time(name.c_str(),test_hashmap_3 ,power);
+      expect_true(retval);
+   }
+}
 
-//TEST(HashmapUnitTets , Test4_DeviceKernels){
-   //for (int power=MINPOWER; power<MAXPOWER; ++power){
-      //std::string name= "Power= "+std::to_string(power);
-      //bool retval = execute_and_time(name.c_str(),test_hashmap_4 ,power);
-      //expect_true(retval);
-   //}
-//}
+TEST(HashmapUnitTets , Test4_DeviceKernels){
+   for (int power=MINPOWER; power<MAXPOWER; ++power){
+      std::string name= "Power= "+std::to_string(power);
+      bool retval = execute_and_time(name.c_str(),test_hashmap_4 ,power);
+      expect_true(retval);
+   }
+}
 
 int main(int argc, char* argv[]){
    srand(time(NULL));
