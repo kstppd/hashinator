@@ -23,6 +23,13 @@ void add_vectors(vec* a , vec* b,vec* c){
 
 }
 
+
+__global__
+void resize_vector(vec* a , int size){
+   a->device_resize(size);
+}
+
+
 __global__
 void push_back_kernel(vec* a){
 
@@ -420,6 +427,47 @@ TEST(Vector_Functionality , Bug){
    const vec blocks{1,2,3,4,5,6,7,8,9};
    vec localToGlobalMap{-1,-1,-1,-1};
    localToGlobalMap.insert(localToGlobalMap.end(),blocks.begin(),blocks.end());
+}
+
+
+TEST(Vector_Functionality , Resizing_Device){
+
+   {
+      vec a(32,42);
+      expect_true(a.size()==a.capacity());
+      a.resize(16);
+      expect_true(a.size()==16);
+      expect_true(a.capacity()==32);
+   }
+
+   {
+      vec a(32,42);
+      expect_true(a.size()==a.capacity());
+      vec* d_a=a.upload();
+      resize_vector<<<1,1>>>(d_a,16);
+      cudaDeviceSynchronize();
+      cudaFree(d_a);
+      expect_true(a.size()==16);
+      expect_true(a.capacity()==32);
+   }
+
+
+   {
+      vec a(32,42);
+      expect_true(a.size()==a.capacity());
+      a.reserve(100);
+      expect_true(a.capacity()>100);
+      vec* d_a=a.upload();
+      resize_vector<<<1,1>>>(d_a,64);
+      cudaDeviceSynchronize();
+      cudaFree(d_a);
+      expect_true(a.size()==64);
+      expect_true(a.capacity()>100);
+      for (size_t i = 0 ; i< a.size(); ++i){
+         a.at(i)=3;
+         expect_true(a.at(i)=3);
+      }
+   }
 }
 
 

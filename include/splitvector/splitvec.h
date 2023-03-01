@@ -393,14 +393,18 @@ namespace split{
           /* 
             Resize method:
             Supports only host resizing.
-            Will never reduce the vector's size.
+            If new size is smaller than the current size we just reduce size but 
+            the capacity remains the same
             Memory location will change so any old pointers/iterators
             will be invalid from now on.
          */
          HOSTONLY
          void resize(size_t newSize,bool eco=false ){
             //Let's reserve some space and change our size
-            if (newSize<=size()){return;}
+            if (newSize<=size()){
+               *_size=newSize; 
+               return;
+            }
             reserve(newSize,eco);
             *_size  =newSize; 
          }
@@ -408,9 +412,8 @@ namespace split{
          #ifndef SPLIT_HOST_ONLY
          DEVICEONLY
          void device_resize(size_t newSize){
-            //Let's reserve some space and change our size
-            if (newSize<=size()){
-               assert(0 && "Splitvector has a catastrophic failure trying to insert on device because the vector has no space available.");
+            if (newSize>capacity()){
+               assert(0 && "Splitvector has a catastrophic failure trying to resize on device.");
             }
             *_size=newSize; 
          }
