@@ -390,7 +390,7 @@ namespace split{
 
 
       template <typename T, size_t BLOCKSIZE=1024,size_t WARP=32>
-      void split_prefix_scan_raw(T* input, T* output ,Cuda_mempool& mPool, const size_t input_size){
+      void split_prefix_scan_raw(T* input, T* output ,Cuda_mempool& mPool, const size_t input_size,cudaStream_t s=0){
 
          //Scan is performed in half Blocksizes
          size_t scanBlocksize= BLOCKSIZE/2;
@@ -414,31 +414,32 @@ namespace split{
          //Allocate memory for partial sums
          T* partial_sums = (T*)mPool.allocate(gridSize*sizeof(T)); 
          //TODO + FIXME extra shmem
-         split::tools::split_prescan<<<gridSize,scanBlocksize,2*scanElements*sizeof(T)>>>(input,output,partial_sums,scanElements,input_size);
-         cudaDeviceSynchronize();
+         split::tools::split_prescan<<<gridSize,scanBlocksize,2*scanElements*sizeof(T),s>>>(input,output,partial_sums,scanElements,input_size);
+         cudaStreamSynchronize(s);
 
 
          if (gridSize>1){
             if (gridSize<scanElements){
                T* partial_sums_dummy=(T*)mPool.allocate(sizeof(T));
                //TODO + FIXME extra shmem
-               split::tools::split_prescan<<<1,scanBlocksize,2*scanElements*sizeof(T)>>>(partial_sums,partial_sums,partial_sums_dummy,gridSize,gridSize*sizeof(T));
-               cudaDeviceSynchronize();
+               split::tools::split_prescan<<<1,scanBlocksize,2*scanElements*sizeof(T),s>>>(partial_sums,partial_sums,partial_sums_dummy,gridSize,gridSize*sizeof(T));
+               cudaStreamSynchronize(s);
             }else{
                T* partial_sums_clone=(T*)mPool.allocate(gridSize*sizeof(T));
                cudaMemcpy(partial_sums_clone, partial_sums, gridSize*sizeof(T),cudaMemcpyDeviceToDevice);
-               split_prefix_scan_raw(partial_sums_clone,partial_sums,mPool,gridSize);
+               split_prefix_scan_raw(partial_sums_clone,partial_sums,mPool,gridSize,s);
                
             }
-            split::tools::scan_add<<<gridSize,scanBlocksize>>>(output,partial_sums,scanElements,input_size);
-            cudaDeviceSynchronize();
+            split::tools::scan_add<<<gridSize,scanBlocksize,0,s>>>(output,partial_sums,scanElements,input_size);
+            cudaStreamSynchronize(s);
          }
       }
 
       template <typename T, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=32>
       void copy_if_raw(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
                    split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& output,
-                   Rule rule)
+                   Rule rule,
+                   cudaStream_t s=0)
       {
          
          //Figure out Blocks to use
@@ -455,24 +456,24 @@ namespace split{
 
                
          //Phase 1 -- Calculate per warp workload
-         split::tools::scan_reduce_raw<<<nBlocks,BLOCKSIZE>>>(input.data(),d_counts,rule,input.size());
+         split::tools::scan_reduce_raw<<<nBlocks,BLOCKSIZE,0,s>>>(input.data(),d_counts,rule,input.size());
          d_offsets=(uint32_t*)mPool.allocate(nBlocks*sizeof(uint32_t));
-         cudaDeviceSynchronize();
+         cudaStreamSynchronize(s);
 
 
          //Step 2 -- Exclusive Prefix Scan on offsets
          if (nBlocks==1){
-            split_prefix_scan_raw<uint32_t,2,WARP>(d_counts,d_offsets,mPool,nBlocks);
+            split_prefix_scan_raw<uint32_t,2,WARP>(d_counts,d_offsets,mPool,nBlocks,s);
          }else{
-            split_prefix_scan_raw<uint32_t,BLOCKSIZE,WARP>(d_counts,d_offsets,mPool,nBlocks);
+            split_prefix_scan_raw<uint32_t,BLOCKSIZE,WARP>(d_counts,d_offsets,mPool,nBlocks,s);
          }
-         cudaDeviceSynchronize();
+         cudaStreamSynchronize(s);
 
 
          //Step 3 -- Compaction
          uint32_t* retval=(uint32_t*)mPool.allocate(sizeof(uint32_t));
-         split::tools::split_compact_raw<T,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int)>>>(input.data(),d_counts,d_offsets,output.data(),rule,input.size(),nBlocks,retval);
-         cudaDeviceSynchronize();
+         split::tools::split_compact_raw<T,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int),s>>>(input.data(),d_counts,d_offsets,output.data(),rule,input.size(),nBlocks,retval);
+         cudaStreamSynchronize(s);
          uint32_t numel;
          cudaMemcpy(&numel,retval,sizeof(uint32_t),cudaMemcpyDeviceToHost);
          output.erase(&output[numel],output.end());
