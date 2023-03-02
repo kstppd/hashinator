@@ -443,18 +443,32 @@ namespace Hashinator{
          std::swap(device_map,other.device_map);
       }
 
-      //Try to get the overdlow back to the original one
+
+      #ifdef HASHINATOR_HOST_ONLY
+      //Try to get the overflow back to the original one
       HASHINATOR_HOSTONLY
       void performCleanupTasks(){
          while (_mapInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW){
             rehash(_mapInfo->sizePower+1);
          }
-         #ifndef HASHINATOR_HOST_ONLY
-         if (tombstone_ratio()>0.25){
-            clean_tombstones();
+         //When operating in CPU only mode we rehash to get rid of tombstones
+         if (tombstone_count()){
+            rehash(_mapInfo->sizePower);
          }
-         #endif
       }
+      #else
+      //Try to get the overflow back to the original one 
+      HASHINATOR_HOSTONLY
+      void performCleanupTasks(cudaStream_t s=0){
+         while (_mapInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW){
+            rehash(_mapInfo->sizePower+1);
+         }
+         if (tombstone_ratio()>0.25){
+            clean_tombstones(s);
+         }
+      }
+
+      #endif
 
       //Read only  access to reference. 
       HASHINATOR_HOSTONLY
@@ -684,7 +698,7 @@ namespace Hashinator{
       //Cleans all tombstones using splitvectors stream compcation and
       //the member Hasher
       HASHINATOR_HOSTONLY
-      void clean_tombstones(){
+      void clean_tombstones(cudaStream_t s=0){
 
          if (_mapInfo->tombstoneCounter == 0){
             return ;
@@ -695,21 +709,21 @@ namespace Hashinator{
          //TODO size of overflown elements is known beforhand.
          split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> overflownElements(1 << _mapInfo->sizePower, {EMPTYBUCKET, VAL_TYPE()});
          //Extract all overflown elements-This also resets TOMSBTONES to EMPTYBUCKET!
-         split::tools::copy_if<cuda::std::pair<KEY_TYPE, VAL_TYPE>,Overflown_Predicate<KEY_TYPE,VAL_TYPE>,32,defaults::WARPSIZE>(buckets,overflownElements,Overflown_Predicate<KEY_TYPE,VAL_TYPE>(buckets.data(),_mapInfo->sizePower));
+         split::tools::copy_if<cuda::std::pair<KEY_TYPE, VAL_TYPE>,Overflown_Predicate<KEY_TYPE,VAL_TYPE>,32,defaults::WARPSIZE>(buckets,overflownElements,Overflown_Predicate<KEY_TYPE,VAL_TYPE>(buckets.data(),_mapInfo->sizePower),s);
          size_t nOverflownElements=overflownElements.size();
          if (nOverflownElements ==0 ){
             return ;
          }
          //If we do have overflown elements we put them back in the buckets
          Hashers::reset_to_empty<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction>
-                                 <<<overflownElements.size(),defaults::MAX_BLOCKSIZE>>>
+                                 <<<overflownElements.size(),defaults::MAX_BLOCKSIZE,0,s>>>
                                  (overflownElements.data(),
                                   buckets.data(),
                                   _mapInfo->sizePower,
                                   _mapInfo->currentMaxBucketOverflow,
                                   overflownElements.size());
          _mapInfo->fill-=overflownElements.size();
-         cudaDeviceSynchronize();
+         cudaStreamSynchronize(s);
 
          DeviceHasher::insert(overflownElements.data(),
                               buckets.data(),
@@ -717,7 +731,7 @@ namespace Hashinator{
                               _mapInfo->currentMaxBucketOverflow,
                               &_mapInfo->currentMaxBucketOverflow,
                               &_mapInfo->fill,
-                              overflownElements.size());
+                              overflownElements.size(),s);
 
          if (_mapInfo->currentMaxBucketOverflow>Hashinator::defaults::BUCKET_OVERFLOW){
             rehash(_mapInfo->sizePower++);

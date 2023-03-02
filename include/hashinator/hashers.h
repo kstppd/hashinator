@@ -462,8 +462,7 @@ namespace Hashinator{
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
                KEY_TYPE TOMBSTONE=EMPTYBUCKET=1,
                int WARP=32,
-               int elementsPerWarp=1,
-               cudaStream_t s = cudaStream_t()>
+               int elementsPerWarp=1>
       class Hasher{
       
       //Make sure we have sane elements per warp
@@ -479,14 +478,15 @@ namespace Hashinator{
                             size_t maxoverflow,
                             size_t* d_overflow,
                             size_t* d_fill,
-                            size_t len)
+                            size_t len,
+                            cudaStream_t s=0)
          {
             size_t blocks,blockSize;
             launchParams(len,blocks,blockSize);
             insert_kernel<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction,defaults::WARPSIZE,elementsPerWarp>
                      <<<blocks,blockSize,0,s>>>
                      (keys,vals,buckets,sizePower,maxoverflow,d_overflow,d_fill,len);
-            cudaDeviceSynchronize();
+            cudaStreamSynchronize(s);
          }
          
          //Overload with cuda::std::pair<key,val> (k,v) inputs
@@ -497,14 +497,15 @@ namespace Hashinator{
                             size_t maxoverflow,
                             size_t* d_overflow,
                             size_t* d_fill,
-                            size_t len)
+                            size_t len,
+                            cudaStream_t s=0)
          {
             size_t blocks,blockSize;
             launchParams(len,blocks,blockSize);
             insert_kernel<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction,defaults::WARPSIZE,elementsPerWarp>
                      <<<blocks,blockSize,0,s>>>
                      (src,buckets,sizePower,maxoverflow,d_overflow,d_fill,len);
-            cudaDeviceSynchronize();
+            cudaStreamSynchronize(s);
          }
 
          //Retrieve wrapper
@@ -513,7 +514,8 @@ namespace Hashinator{
                               cuda::std::pair<KEY_TYPE, VAL_TYPE>* buckets,
                               int sizePower,
                               size_t maxoverflow,
-                              size_t len)
+                              size_t len,
+                              cudaStream_t s=0)
          {
 
             size_t blocks,blockSize;
@@ -521,7 +523,7 @@ namespace Hashinator{
             retrieve_kernel<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction,defaults::WARPSIZE,elementsPerWarp>
                      <<<blocks,blockSize,0,s>>>
                      (keys,vals,buckets,sizePower,maxoverflow);
-            cudaDeviceSynchronize();
+            cudaStreamSynchronize(s);
 
          }
 
@@ -531,7 +533,8 @@ namespace Hashinator{
                            size_t* d_tombstoneCounter,
                            int sizePower,
                            size_t maxoverflow,
-                           size_t len)
+                           size_t len,
+                           cudaStream_t s=0)
          {
 
             size_t blocks,blockSize;
@@ -539,7 +542,7 @@ namespace Hashinator{
             delete_kernel<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,TOMBSTONE,HashFunction,defaults::WARPSIZE,elementsPerWarp>
                      <<<blocks,blockSize,0,s>>>
                      (keys,buckets,d_tombstoneCounter,sizePower,maxoverflow,len);
-            cudaDeviceSynchronize();
+            cudaStreamSynchronize(s);
 
          }
 

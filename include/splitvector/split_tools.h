@@ -192,7 +192,8 @@ namespace split{
 
       template <typename T, size_t BLOCKSIZE=1024,size_t WARP=32>
       void split_prefix_scan(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
-                             split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& output )
+                             split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& output,
+                             cudaStream_t s=0)
 
       {
          using vector=split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>;
@@ -224,21 +225,21 @@ namespace split{
          vector partial_sums(gridSize); 
 
          //TODO +FIXME extra shmem allocations
-         split::tools::split_prescan<<<gridSize,scanBlocksize,2*scanElements*sizeof(T)>>>(input.data(),output.data(),partial_sums.data(),scanElements,input.size());
-         cudaDeviceSynchronize();
+         split::tools::split_prescan<<<gridSize,scanBlocksize,2*scanElements*sizeof(T),s>>>(input.data(),output.data(),partial_sums.data(),scanElements,input.size());
+         cudaStreamSynchronize(s);
 
          if (gridSize>1){
             if (partial_sums.size()<=scanElements){
                vector partial_sums_dummy(gridSize); 
                //TODO +FIXME extra shmem allocations
-               split::tools::split_prescan<<<1,scanBlocksize,2*scanElements*sizeof(T)>>>(partial_sums.data(),partial_sums.data(),partial_sums_dummy.data(),gridSize,partial_sums.size());
-               cudaDeviceSynchronize();
+               split::tools::split_prescan<<<1,scanBlocksize,2*scanElements*sizeof(T),s>>>(partial_sums.data(),partial_sums.data(),partial_sums_dummy.data(),gridSize,partial_sums.size());
+               cudaStreamSynchronize(s);
             }else{
                vector partial_sums_clone(partial_sums);
-               split_prefix_scan<T,BLOCKSIZE,WARP>(partial_sums_clone,partial_sums);
+               split_prefix_scan<T,BLOCKSIZE,WARP>(partial_sums_clone,partial_sums,s);
             }
-            split::tools::scan_add<<<gridSize,scanBlocksize>>>(output.data(),partial_sums.data(),scanElements,output.size());
-            cudaDeviceSynchronize();
+            split::tools::scan_add<<<gridSize,scanBlocksize,0,s>>>(output.data(),partial_sums.data(),scanElements,output.size());
+            cudaStreamSynchronize(s);
          }
       }
 
@@ -246,7 +247,8 @@ namespace split{
       template <typename T, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=32>
       void copy_if(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
                    split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& output,
-                   Rule rule)
+                   Rule rule,
+                   cudaStream_t s=0)
       {
 
 
@@ -263,19 +265,19 @@ namespace split{
          //Phase 1 -- Calculate per warp workload
          vector * d_input=input.upload();
          vector_int * d_counts=counts.upload();
-         split::tools::scan_reduce<<<nBlocks,BLOCKSIZE>>>(d_input,d_counts,rule);
-         cudaDeviceSynchronize();
+         split::tools::scan_reduce<<<nBlocks,BLOCKSIZE,0,s>>>(d_input,d_counts,rule);
+         cudaStreamSynchronize(s);
          cudaFree(d_input);
          cudaFree(d_counts);
 
 
          //Step 2 -- Exclusive Prefix Scan on offsets
          if (nBlocks==1){
-            split_prefix_scan<uint32_t,2,WARP>(counts,offsets);
+            split_prefix_scan<uint32_t,2,WARP>(counts,offsets,s);
          }else{
-            split_prefix_scan<uint32_t,BLOCKSIZE,WARP>(counts,offsets);
+            split_prefix_scan<uint32_t,BLOCKSIZE,WARP>(counts,offsets,s);
          }
-         cudaDeviceSynchronize();
+         cudaStreamSynchronize(s);
 
 
          //Step 3 -- Compaction
@@ -283,8 +285,8 @@ namespace split{
          vector_int* d_offsets=offsets.upload();
          d_input=input.upload();
          d_counts=counts.upload();
-         split::tools::split_compact<T,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int)>>>(d_input,d_counts,d_offsets,d_output,rule);
-         cudaDeviceSynchronize();
+         split::tools::split_compact<T,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int),s>>>(d_input,d_counts,d_offsets,d_output,rule);
+         cudaStreamSynchronize(s);
          //Deallocate the handle pointers
 
          cudaFree(d_input);
