@@ -11,7 +11,7 @@
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
 constexpr int MINPOWER = 5;
-constexpr int MAXPOWER = 18;
+constexpr int MAXPOWER = 20;
 
 
 using namespace std::chrono;
@@ -452,7 +452,14 @@ bool test_hashmap_4(int power){
       }
    }
 
-   hmap.clean_tombstones();
+   cudaStream_t s ;
+   cudaStreamCreate(&s);
+   hmap.clean_tombstones_async(s);
+   cpuOK=recover_odd_elements(hmap,src);
+   if (!cpuOK){
+      std::cout<<"Error at recovering odd elements 2"<<std::endl;
+      return false;
+   }
    hmap.insert(src.data(),src.size());
 
    cpuOK=recover_all_elements(hmap,src);
