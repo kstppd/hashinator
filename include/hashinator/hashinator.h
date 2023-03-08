@@ -709,11 +709,12 @@ namespace Hashinator{
          //TODO size of overflown elements is known beforhand.
          split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> overflownElements(1 << _mapInfo->sizePower, {EMPTYBUCKET, VAL_TYPE()});
          //Extract all overflown elements-This also resets TOMSBTONES to EMPTYBUCKET!
-         split::tools::copy_if<cuda::std::pair<KEY_TYPE, VAL_TYPE>,Overflown_Predicate<KEY_TYPE,VAL_TYPE>,32,defaults::WARPSIZE>(buckets,overflownElements,Overflown_Predicate<KEY_TYPE,VAL_TYPE>(buckets.data(),_mapInfo->sizePower),s);
+         split::tools::copy_if<cuda::std::pair<KEY_TYPE, VAL_TYPE>,Overflown_Predicate<KEY_TYPE,VAL_TYPE>,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,overflownElements,Overflown_Predicate<KEY_TYPE,VAL_TYPE>(buckets.data(),_mapInfo->sizePower),s);
          size_t nOverflownElements=overflownElements.size();
          if (nOverflownElements ==0 ){
             return ;
          }
+
          //If we do have overflown elements we put them back in the buckets
          Hashers::reset_to_empty<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction>
                                  <<<overflownElements.size(),defaults::MAX_BLOCKSIZE,0,s>>>
@@ -736,6 +737,62 @@ namespace Hashinator{
          if (_mapInfo->currentMaxBucketOverflow>Hashinator::defaults::BUCKET_OVERFLOW){
             rehash(_mapInfo->sizePower++);
          }
+         return ;
+      }
+
+      void clean_tombstones_async(cudaStream_t s=0){
+   
+         size_t priorFill=_mapInfo->fill;
+
+         if (_mapInfo->tombstoneCounter == 0){
+            return ;
+         }
+         //Reset the tomstone counter
+         _mapInfo->tombstoneCounter=0;
+         //Allocate memory for overflown elements. So far this is the same size as our buckets but we can be better than this 
+         
+         cuda::std::pair<KEY_TYPE, VAL_TYPE>* overflownElements; 
+         cudaMallocAsync((void**)&overflownElements, (1<<_mapInfo->sizePower) * sizeof(cuda::std::pair<KEY_TYPE, VAL_TYPE>),s);
+
+         optimizeGPU(s);
+         cudaStreamSynchronize(s);
+         uint32_t nOverflownElements=split::tools::copy_if_raw
+            <cuda::std::pair<KEY_TYPE, VAL_TYPE>,Overflown_Predicate<KEY_TYPE,VAL_TYPE>,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
+            (buckets,
+             overflownElements,
+             Overflown_Predicate<KEY_TYPE,VAL_TYPE>(buckets.data(),_mapInfo->sizePower),
+             s);
+         
+
+         if (nOverflownElements ==0 ){
+            cudaFreeAsync(overflownElements,s);
+            return ;
+         }
+         //If we do have overflown elements we put them back in the buckets
+         cudaStreamSynchronize(s);
+         Hashers::reset_to_empty<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction>
+                                 <<<nOverflownElements,defaults::MAX_BLOCKSIZE,0,s>>>
+                                 (overflownElements,
+                                  buckets.data(),
+                                  _mapInfo->sizePower,
+                                  _mapInfo->currentMaxBucketOverflow,
+                                  nOverflownElements);
+         _mapInfo->fill-=nOverflownElements;
+         cudaStreamSynchronize(s);
+
+         DeviceHasher::insert(overflownElements,
+                              buckets.data(),
+                              _mapInfo->sizePower,
+                              _mapInfo->currentMaxBucketOverflow,
+                              &_mapInfo->currentMaxBucketOverflow,
+                              &_mapInfo->fill,
+                              nOverflownElements,s);
+
+         cudaFreeAsync(overflownElements,s);
+         if (_mapInfo->currentMaxBucketOverflow>Hashinator::defaults::BUCKET_OVERFLOW){
+            rehash(_mapInfo->sizePower++);
+         }
+         assert(_mapInfo->fill==priorFill && "Broken tombstone cleaning modified fill");
          return ;
       }
 

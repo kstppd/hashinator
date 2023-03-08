@@ -341,10 +341,12 @@ namespace split{
             size_t total_bytes;
             size_t bytes_used;
             void* _data;
+            cudaStream_t s;
 
          public:
-            explicit Cuda_mempool(size_t bytes){
-               cudaMalloc(&_data, bytes);
+            explicit Cuda_mempool(size_t bytes,cudaStream_t str){
+               s=str;
+               cudaMallocAsync(&_data, bytes,s);
                CheckErrors("Cuda Memory Allocation");
                total_bytes=bytes;
                bytes_used=0;
@@ -352,7 +354,7 @@ namespace split{
             Cuda_mempool(const Cuda_mempool& other)=delete;
             Cuda_mempool(Cuda_mempool&& other)=delete;
             ~Cuda_mempool(){
-               cudaFree(_data);
+               cudaFreeAsync(_data,s);
             }
 
             void* allocate(const size_t bytes){
@@ -419,7 +421,7 @@ namespace split{
 
 
          if (gridSize>1){
-            if (gridSize<scanElements){
+            if (gridSize<=scanElements){
                T* partial_sums_dummy=(T*)mPool.allocate(sizeof(T));
                //TODO + FIXME extra shmem
                split::tools::split_prescan<<<1,scanBlocksize,2*scanElements*sizeof(T),s>>>(partial_sums,partial_sums,partial_sums_dummy,gridSize,gridSize*sizeof(T));
@@ -436,8 +438,8 @@ namespace split{
       }
 
       template <typename T, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=32>
-      void copy_if_raw(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
-                   split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& output,
+      uint32_t copy_if_raw(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
+                   T* output,
                    Rule rule,
                    cudaStream_t s=0)
       {
@@ -448,10 +450,11 @@ namespace split{
          
          //Allocate with Mempool
          const size_t memory_for_pool = 8*nBlocks*sizeof(uint32_t) ;
-         Cuda_mempool mPool(memory_for_pool);
+         Cuda_mempool mPool(memory_for_pool,s);
 
          uint32_t* d_counts;
          uint32_t* d_offsets;
+         cudaStreamSynchronize(s);
          d_counts=(uint32_t*)mPool.allocate(nBlocks*sizeof(uint32_t));
 
                
@@ -472,11 +475,12 @@ namespace split{
 
          //Step 3 -- Compaction
          uint32_t* retval=(uint32_t*)mPool.allocate(sizeof(uint32_t));
-         split::tools::split_compact_raw<T,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int),s>>>(input.data(),d_counts,d_offsets,output.data(),rule,input.size(),nBlocks,retval);
+         split::tools::split_compact_raw<T,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int),s>>>(input.data(),d_counts,d_offsets,output,rule,input.size(),nBlocks,retval);
          cudaStreamSynchronize(s);
          uint32_t numel;
          cudaMemcpy(&numel,retval,sizeof(uint32_t),cudaMemcpyDeviceToHost);
-         output.erase(&output[numel],output.end());
+         cudaStreamSynchronize(s);
+         return numel;
       }
    }//namespace tools
 }//namespace split
