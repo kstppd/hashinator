@@ -31,6 +31,7 @@
 #include "hashfunctions.h"
 #include "defaults.h"
 #include <cuda/std/utility>
+#include "../common.h"
 
 namespace Hashinator{
 
@@ -293,11 +294,11 @@ namespace Hashinator{
                if (w_tid==sub_winner){
                   KEY_TYPE old = atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
                   if (old == EMPTYBUCKET){
-                     int overflow = probingindex-optimalindex;
+                     size_t overflow = probingindex-optimalindex;
                      atomicExch(&buckets[probingindex].second,candidateVal);
                      //For some reason this is faster than callign atomicMax without the if
                      if (overflow>*d_overflow){
-                        atomicMax((int*)d_overflow,overflow);
+                        atomicExch(( unsigned long long*)d_overflow,(unsigned long long)nextPow2(overflow));
                      }
                      atomicAdd((unsigned long long int*)d_fill, 1);
                      done=true;

@@ -36,7 +36,6 @@
 #include "hashers.h"
 #endif
 
-
 namespace Hashinator{
 
    #ifndef HASHINATOR_HOST_ONLY
@@ -1169,7 +1168,7 @@ namespace Hashinator{
       void set_element(const KEY_TYPE& key,VAL_TYPE val){
          size_t thread_overflowLookup;
          insert_element(key,val,thread_overflowLookup);
-         atomicMax((unsigned long long*)&(_mapInfo->currentMaxBucketOverflow),thread_overflowLookup);
+         atomicMax((unsigned long long*)&(_mapInfo->currentMaxBucketOverflow),nextPow2(thread_overflowLookup));
       }
 
       HASHINATOR_DEVICEONLY
