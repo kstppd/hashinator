@@ -1122,6 +1122,7 @@ namespace Hashinator{
          return keyPos;
       }
 
+      private:
       /**Device code for inserting elements. Nonexistent elements get created.
          Tombstones are accounted for.
        */
@@ -1154,6 +1155,7 @@ namespace Hashinator{
          assert(false && "Hashmap completely overflown");
       }
 
+      public:
       HASHINATOR_DEVICEONLY
       cuda::std::pair<device_iterator, bool> device_insert(cuda::std::pair<KEY_TYPE, VAL_TYPE> newEntry) {
          bool found = device_find(newEntry.first) != device_end();
