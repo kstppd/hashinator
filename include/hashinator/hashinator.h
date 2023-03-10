@@ -62,7 +62,7 @@ namespace Hashinator{
 
    typedef struct Info {
       Info(int sz)
-         :sizePower(sz),fill(0),currentMaxBucketOverflow(0),tombstoneCounter(0),err(status::invalid){}
+         :sizePower(sz),fill(0),currentMaxBucketOverflow(defaults::BUCKET_OVERFLOW),tombstoneCounter(0),err(status::invalid){}
       int sizePower;
       size_t fill; 
       size_t currentMaxBucketOverflow;
@@ -139,6 +139,16 @@ namespace Hashinator{
             const int bitMask = (1 <<(currentSizePower )) - 1; 
             bool isOverflown=(bck_ptr[hashIndex&bitMask].first!=(int)element.first);
             return isOverflown;
+         }
+      };
+
+      template <typename T, typename U>
+      struct Valid_Predicate{
+      Valid_Predicate(){}
+         HASHINATOR_HOSTDEVICE
+         inline bool operator()( cuda::std::pair<T,U>& element)const{
+            if (element.first!=TOMBSTONE && element.first!=EMPTYBUCKET  ){return true;}
+            return false;
          }
       };
 
@@ -268,6 +278,40 @@ namespace Hashinator{
          _mapInfo->tombstoneCounter=0;
       }
 
+
+      #ifndef HASHINATOR_HOST_ONLY
+      // Resize the table to fit more things. This is automatically invoked once
+      // maxBucketOverflow has triggered. This can only be done on host (so far)
+      HASHINATOR_HOSTONLY
+      void device_rehash(int newSizePower, cudaStream_t s=0) {
+         if (newSizePower > 32) {
+            throw std::out_of_range("Hashmap ran into rehashing catastrophe and exceeded 32bit buckets.");
+         }
+
+         size_t priorFill=_mapInfo->fill;
+         //Extract all valid elements
+         split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> validElements(_mapInfo->fill+1, {EMPTYBUCKET, VAL_TYPE()});
+         validElements.optimizeGPU(s);
+         optimizeGPU(s);
+         split::tools::copy_if
+                  <cuda::std::pair<KEY_TYPE, VAL_TYPE>,Valid_Predicate<KEY_TYPE,VAL_TYPE>,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
+                  (buckets,validElements,Valid_Predicate<KEY_TYPE,VAL_TYPE>(),s);
+         cudaStreamSynchronize(s);
+         size_t nValidElements=validElements.size();
+         assert(nValidElements==_mapInfo->fill && "Something really bad happened during rehashing! Ask Kostis!");
+         //We can now clear our buckets
+         optimizeCPU();
+         buckets=std::move(split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> (1 << newSizePower, cuda::std::pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())));
+         optimizeGPU(s);
+         validElements.optimizeGPU(s);
+         *_mapInfo=Info(newSizePower);
+         //Insert valid elements to now larger buckets
+         insert(validElements.data(),validElements.size(),1,s);
+         set_status((priorFill==_mapInfo->fill)?status::success:status::fail);
+      }
+      #endif
+
+
       // Element access (by reference). Nonexistent elements get created.
       HASHINATOR_HOSTONLY
       VAL_TYPE& _at(const KEY_TYPE& key) {
@@ -358,8 +402,10 @@ namespace Hashinator{
       //---------------------------------------
 
       HASHINATOR_HOSTDEVICE
-      inline const status& peak_status(void) const noexcept{
-         return _mapInfo->err;
+      inline status peek_status(void) noexcept{
+         status retval = _mapInfo->err;
+         _mapInfo->err=status::invalid;
+         return retval;
       }
 
       // For STL compatibility: size(), bucket_count(), count(KEY_TYPE), clear()
@@ -427,10 +473,30 @@ namespace Hashinator{
          }
       }
 
+      #ifdef HASHINATOR_HOST_ONLY
       HASHINATOR_HOSTONLY
       void resize(int newSizePower){
          rehash(newSizePower);     
       }
+      #else
+      HASHINATOR_HOSTONLY
+      void resize(int newSizePower,targets t=targets::host,cudaStream_t s=0){
+         switch(t)
+         {
+            case targets::host:
+               rehash(newSizePower);     
+               break;
+            case targets::device:
+               device_rehash(newSizePower,s);
+               break;
+            default:
+               std::cerr<<"Defaulting to host rehashing"<<std::endl;
+               resize(newSizePower,targets::host);
+               break;
+         }
+         return;
+      }
+      #endif
 
       HASHINATOR_HOSTONLY
          void print_pair(const cuda::std::pair<KEY_TYPE, VAL_TYPE>& i)const {
@@ -852,7 +918,7 @@ namespace Hashinator{
 
       //Uses Hasher's insert_kernel to insert all elements
       HASHINATOR_HOSTONLY
-      void insert(KEY_TYPE* keys,VAL_TYPE* vals,size_t len,float targetLF=0.5){
+      void insert(KEY_TYPE* keys,VAL_TYPE* vals,size_t len,float targetLF=0.5,cudaStream_t s=0){
          //Here we do some calculations to estimate how much if any we need to grow our buckets
          size_t neededPowerSize=std::ceil(std::log2((_mapInfo->fill+len)*(1.0/targetLF)));
          if (neededPowerSize>_mapInfo->sizePower){
@@ -860,7 +926,7 @@ namespace Hashinator{
          }
          buckets.optimizeGPU();
          _mapInfo->currentMaxBucketOverflow=_mapInfo->currentMaxBucketOverflow;
-         DeviceHasher::insert(keys,vals,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,len);
+         DeviceHasher::insert(keys,vals,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,len,s);
          if (_mapInfo->currentMaxBucketOverflow>Hashinator::defaults::BUCKET_OVERFLOW){
             rehash(_mapInfo->sizePower++);
          }
@@ -870,7 +936,7 @@ namespace Hashinator{
      
       //Uses Hasher's insert_kernel to insert all elements
       HASHINATOR_HOSTONLY
-      void insert(cuda::std::pair<KEY_TYPE,VAL_TYPE>* src, size_t len,float targetLF=0.5){
+      void insert(cuda::std::pair<KEY_TYPE,VAL_TYPE>* src, size_t len,float targetLF=0.5,cudaStream_t s=0){
          //Here we do some calculations to estimate how much if any we need to grow our buckets
          size_t neededPowerSize=std::ceil(std::log2(((_mapInfo->fill)+len)*(1.0/targetLF)));
          if (neededPowerSize>_mapInfo->sizePower){
@@ -878,7 +944,7 @@ namespace Hashinator{
          }
          buckets.optimizeGPU();
          _mapInfo->currentMaxBucketOverflow=_mapInfo->currentMaxBucketOverflow;
-         DeviceHasher::insert(src,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,len);
+         DeviceHasher::insert(src,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,len,s);
          if (_mapInfo->currentMaxBucketOverflow>Hashinator::defaults::BUCKET_OVERFLOW  ){
             rehash(_mapInfo->sizePower++);
          }
@@ -887,19 +953,19 @@ namespace Hashinator{
 
       //Uses Hasher's retrieve_kernel to read all elements
       HASHINATOR_HOSTONLY
-      void retrieve(KEY_TYPE* keys,VAL_TYPE* vals,size_t len){
+      void retrieve(KEY_TYPE* keys,VAL_TYPE* vals,size_t len,cudaStream_t s=0){
          buckets.optimizeGPU();
-         DeviceHasher::retrieve(keys,vals,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,len);
+         DeviceHasher::retrieve(keys,vals,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,len,s);
          return;
       }
 
       //Uses Hasher's erase_kernel to delete all elements
       HASHINATOR_HOSTONLY
-      void erase(KEY_TYPE* keys,size_t len){
+      void erase(KEY_TYPE* keys,size_t len,cudaStream_t s=0){
          buckets.optimizeGPU();
          //Remember the last numeber of tombstones
          size_t tbStore=tombstone_count();
-         DeviceHasher::erase(keys,buckets.data(),&_mapInfo->tombstoneCounter,_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,len);
+         DeviceHasher::erase(keys,buckets.data(),&_mapInfo->tombstoneCounter,_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,len,s);
          size_t tombstonesAdded=tombstone_count()-tbStore;
          //Fill should be decremented by the number of tombstones added;
          _mapInfo->fill-=tombstonesAdded;
