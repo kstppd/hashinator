@@ -118,7 +118,7 @@ namespace Hashinator{
       }   
 
       HASHINATOR_HOSTDEVICE
-      void set_status(status code){
+      inline void set_status(status code)noexcept{
          _mapInfo->err=code;
       }
 
@@ -358,7 +358,7 @@ namespace Hashinator{
       //---------------------------------------
 
       HASHINATOR_HOSTDEVICE
-      const status& peak_status(void){
+      inline const status& peak_status(void) const noexcept{
          return _mapInfo->err;
       }
 
