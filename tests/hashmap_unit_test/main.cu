@@ -566,7 +566,6 @@ TEST(HashmapUnitTets ,Test_Resize_Perf_Host){
       std::cout<<"Error at recovering all elements 1"<<std::endl;
       expect_true(false);
    }
-   hmap.stats();
    cudaDeviceSynchronize();
    std::chrono::time_point<std::chrono::_V2::system_clock, std::chrono::_V2::system_clock::duration> start,stop;
    start = std::chrono::high_resolution_clock::now();
@@ -574,7 +573,6 @@ TEST(HashmapUnitTets ,Test_Resize_Perf_Host){
    stop = std::chrono::high_resolution_clock::now();
    auto duration = duration_cast<microseconds>(stop- start).count();
    std::cout<<"Resize took "<<duration<<" us status= "<<hmap.peek_status()<<std::endl;
-   hmap.stats();
 }
 
 
@@ -591,7 +589,6 @@ TEST(HashmapUnitTets ,Test_Resize_Perf_Device){
       std::cout<<"Error at recovering all elements 1"<<std::endl;
       expect_true(false);
    }
-   hmap.stats();
    cudaDeviceSynchronize();
    std::chrono::time_point<std::chrono::_V2::system_clock, std::chrono::_V2::system_clock::duration> start,stop;
    start = std::chrono::high_resolution_clock::now();
@@ -599,8 +596,7 @@ TEST(HashmapUnitTets ,Test_Resize_Perf_Device){
    stop = std::chrono::high_resolution_clock::now();
    auto duration = duration_cast<microseconds>(stop- start).count();
    std::cout<<"Resize took "<<duration<<" us"<<std::endl;
-   assert(hmap.peek_status()==status::success);
-   hmap.stats();
+   expect_true(hmap.peek_status()==status::success);
 }
 int main(int argc, char* argv[]){
    srand(time(NULL));
