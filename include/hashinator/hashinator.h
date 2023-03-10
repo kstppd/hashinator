@@ -48,13 +48,26 @@ namespace Hashinator{
    #define DefaultHasher void
    #endif
 
+   enum status{
+      success,
+      fail,
+      invalid
+   };
+
+   enum targets{
+      host,
+      device,
+      automatic
+   };
+
    typedef struct Info {
       Info(int sz)
-         :sizePower(sz),fill(0),currentMaxBucketOverflow(0),tombstoneCounter(0){}
+         :sizePower(sz),fill(0),currentMaxBucketOverflow(0),tombstoneCounter(0),err(status::invalid){}
       int sizePower;
       size_t fill; 
       size_t currentMaxBucketOverflow;
       size_t tombstoneCounter;
+      status err;
    }MapInfo;
 
    template <typename KEY_TYPE, 
@@ -100,8 +113,14 @@ namespace Hashinator{
       void deallocate_device_handles(){
          #ifndef HASHINATOR_HOST_ONLY
          cudaFree(device_map);
+         device_map=nullptr;
          #endif
       }   
+
+      HASHINATOR_HOSTDEVICE
+      void set_status(status code){
+         _mapInfo->err=code;
+      }
 
    public:
       template <typename T, typename U>
@@ -122,6 +141,7 @@ namespace Hashinator{
             return isOverflown;
          }
       };
+
       HASHINATOR_HOSTONLY
       Hashmap(){
          preallocate_device_handles();
@@ -135,7 +155,7 @@ namespace Hashinator{
       Hashmap(int sizepower){
          preallocate_device_handles();
          _mapInfo=_metaAllocator.allocate(1);
-         *_mapInfo=MapInfo(5);
+         *_mapInfo=MapInfo(sizepower);
          _mapInfo->currentMaxBucketOverflow=Hashinator::defaults::BUCKET_OVERFLOW;
          buckets=split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> (1 << _mapInfo->sizePower, cuda::std::pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE()));
        };
@@ -153,7 +173,6 @@ namespace Hashinator{
          deallocate_device_handles();
          _metaAllocator.deallocate(_mapInfo,1);
       };
-
 
       #ifdef HASHINATOR_HOST_ONLY
       HASHINATOR_HOSTONLY
@@ -338,6 +357,11 @@ namespace Hashinator{
 
       //---------------------------------------
 
+      HASHINATOR_HOSTDEVICE
+      const status& peak_status(void){
+         return _mapInfo->err;
+      }
+
       // For STL compatibility: size(), bucket_count(), count(KEY_TYPE), clear()
       HASHINATOR_HOSTDEVICE
       size_t size() const { return _mapInfo->fill; }
@@ -359,11 +383,41 @@ namespace Hashinator{
          }
       }
 
+      #ifdef HASHINATOR_HOST_ONLY
       HASHINATOR_HOSTONLY
       void clear() {
          buckets = split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>>(1 << _mapInfo->sizePower, {EMPTYBUCKET, VAL_TYPE()});
-         _mapInfo->fill = 0;
+         return;
       }
+      #else
+      HASHINATOR_HOSTONLY
+      void clear(targets t=targets::host, cudaStream_t s=0) {
+         size_t blocksNeeded;
+         switch(t)
+         {
+            case targets::host :
+               buckets = split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>>(1 << _mapInfo->sizePower, {EMPTYBUCKET, VAL_TYPE()});
+               _mapInfo->fill=0;
+               break;
+
+            case targets::device :
+               buckets.optimizeGPU(s);
+               blocksNeeded=buckets.size()/defaults::MAX_BLOCKSIZE;
+               blocksNeeded=blocksNeeded+(blocksNeeded==0);
+               Hashers::reset_all_to_empty<KEY_TYPE,VAL_TYPE,EMPTYBUCKET>
+               <<<blocksNeeded,defaults::MAX_BLOCKSIZE,0,s>>>(buckets.data(),buckets.size(),&_mapInfo->fill);
+               cudaStreamSynchronize(s);
+               set_status(( _mapInfo->fill==0 )?success:fail);
+               break;
+
+            default:
+               clear(targets::host);
+               break;
+         }
+         return;
+      }
+      #endif
+
 
       //Try to grow our buckets until we achieve a targetLF load factor
       HASHINATOR_HOSTONLY
@@ -415,6 +469,7 @@ namespace Hashinator{
       HASHINATOR_HOSTONLY
       void stats()const {
          printf("Hashinator Stats \n");
+         printf("Bucket size= %zu\n",buckets.size());
          printf("Fill= %zu, LoadFactor=%f \n",_mapInfo->fill,load_factor());
          printf("Tombstones= %zu\n",_mapInfo->tombstoneCounter);
          printf("Overflow= %zu\n",_mapInfo->currentMaxBucketOverflow);

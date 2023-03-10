@@ -503,6 +503,57 @@ TEST(HashmapUnitTets , Test4_DeviceKernels){
    }
 }
 
+TEST(HashmapUnitTets ,Test_Clear_Perf_Host){
+
+   const int sz=22;
+   vector src(1<<sz);
+   create_input(src);
+   hashmap hmap(sz);
+   bool cpuOK;
+   hmap.insert(src.data(),src.size());
+   cpuOK=recover_all_elements(hmap,src);
+   if (!cpuOK){
+      std::cout<<"Error at recovering all elements 1"<<std::endl;
+      expect_true(false);
+   }
+   hmap.stats();
+   hmap.optimizeGPU();
+   cudaDeviceSynchronize();
+   std::chrono::time_point<std::chrono::_V2::system_clock, std::chrono::_V2::system_clock::duration> start,stop;
+   start = std::chrono::high_resolution_clock::now();
+   hmap.clear();
+   stop = std::chrono::high_resolution_clock::now();
+   auto duration = duration_cast<microseconds>(stop- start).count();
+   std::cout<<"Clear took "<<duration<<" us status= "<<hmap.peak_status()<<std::endl;
+   hmap.stats();
+}
+
+TEST(HashmapUnitTets ,Test_Clear_Perf_Device){
+
+   const int sz=22;
+   vector src(1<<sz);
+   create_input(src);
+   hashmap hmap(sz);
+   bool cpuOK;
+   hmap.insert(src.data(),src.size());
+   cpuOK=recover_all_elements(hmap,src);
+   if (!cpuOK){
+      std::cout<<"Error at recovering all elements 1"<<std::endl;
+      expect_true(false);
+   }
+   hmap.stats();
+   hmap.optimizeGPU();
+   cudaDeviceSynchronize();
+   std::chrono::time_point<std::chrono::_V2::system_clock, std::chrono::_V2::system_clock::duration> start,stop;
+   start = std::chrono::high_resolution_clock::now();
+   hmap.clear(targets::device);
+   stop = std::chrono::high_resolution_clock::now();
+   auto duration = duration_cast<microseconds>(stop- start).count();
+   std::cout<<"Clear took "<<duration<<" us status= "<<hmap.peak_status()<<std::endl;
+   hmap.stats();
+}
+
+
 int main(int argc, char* argv[]){
    srand(time(NULL));
    ::testing::InitGoogleTest(&argc, argv);

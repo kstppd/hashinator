@@ -37,6 +37,10 @@ namespace Hashinator{
 
    namespace Hashers{
 
+      /*
+       * Resets all elements pointed by src to EMPTY in dst 
+       * If an elements in src is not found this will assert(false)
+       * */
       template<typename KEY_TYPE, 
                typename VAL_TYPE,
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
@@ -63,6 +67,26 @@ namespace Hashinator{
             }
          }
          assert(false && "Could not reset element. Something is broken!");
+      }
+
+      /*
+       * Resets all elements in dst to EMPTY, VAL_TYPE()
+       * */
+      template<typename KEY_TYPE, typename VAL_TYPE,
+               KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max()>
+      __global__ 
+      void reset_all_to_empty(cuda::std::pair<KEY_TYPE, VAL_TYPE>* dst,
+                              const size_t len, size_t * fill)
+      {
+         const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
+         //Early exit here
+         if (tid>=len){return;}
+         if(dst[tid].first!=EMPTYBUCKET){
+            dst[tid].first=EMPTYBUCKET;
+            dst[tid].second=VAL_TYPE();
+            atomicSub((unsigned int*)fill,1);
+         }
+         return;
       }
 
       
