@@ -824,7 +824,6 @@ namespace Hashinator{
        * */
       template <typename  Rule>
       void extractPattern(split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>>& elements ,Rule, cudaStream_t s=0){
-         elements.clear();
          elements.resize(1<<_mapInfo->sizePower);
          //Extract elements matching the Pattern Rule(element)==true;
          split::tools::copy_if<cuda::std::pair<KEY_TYPE, VAL_TYPE>,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,elements,Rule(),s);
