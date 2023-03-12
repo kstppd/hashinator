@@ -171,7 +171,10 @@ bool recover_all_elements(const hashmap& hmap, vector& src){
    for (size_t i=0; i<src.size(); ++i){
       const cuda::std::pair<key_type,val_type>& kval=src.at(i);
       auto retval=hmap.find(kval.first);
-      if (retval==hmap.end()){return false;}
+      if (retval==hmap.end()){
+         std::cout<<"INVALID= "<<kval.first<<std::endl;
+         return false;
+      }
       bool sane=retval->first==kval.first  &&  retval->second== kval.second ;
       if (!sane){ 
          return false; 
@@ -598,6 +601,20 @@ TEST(HashmapUnitTets ,Test_Resize_Perf_Device){
    std::cout<<"Resize took "<<duration<<" us"<<std::endl;
    expect_true(hmap.peek_status()==status::success);
 }
+
+
+TEST(HashmapUnitTets ,Test_ErrorCodes){
+
+   const int sz=20;
+   vector src(1<<sz);
+   create_input(src);
+   hashmap hmap(sz);
+   hmap.insert(src.data(),src.size(),1);
+   bool cpuOK=recover_all_elements(hmap,src);
+   expect_true(cpuOK);
+   hmap.stats();
+}
+
 int main(int argc, char* argv[]){
    srand(time(NULL));
    ::testing::InitGoogleTest(&argc, argv);

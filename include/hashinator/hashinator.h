@@ -505,7 +505,7 @@ namespace Hashinator{
             const int bitMask = (1 <<(currentSizePower )) - 1; 
             size_t optimalIndex=hashIndex&bitMask;
             const_iterator it=find(i.first);
-            int64_t overflow=it.getIndex()-optimalIndex;
+            int64_t overflow=llabs(it.getIndex()-optimalIndex);
             if (i.first==TOMBSTONE){
                std::cout<<"[╀] ";
             }else if (i.first == EMPTYBUCKET){
@@ -945,9 +945,6 @@ namespace Hashinator{
          buckets.optimizeGPU();
          _mapInfo->currentMaxBucketOverflow=_mapInfo->currentMaxBucketOverflow;
          DeviceHasher::insert(src,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,len,s);
-         if (_mapInfo->currentMaxBucketOverflow>Hashinator::defaults::BUCKET_OVERFLOW  ){
-            rehash(_mapInfo->sizePower++);
-         }
          return;
       }
 
