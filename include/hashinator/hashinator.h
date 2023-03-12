@@ -802,6 +802,33 @@ namespace Hashinator{
 
       #ifndef HASHINATOR_HOST_ONLY
 
+      /*
+       * Fills the splitvector "elements" with **copies** of the keys that match the pattern
+       * dictated by Rule. 
+       * Example Usage:
+       *
+       * Define this somewhere: 
+       *
+       *  template <typename T, typename U>
+       *  struct Rule{
+       *  Rule(){}
+       *     __host__ __device__
+       *     inline bool operator()( cuda::std::pair<T,U>& element)const{
+       *        if (element.first<100 ){return true;}
+       *        return false;
+       *     }
+       *  };
+       *
+       * Then call this:
+       *   hmap.extractPattern(elements,Rule<uint32_t,uint32_t>());
+       * */
+      template <typename  Rule>
+      void extractPattern(split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>>& elements ,Rule, cudaStream_t s=0){
+         elements.clear();
+         elements.resize(1<<_mapInfo->sizePower);
+         //Extract elements matching the Pattern Rule(element)==true;
+         split::tools::copy_if<cuda::std::pair<KEY_TYPE, VAL_TYPE>,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,elements,Rule(),s);
+      }
 
       //Cleans all tombstones using splitvectors stream compcation and
       //the member Hasher

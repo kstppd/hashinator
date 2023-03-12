@@ -603,8 +603,17 @@ TEST(HashmapUnitTets ,Test_Resize_Perf_Device){
 }
 
 
-TEST(HashmapUnitTets ,Test_ErrorCodes){
+template <typename T, typename U>
+struct Rule{
+Rule(){}
+   __host__ __device__
+   inline bool operator()( cuda::std::pair<T,U>& element)const{
+      if (element.first< 1000 ){return true;}
+      return false;
+   }
+};
 
+TEST(HashmapUnitTets ,Test_ErrorCodes_ExtractPattern){
    const int sz=20;
    vector src(1<<sz);
    create_input(src);
@@ -614,6 +623,11 @@ TEST(HashmapUnitTets ,Test_ErrorCodes){
    expect_true(cpuOK);
    expect_true(hmap.peek_status()==status::success);
    hmap.stats();
+   vector out;
+   hmap.extractPattern(out,Rule<uint32_t,uint32_t>());
+   for (auto i:out){
+      expect_true(i.first<1000);
+   }
 }
 
 int main(int argc, char* argv[]){
