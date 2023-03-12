@@ -48,18 +48,6 @@ namespace Hashinator{
    #define DefaultHasher void
    #endif
 
-   enum status{
-      success,
-      fail,
-      invalid
-   };
-
-   enum targets{
-      host,
-      device,
-      automatic
-   };
-
    typedef struct Info {
       Info(int sz)
          :sizePower(sz),fill(0),currentMaxBucketOverflow(defaults::BUCKET_OVERFLOW),tombstoneCounter(0),err(status::invalid){}
@@ -852,7 +840,7 @@ namespace Hashinator{
                               _mapInfo->currentMaxBucketOverflow,
                               &_mapInfo->currentMaxBucketOverflow,
                               &_mapInfo->fill,
-                              overflownElements.size(),s);
+                              overflownElements.size(),&_mapInfo->err,s);
 
          if (_mapInfo->currentMaxBucketOverflow>Hashinator::defaults::BUCKET_OVERFLOW){
             rehash(_mapInfo->sizePower++);
@@ -906,7 +894,7 @@ namespace Hashinator{
                               _mapInfo->currentMaxBucketOverflow,
                               &_mapInfo->currentMaxBucketOverflow,
                               &_mapInfo->fill,
-                              nOverflownElements,s);
+                              nOverflownElements,&_mapInfo->err,s);
 
          cudaFreeAsync(overflownElements,s);
          if (_mapInfo->currentMaxBucketOverflow>Hashinator::defaults::BUCKET_OVERFLOW){
@@ -922,14 +910,11 @@ namespace Hashinator{
          //Here we do some calculations to estimate how much if any we need to grow our buckets
          size_t neededPowerSize=std::ceil(std::log2((_mapInfo->fill+len)*(1.0/targetLF)));
          if (neededPowerSize>_mapInfo->sizePower){
-            resize(neededPowerSize);
+            resize(neededPowerSize,targets::device,s);
          }
          buckets.optimizeGPU();
          _mapInfo->currentMaxBucketOverflow=_mapInfo->currentMaxBucketOverflow;
-         DeviceHasher::insert(keys,vals,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,len,s);
-         if (_mapInfo->currentMaxBucketOverflow>Hashinator::defaults::BUCKET_OVERFLOW){
-            rehash(_mapInfo->sizePower++);
-         }
+         DeviceHasher::insert(keys,vals,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,len,&_mapInfo->err,s);
          return;
       }
 
@@ -937,14 +922,17 @@ namespace Hashinator{
       //Uses Hasher's insert_kernel to insert all elements
       HASHINATOR_HOSTONLY
       void insert(cuda::std::pair<KEY_TYPE,VAL_TYPE>* src, size_t len,float targetLF=0.5,cudaStream_t s=0){
+         if(len==0){
+            set_status(status::success);
+            return;
+         }
          //Here we do some calculations to estimate how much if any we need to grow our buckets
          size_t neededPowerSize=std::ceil(std::log2(((_mapInfo->fill)+len)*(1.0/targetLF)));
          if (neededPowerSize>_mapInfo->sizePower){
-            resize(neededPowerSize);
+            resize(neededPowerSize,targets::device,s);
          }
          buckets.optimizeGPU();
-         _mapInfo->currentMaxBucketOverflow=_mapInfo->currentMaxBucketOverflow;
-         DeviceHasher::insert(src,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,len,s);
+         DeviceHasher::insert(src,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,len,&_mapInfo->err,s);
          return;
       }
 

@@ -121,7 +121,7 @@ namespace Hashinator{
                          size_t maxoverflow,
                          size_t* d_overflow,
                          size_t* d_fill,
-                         size_t len)
+                         size_t len,status* err)
       {
          
          const int VIRTUALWARP=WARPSIZE/elementsPerWarp;
@@ -131,7 +131,7 @@ namespace Hashinator{
          unsigned int subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
          
          //Early quit if we have more warps than elements to insert
-         if (wid>=len){
+         if (wid>=len || *err==status::fail){
             return;
          }
 
@@ -212,7 +212,7 @@ namespace Hashinator{
                mask ^= (1UL << winner);
             }
          }
-         assert(0 && "Hashmap Completely Overflown!");
+         atomicExch((int*)err,status::fail);
       }
 
 
@@ -248,7 +248,7 @@ namespace Hashinator{
                          size_t maxoverflow,
                          size_t* d_overflow,
                          size_t* d_fill,
-                         size_t len)
+                         size_t len,status* err)
       {
          
          const int VIRTUALWARP=WARPSIZE/elementsPerWarp;
@@ -258,7 +258,7 @@ namespace Hashinator{
          unsigned int subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
          
          //Early quit if we have more warps than elements to insert
-         if (wid>=len){
+         if (wid>=len || *err==status::fail){
             return;
          }
 
@@ -340,7 +340,7 @@ namespace Hashinator{
                mask ^= (1UL << winner);
             }
          }
-         assert(false && "Hashmap completely overflown");
+         atomicExch((int*)err,status::fail);
       }
 
       /*
@@ -504,14 +504,23 @@ namespace Hashinator{
                             size_t* d_overflow,
                             size_t* d_fill,
                             size_t len,
+                            status* err,
                             cudaStream_t s=0)
          {
             size_t blocks,blockSize;
+            *err=status::success;
             launchParams(len,blocks,blockSize);
             insert_kernel<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction,defaults::WARPSIZE,elementsPerWarp>
                      <<<blocks,blockSize,0,s>>>
-                     (keys,vals,buckets,sizePower,maxoverflow,d_overflow,d_fill,len);
+                     (keys,vals,buckets,sizePower,maxoverflow,d_overflow,d_fill,len,err);
             cudaStreamSynchronize(s);
+            #ifndef NDEBUG
+            if (*err==status::fail){
+               std::cerr<<"***** Hashinator Runtime Warning ********"<<std::endl;
+               std::cerr<<"Warning: Hashmap completely overflown in Device Insert.\nNot all ellements were inserted!\nConsider resizing before calling insert"<<std::endl;
+               std::cerr<<"******************************"<<std::endl;
+            }
+            #endif
          }
          
          //Overload with cuda::std::pair<key,val> (k,v) inputs
@@ -523,14 +532,23 @@ namespace Hashinator{
                             size_t* d_overflow,
                             size_t* d_fill,
                             size_t len,
+                            status* err,
                             cudaStream_t s=0)
          {
             size_t blocks,blockSize;
+            *err=status::success;
             launchParams(len,blocks,blockSize);
             insert_kernel<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction,defaults::WARPSIZE,elementsPerWarp>
                      <<<blocks,blockSize,0,s>>>
-                     (src,buckets,sizePower,maxoverflow,d_overflow,d_fill,len);
+                     (src,buckets,sizePower,maxoverflow,d_overflow,d_fill,len,err);
             cudaStreamSynchronize(s);
+            #ifndef NDEBUG
+            if (*err==status::fail){
+               std::cerr<<"***** Hashinator Runtime Warning ********"<<std::endl;
+               std::cerr<<"Warning: Hashmap completely overflown in Device Insert.\nNot all ellements were inserted!\nConsider resizing before calling insert"<<std::endl;
+               std::cerr<<"******************************"<<std::endl;
+            }
+            #endif
          }
 
          //Retrieve wrapper

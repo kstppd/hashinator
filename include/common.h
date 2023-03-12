@@ -29,3 +29,19 @@ inline size_t nextPow2(size_t v){
    return v;
 }
 
+
+namespace Hashinator{
+
+   enum status{
+      success,
+      fail,
+      invalid
+   };
+
+   enum targets{
+      host,
+      device,
+      automatic
+   };
+
+}

@@ -608,10 +608,11 @@ TEST(HashmapUnitTets ,Test_ErrorCodes){
    const int sz=20;
    vector src(1<<sz);
    create_input(src);
-   hashmap hmap(sz);
-   hmap.insert(src.data(),src.size(),1);
+   hashmap hmap;
+   hmap.insert(src.data(),src.size());
    bool cpuOK=recover_all_elements(hmap,src);
    expect_true(cpuOK);
+   expect_true(hmap.peek_status()==status::success);
    hmap.stats();
 }
 
