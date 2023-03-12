@@ -1,5 +1,5 @@
 /* File:    hashinator.h
- * Authors: Kostis Papadakis and Urs Ganse (2023)
+ * Authors: Kostis Papadakis, Urs Ganse and Markus Battarbee (2023)
  * Description: A hybrid hashmap that can operate on both 
  *              CPUs and GPUs using CUDA unified memory.
  *

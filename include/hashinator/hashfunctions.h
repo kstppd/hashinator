@@ -1,5 +1,5 @@
 /* File:    hashfunctions.h
- * Authors: Kostis Papadakis and Urs Ganse (2023)
+ * Authors: Kostis Papadakis, Urs Ganse and Markus Battarbee (2023)
  * Description: Defines hashfunctions used by Hashinator
  *              
  *
