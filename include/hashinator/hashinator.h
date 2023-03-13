@@ -145,7 +145,6 @@ namespace Hashinator{
          preallocate_device_handles();
          _mapInfo=_metaAllocator.allocate(1);
          *_mapInfo=MapInfo(5);
-         _mapInfo->currentMaxBucketOverflow=Hashinator::defaults::BUCKET_OVERFLOW;
          buckets=split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> (1 << _mapInfo->sizePower, cuda::std::pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE()));
        };
 
@@ -154,7 +153,6 @@ namespace Hashinator{
          preallocate_device_handles();
          _mapInfo=_metaAllocator.allocate(1);
          *_mapInfo=MapInfo(sizepower);
-         _mapInfo->currentMaxBucketOverflow=Hashinator::defaults::BUCKET_OVERFLOW;
          buckets=split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> (1 << _mapInfo->sizePower, cuda::std::pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE()));
        };
 
