@@ -426,7 +426,7 @@ namespace Hashinator{
       HASHINATOR_HOSTONLY
       void clear() {
          buckets = split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>>(1 << _mapInfo->sizePower, {EMPTYBUCKET, VAL_TYPE()});
-         _mapInfo->fill=0;
+         *_mapInfo=MapInfo(_mapInfo->sizePower);
          return;
       }
       #else
@@ -437,7 +437,7 @@ namespace Hashinator{
          {
             case targets::host :
                buckets = split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>>(1 << _mapInfo->sizePower, {EMPTYBUCKET, VAL_TYPE()});
-               _mapInfo->fill=0;
+               *_mapInfo=MapInfo(_mapInfo->sizePower);
                break;
 
             case targets::device :
