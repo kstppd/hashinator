@@ -396,6 +396,11 @@ namespace Hashinator{
          return retval;
       }
 
+      HASHINATOR_HOSTDEVICE
+      inline int getSizePower(void) const noexcept{
+         return _mapInfo->sizePower;
+      }
+
       // For STL compatibility: size(), bucket_count(), count(KEY_TYPE), clear()
       HASHINATOR_HOSTDEVICE
       size_t size() const { return _mapInfo->fill; }
