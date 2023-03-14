@@ -353,7 +353,12 @@ namespace Hashinator{
          }
 
          // Not found, and we have no free slots to create a new one. So we need to rehash to a larger size.
+         #ifdef HASHINATOR_HOST_ONLY
          rehash(_mapInfo->sizePower + 1);
+         #else
+         device_rehash(_mapInfo->sizePower + 1);
+         assert(peek_status()==status::success);
+         #endif
          return at(key); // Recursive tail call to try again with larger table.
       }
 
