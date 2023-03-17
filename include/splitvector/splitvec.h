@@ -379,6 +379,9 @@ namespace split{
             }
             //Nope.
             if (requested_space <= current_space){
+               for (size_t i=size(); i<requested_space; ++i ){
+                  _allocator.construct(&_data[i],T());
+               }
                return ;
             }
             //If the users passes eco=true we allocate
@@ -406,9 +409,6 @@ namespace split{
                return;
             }
             reserve(newSize,eco);
-            for (size_t i=size(); i<newSize; ++i ){
-               _allocator.construct(&_data[i],T());
-            }
             *_size  =newSize; 
          }
          
