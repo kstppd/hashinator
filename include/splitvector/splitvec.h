@@ -406,6 +406,9 @@ namespace split{
                return;
             }
             reserve(newSize,eco);
+            for (size_t i=size(); i<newSize; ++i ){
+               _allocator.construct(&_data[i],T());
+            }
             *_size  =newSize; 
          }
          
@@ -414,6 +417,9 @@ namespace split{
          void device_resize(size_t newSize){
             if (newSize>capacity()){
                assert(0 && "Splitvector has a catastrophic failure trying to resize on device.");
+            }
+            for (size_t i=size(); i<newSize; ++i ){
+               _allocator.construct(&_data[i],T());
             }
             *_size=newSize; 
          }
@@ -743,37 +749,17 @@ namespace split{
                throw std::out_of_range("Insert");
             }
 
+            size_t old_size = size();
             if (size() + count > capacity()) {
                resize(capacity() + count);
             }
 
             iterator retval = &_data[index];
-            std::move(retval, end(), retval.data() + count);
+            std::move(retval, iterator(&_data[old_size]), retval.data() + count);
             std::copy(p0, p1, retval);
             return retval;
          }
 
-
-         HOSTONLY
-         iterator insert(iterator& it, iterator p0, iterator p1) {
-         
-            const int64_t count = p1.data() - p0.data();
-            const int64_t index = it.data() - begin().data();
-      
-            if (index<0 || index>size()){
-               throw std::out_of_range("Insert");
-            }
-
-            if (size() + count > capacity()) {
-               resize(capacity() + count);
-            }
-
-            iterator retval = &_data[index];
-            std::move(retval, end(), retval.data() + count);
-            std::copy(p0, p1, retval);
-            return retval;
-         }
-         
          #ifndef SPLIT_HOST_ONLY 
          template<typename InputIterator, class = typename std::enable_if< !std::is_integral<InputIterator>::value >::type>
          DEVICEONLY 

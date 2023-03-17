@@ -94,6 +94,7 @@ namespace split{
       }
 
       template <typename U, typename... Args>
+      __host__ __device__
       void construct(U *p, Args&& ... args){
             ::new(p) U(std::forward<Args>(args)...);
       }

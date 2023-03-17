@@ -3,6 +3,9 @@
 #include <chrono>
 #include <vector>
 #include <gtest/gtest.h>
+#ifndef SPLIT_HOST_ONLY
+#define  SPLIT_HOST_ONLY
+#endif
 #include "../../include/splitvector/splitvec.h"
 #include <cuda_profiler_api.h>
 
@@ -23,8 +26,9 @@ void print_vec_elements(vec& v){
    std::cout<<"Size= "<<v.size()<<std::endl;
    std::cout<<"Capacity= "<<v.capacity()<<std::endl;
    for (auto i:v){
-      std::cout<<i<<std::endl;
+      std::cout<<i<<",";
    }
+   std::cout<<std::endl;
    std::cout<<"****~Vector Contents********"<<std::endl;
 }
 
@@ -383,12 +387,10 @@ TEST(Vector_Functionality , Emplace_Back){
    size_t initial_size=a.size();
    size_t initial_cap=a.capacity();
 
-   std::cout<<"--------------------Before\n";
    a.emplace_back(11);
-   std::cout<<"--------------------After\n";
-   //expect_true(11==a[a.size()-1]);
-   //a.emplace_back(12);
-   //expect_true(12==a[a.size()-1]);
+   expect_true(11==a[a.size()-1]);
+   a.emplace_back(12);
+   expect_true(12==a[a.size()-1]);
 
 }
 
