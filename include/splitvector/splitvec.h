@@ -275,6 +275,14 @@ namespace split{
             cudaMemPrefetchAsync(_data ,capacity()*sizeof(T),cudaCpuDeviceId,stream);
             CheckErrors("Prefetch CPU");
          }
+
+         HOSTONLY void streamAttach(cudaStream_t s,uint32_t flags=cudaMemAttachSingle){
+            cudaStreamAttachMemAsync( s,(void*)_size,     sizeof(size_t),flags );
+            cudaStreamAttachMemAsync( s,(void*)_capacity, sizeof(size_t),flags );
+            cudaStreamAttachMemAsync( s,(void*)_data,     *_capacity*sizeof(T), flags );
+            CheckErrors("Stream Attach");
+            return;
+         }
          #endif
 
          /* Custom swap mehtod. 

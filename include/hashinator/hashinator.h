@@ -1020,6 +1020,14 @@ namespace Hashinator{
          buckets.optimizeCPU(stream);
       }
 
+      HASHINATOR_HOSTONLY 
+      void streamAttach(cudaStream_t s,size_t len = 0, uint32_t  flags=cudaMemAttachSingle){
+         buckets.streamAttach(s,flags);
+         cudaStreamAttachMemAsync( s,(void*)_mapInfo, sizeof(_mapInfo),flags );
+         CheckErrors("Stream Attach");
+         return;
+      }
+
       //Just return the device pointer. Upload should be called fist 
       //othewise map bookeepping info will not be updated on device.
       HASHINATOR_HOSTONLY
