@@ -569,7 +569,7 @@ namespace Hashinator{
             rehash(_mapInfo->sizePower+1);
          }
          //When operating in CPU only mode we rehash to get rid of tombstones
-         if (tombstone_count()){
+         if (tombstone_ratio()>0.25){
             rehash(_mapInfo->sizePower);
          }
       }
