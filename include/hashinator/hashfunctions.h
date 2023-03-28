@@ -43,11 +43,26 @@ namespace Hashinator{
       template<typename T>
       struct Fibonacci{
          HOSTDEVICE
-         inline static uint32_t _hash(T key,const int sizePower){
+         inline static uint32_t fibhash(uint32_t key,const int sizePower){
             key ^= key >> (32 - sizePower);
             uint32_t retval = (uint64_t)(key * 2654435769ul) >> (32 - sizePower);
             return retval;
          }
+
+         HOSTDEVICE
+         inline static uint64_t fibhash(uint64_t key, const int sizePower) {
+            key ^= key >> (64 - sizePower);
+            uint64_t retval = key * static_cast<uint64_t>(0x9E3779B97F4A7C15ull);
+            retval ^= retval >> (64 - sizePower);
+            return retval;
+         }
+
+
+         HOSTDEVICE
+         inline static T _hash(T key,const int sizePower) {
+            return fibhash(key,sizePower);
+         }
+
       };
    }//namespace HashFunctions
 }//namespace Hashinator
