@@ -630,6 +630,26 @@ TEST(HashmapUnitTets ,Test_ErrorCodes_ExtractPattern){
    }
 }
 
+
+
+//Ugly test 
+TEST(HashmapUnitTets ,Test_MaxLoadFactor){
+   const int sz=20;
+   for (int i =0 ; i <= 5; i++){
+      const size_t N=(0.5+i/10.0)*(1<<sz) ;
+      vector src(N);
+      create_input(src);
+      hashmap hmap;
+      hmap.resize(sz);
+      hmap.insert(src.data(),src.size(),1);
+      bool cpuOK=recover_all_elements(hmap,src);
+      expect_true(cpuOK);
+      expect_true(hmap.peek_status()==status::success);
+      hmap.stats();
+   }
+}
+
+
 int main(int argc, char* argv[]){
    srand(time(NULL));
    ::testing::InitGoogleTest(&argc, argv);
