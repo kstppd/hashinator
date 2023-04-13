@@ -474,9 +474,11 @@ namespace split{
 
          HOSTDEVICE
          void clear()noexcept{
-             for (size_t i = 0; i < size();i++) {
-               _data[i].~T();
-             }
+            if constexpr(!std::is_pod<T>::value){
+                for (size_t i = 0; i < size();i++) {
+                  _data[i].~T();
+                }
+            }
             *_size=0;
             return;
          }
