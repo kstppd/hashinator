@@ -386,8 +386,8 @@ namespace split{
          d_input=input.upload();
          d_counts=counts.upload();
          split::tools::split_compact_keys<T,U,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int),s>>>(d_input,d_counts,d_offsets,d_output,rule);
-         size_t retval = output.size();
          cudaStreamSynchronize(s);
+         size_t retval = output.size();
          //Deallocate the handle pointers
 
          cudaFree(d_input);
