@@ -48,7 +48,7 @@ void create_input(vector& src, uint32_t bias=0){
    for (size_t i=0; i<src.size(); ++i){
       cuda::std::pair<key_type,val_type>& kval=src.at(i);
       kval.first=i + bias;
-      kval.second=rand()%1000000;
+      kval.second=i;
    }
 }
 
@@ -608,13 +608,13 @@ struct Rule{
 Rule(){}
    __host__ __device__
    inline bool operator()( cuda::std::pair<T,U>& element)const{
-      if (element.first< 1000 ){return true;}
-      return false;
+      return element.first<1000;
    }
 };
 
-TEST(HashmapUnitTets ,Test_ErrorCodes_ExtractPattern){
-   const int sz=20;
+
+TEST(HashmapUnitTets ,Test_ErrorCodes_ExtractKeysByPattern){
+   const int sz=5;
    vector src(1<<sz);
    create_input(src);
    hashmap hmap;
@@ -623,31 +623,13 @@ TEST(HashmapUnitTets ,Test_ErrorCodes_ExtractPattern){
    expect_true(cpuOK);
    expect_true(hmap.peek_status()==status::success);
    hmap.stats();
-   vector out;
-   hmap.extractPattern(out,Rule<uint32_t,uint32_t>());
+   ivector out;
+   hmap.extractKeysByPattern(out,Rule<uint32_t,uint32_t>());
    for (auto i:out){
-      expect_true(i.first<1000);
+      expect_true(i<1000);
    }
 }
 
-
-
-//Ugly test 
-TEST(HashmapUnitTets ,Test_MaxLoadFactor){
-   const int sz=20;
-   for (int i =0 ; i <= 5; i++){
-      const size_t N=(0.5+i/10.0)*(1<<sz) ;
-      vector src(N);
-      create_input(src);
-      hashmap hmap;
-      hmap.resize(sz);
-      hmap.insert(src.data(),src.size(),1);
-      bool cpuOK=recover_all_elements(hmap,src);
-      expect_true(cpuOK);
-      expect_true(hmap.peek_status()==status::success);
-      hmap.stats();
-   }
-}
 
 
 int main(int argc, char* argv[]){

@@ -839,6 +839,14 @@ namespace Hashinator{
          split::tools::copy_if<cuda::std::pair<KEY_TYPE, VAL_TYPE>,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,elements,Rule(),s);
       }
 
+      template <typename  Rule>
+      void extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements ,Rule, cudaStream_t s=0){
+         elements.resize(1<<_mapInfo->sizePower);
+         elements.optimizeGPU(s);
+         //Extract element **keys** matching the Pattern Rule(element)==true;
+         split::tools::copy_keys_if<cuda::std::pair<KEY_TYPE, VAL_TYPE>,KEY_TYPE,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,elements,Rule(),s);
+      }
+
       //Cleans all tombstones using splitvectors stream compcation and
       //the member Hasher
       HASHINATOR_HOSTONLY
