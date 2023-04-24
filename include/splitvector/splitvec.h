@@ -253,7 +253,7 @@ namespace split{
          //Method that return a pointer which can be passed to GPU kernels
          //Has to be cudaFree'd after use otherwise memleak (small one but still)!
          HOSTONLY
-         SplitVector<T,Allocator,Meta_Allocator>* upload(cudaStream_t stream = 0 )noexcept{
+         SplitVector<T,Allocator,Meta_Allocator>* upload(cudaStream_t stream = 0 ){
             SplitVector* d_vec;
             optimizeGPU(stream);
             cudaMalloc((void **)&d_vec, sizeof(SplitVector));
