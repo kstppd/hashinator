@@ -344,7 +344,7 @@ namespace split{
       }
 
       template <typename T,typename U, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=32>
-      void copy_keys_if(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
+      size_t copy_keys_if(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
                    split::SplitVector<U,split::split_unified_allocator<U>,split::split_unified_allocator<size_t>>& output,
                    Rule rule,
                    cudaStream_t s=0)
@@ -386,6 +386,7 @@ namespace split{
          d_input=input.upload();
          d_counts=counts.upload();
          split::tools::split_compact_keys<T,U,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int),s>>>(d_input,d_counts,d_offsets,d_output,rule);
+         size_t retval = output.size();
          cudaStreamSynchronize(s);
          //Deallocate the handle pointers
 
@@ -393,6 +394,7 @@ namespace split{
          cudaFree(d_counts);
          cudaFree(d_output);
          cudaFree(d_offsets);
+         return retval;
       }
 
       
