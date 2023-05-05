@@ -311,12 +311,12 @@ namespace split{
 
                
          //Phase 1 -- Calculate per warp workload
-         vector * d_input=input.upload();
-         vector_int * d_counts=counts.upload();
+         vector * d_input=input.upload(s);
+         vector_int * d_counts=counts.upload(s);
          split::tools::scan_reduce<<<nBlocks,BLOCKSIZE,0,s>>>(d_input,d_counts,rule);
          cudaStreamSynchronize(s);
-         cudaFree(d_input);
-         cudaFree(d_counts);
+         cudaFreeAsync(d_input,s);
+         cudaFreeAsync(d_counts,s);
 
 
          //Step 2 -- Exclusive Prefix Scan on offsets
@@ -329,18 +329,18 @@ namespace split{
 
 
          //Step 3 -- Compaction
-         vector* d_output=output.upload();
-         vector_int* d_offsets=offsets.upload();
-         d_input=input.upload();
-         d_counts=counts.upload();
+         vector* d_output=output.upload(s);
+         vector_int* d_offsets=offsets.upload(s);
+         d_input=input.upload(s);
+         d_counts=counts.upload(s);
          split::tools::split_compact<T,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int),s>>>(d_input,d_counts,d_offsets,d_output,rule);
          cudaStreamSynchronize(s);
          //Deallocate the handle pointers
 
-         cudaFree(d_input);
-         cudaFree(d_counts);
-         cudaFree(d_output);
-         cudaFree(d_offsets);
+         cudaFreeAsync(d_input,s);
+         cudaFreeAsync(d_counts,s);
+         cudaFreeAsync(d_output,s);
+         cudaFreeAsync(d_offsets,s);
       }
 
       template <typename T,typename U, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=32>
@@ -363,12 +363,12 @@ namespace split{
 
                
          //Phase 1 -- Calculate per warp workload
-         vector * d_input=input.upload();
-         vector_int * d_counts=counts.upload();
+         vector * d_input=input.upload(s);
+         vector_int * d_counts=counts.upload(s);
          split::tools::scan_reduce<<<nBlocks,BLOCKSIZE,0,s>>>(d_input,d_counts,rule);
          cudaStreamSynchronize(s);
-         cudaFree(d_input);
-         cudaFree(d_counts);
+         cudaFreeAsync(d_input,s);
+         cudaFreeAsync(d_counts,s);
 
 
          //Step 2 -- Exclusive Prefix Scan on offsets
@@ -381,19 +381,19 @@ namespace split{
 
 
          //Step 3 -- Compaction
-         keyvector* d_output=output.upload();
-         vector_int* d_offsets=offsets.upload();
-         d_input=input.upload();
-         d_counts=counts.upload();
+         keyvector* d_output=output.upload(s);
+         vector_int* d_offsets=offsets.upload(s);
+         d_input=input.upload(s);
+         d_counts=counts.upload(s);
          split::tools::split_compact_keys<T,U,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int),s>>>(d_input,d_counts,d_offsets,d_output,rule);
          cudaStreamSynchronize(s);
          size_t retval = output.size();
          //Deallocate the handle pointers
 
-         cudaFree(d_input);
-         cudaFree(d_counts);
-         cudaFree(d_output);
-         cudaFree(d_offsets);
+         cudaFreeAsync(d_input,s);
+         cudaFreeAsync(d_counts,s);
+         cudaFreeAsync(d_output,s);
+         cudaFreeAsync(d_offsets,s);
          return retval;
       }
 
@@ -530,7 +530,7 @@ namespace split{
                cudaStreamSynchronize(s);
             }else{
                T* partial_sums_clone=(T*)mPool.allocate(gridSize*sizeof(T));
-               cudaMemcpy(partial_sums_clone, partial_sums, gridSize*sizeof(T),cudaMemcpyDeviceToDevice);
+               cudaMemcpyAsync(partial_sums_clone, partial_sums, gridSize*sizeof(T),cudaMemcpyDeviceToDevice,s);
                split_prefix_scan_raw(partial_sums_clone,partial_sums,mPool,gridSize,s);
                
             }
@@ -580,7 +580,7 @@ namespace split{
          split::tools::split_compact_raw<T,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int),s>>>(input.data(),d_counts,d_offsets,output,rule,input.size(),nBlocks,retval);
          cudaStreamSynchronize(s);
          uint32_t numel;
-         cudaMemcpy(&numel,retval,sizeof(uint32_t),cudaMemcpyDeviceToHost);
+         cudaMemcpyAsync(&numel,retval,sizeof(uint32_t),cudaMemcpyDeviceToHost,s);
          cudaStreamSynchronize(s);
          return numel;
       }

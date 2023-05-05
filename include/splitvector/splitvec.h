@@ -256,7 +256,7 @@ namespace split{
          SplitVector<T,Allocator,Meta_Allocator>* upload(cudaStream_t stream = 0 ){
             SplitVector* d_vec;
             optimizeGPU(stream);
-            cudaMalloc((void **)&d_vec, sizeof(SplitVector));
+            cudaMallocAsync((void **)&d_vec, sizeof(SplitVector),stream);
             cudaMemcpyAsync(d_vec, this, sizeof(SplitVector),cudaMemcpyHostToDevice,stream);
             return d_vec;
          }

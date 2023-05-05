@@ -88,7 +88,7 @@ namespace Hashinator{
        }
       
       // Used by the constructors. Preallocates the device pointer and bookeepping info for later use on device. 
-      // This helps in reducing th;e number of calls to cudaMalloc
+      // This helps in reducing the number of calls to cudaMalloc
       HASHINATOR_HOSTONLY
       void preallocate_device_handles(){
          #ifndef HASHINATOR_HOST_ONLY
@@ -286,7 +286,7 @@ namespace Hashinator{
          size_t nValidElements=validElements.size();
          assert(nValidElements==_mapInfo->fill && "Something really bad happened during rehashing! Ask Kostis!");
          //We can now clear our buckets
-         optimizeCPU();
+         optimizeCPU(s);
          buckets=std::move(split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> (1 << newSizePower, cuda::std::pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())));
          optimizeGPU(s);
          validElements.optimizeGPU(s);
@@ -957,7 +957,7 @@ namespace Hashinator{
          if (neededPowerSize>_mapInfo->sizePower){
             resize(neededPowerSize,targets::device,s);
          }
-         buckets.optimizeGPU();
+         buckets.optimizeGPU(s);
          _mapInfo->currentMaxBucketOverflow=_mapInfo->currentMaxBucketOverflow;
          DeviceHasher::insert(keys,vals,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,len,&_mapInfo->err,s);
          return;
@@ -976,7 +976,7 @@ namespace Hashinator{
          if (neededPowerSize>_mapInfo->sizePower){
             resize(neededPowerSize,targets::device,s);
          }
-         buckets.optimizeGPU();
+         buckets.optimizeGPU(s);
          DeviceHasher::insert(src,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,len,&_mapInfo->err,s);
          return;
       }
@@ -984,7 +984,7 @@ namespace Hashinator{
       //Uses Hasher's retrieve_kernel to read all elements
       HASHINATOR_HOSTONLY
       void retrieve(KEY_TYPE* keys,VAL_TYPE* vals,size_t len,cudaStream_t s=0){
-         buckets.optimizeGPU();
+         buckets.optimizeGPU(s);
          DeviceHasher::retrieve(keys,vals,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,len,s);
          return;
       }
@@ -992,7 +992,7 @@ namespace Hashinator{
       //Uses Hasher's erase_kernel to delete all elements
       HASHINATOR_HOSTONLY
       void erase(KEY_TYPE* keys,size_t len,cudaStream_t s=0){
-         buckets.optimizeGPU();
+         buckets.optimizeGPU(s);
          //Remember the last numeber of tombstones
          size_t tbStore=tombstone_count();
          DeviceHasher::erase(keys,buckets.data(),&_mapInfo->tombstoneCounter,_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,len,s);
