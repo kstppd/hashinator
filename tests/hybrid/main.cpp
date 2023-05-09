@@ -15,7 +15,7 @@
 using namespace std::chrono;
 using namespace Hashinator;
 typedef uint32_t val_type;
-typedef split::SplitVector<cuda::std::pair<val_type,val_type>> vector ;
+typedef split::SplitVector<hash_pair<val_type,val_type>> vector ;
 typedef Hashmap<val_type,val_type> hashmap;
 
 
@@ -35,7 +35,7 @@ auto execute_and_time(const char* name,Fn fn, Args && ... args) ->bool{
 
 void create_input(vector& src, uint32_t bias=0){
    for (size_t i=0; i<src.size(); ++i){
-      cuda::std::pair<val_type,val_type>& kval=src.at(i);
+      hash_pair<val_type,val_type>& kval=src.at(i);
       kval.first=i + bias;
       kval.second=rand()%1000000;
    }
@@ -43,7 +43,7 @@ void create_input(vector& src, uint32_t bias=0){
 
 void create_random_input(vector& src){
    for (size_t i=0; i<src.size(); ++i){
-      cuda::std::pair<val_type,val_type>& kval=src.at(i);
+      hash_pair<val_type,val_type>& kval=src.at(i);
       kval.first=(rand());
       kval.second=rand()%1000000;
    }
@@ -54,7 +54,7 @@ void create_random_input(vector& src){
 
 bool recover_elements(const hashmap& hmap, vector& src){
    for (size_t i=0; i<src.size(); ++i){
-      const cuda::std::pair<val_type,val_type>& kval=src.at(i);
+      const hash_pair<val_type,val_type>& kval=src.at(i);
       auto retval=hmap.find(kval.first);
       if (retval==hmap.end()){assert(0&& "END FOUND");}
       bool sane=retval->first==kval.first  &&  retval->second== kval.second ;

@@ -30,7 +30,6 @@
 #pragma once
 #include "hashfunctions.h"
 #include "defaults.h"
-#include <cuda/std/utility>
 #include "../common.h"
 
 namespace Hashinator{
@@ -46,8 +45,8 @@ namespace Hashinator{
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
                class HashFunction=HashFunctions::Fibonacci<KEY_TYPE>>
       __global__ 
-      void reset_to_empty(cuda::std::pair<KEY_TYPE, VAL_TYPE>* src,
-                          cuda::std::pair<KEY_TYPE, VAL_TYPE>* dst,
+      void reset_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* src,
+                          hash_pair<KEY_TYPE, VAL_TYPE>* dst,
                           const int sizePower,
                           size_t maxoverflow,
                           size_t Nsrc)
@@ -55,7 +54,7 @@ namespace Hashinator{
       {
          const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
          if (tid>=Nsrc){return ;}
-         cuda::std::pair<KEY_TYPE,VAL_TYPE>&candidate=src[tid];
+         hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[tid];
          int bitMask = (1 <<(sizePower )) - 1; 
          uint32_t hashIndex = HashFunction::_hash(candidate.first,sizePower);
 
@@ -75,7 +74,7 @@ namespace Hashinator{
       template<typename KEY_TYPE, typename VAL_TYPE,
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max()>
       __global__ 
-      void reset_all_to_empty(cuda::std::pair<KEY_TYPE, VAL_TYPE>* dst,
+      void reset_all_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* dst,
                               const size_t len, size_t * fill)
       {
          const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
@@ -115,8 +114,8 @@ namespace Hashinator{
                int WARPSIZE=32,
                int elementsPerWarp>
       __global__ 
-      void insert_kernel(cuda::std::pair<KEY_TYPE, VAL_TYPE>* src,
-                         cuda::std::pair<KEY_TYPE, VAL_TYPE>* buckets,
+      void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src,
+                         hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
                          int sizePower,
                          size_t maxoverflow,
                          size_t* d_overflow,
@@ -147,7 +146,7 @@ namespace Hashinator{
          }else{
             submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
-         cuda::std::pair<KEY_TYPE,VAL_TYPE>&candidate=src[wid];
+         hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[wid];
          const int bitMask = (1 <<(sizePower )) - 1; 
          const size_t hashIndex = HashFunction::_hash(candidate.first,sizePower);
          const size_t optimalindex=(hashIndex) & bitMask;
@@ -243,7 +242,7 @@ namespace Hashinator{
       __global__ 
       void insert_kernel(KEY_TYPE* keys,
                          VAL_TYPE* vals,
-                         cuda::std::pair<KEY_TYPE, VAL_TYPE>* buckets,
+                         hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
                          int sizePower,
                          size_t maxoverflow,
                          size_t* d_overflow,
@@ -356,7 +355,7 @@ namespace Hashinator{
       __global__ 
       void retrieve_kernel(KEY_TYPE* keys,
                            VAL_TYPE* vals,
-                           cuda::std::pair<KEY_TYPE, VAL_TYPE>* buckets,
+                           hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
                            int sizePower,
                            size_t maxoverflow)
       {
@@ -422,7 +421,7 @@ namespace Hashinator{
                int elementsPerWarp>
       __global__ 
       void delete_kernel(KEY_TYPE* keys,
-                           cuda::std::pair<KEY_TYPE, VAL_TYPE>* buckets,
+                           hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
                            size_t* d_tombstoneCounter,
                            int sizePower,
                            size_t maxoverflow,
@@ -498,7 +497,7 @@ namespace Hashinator{
          //Overload with separate input for keys and values.
          static void insert(KEY_TYPE* keys,
                             VAL_TYPE* vals,
-                            cuda::std::pair<KEY_TYPE, VAL_TYPE>* buckets,
+                            hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
                             int sizePower,
                             size_t maxoverflow,
                             size_t* d_overflow,
@@ -523,10 +522,10 @@ namespace Hashinator{
             #endif
          }
          
-         //Overload with cuda::std::pair<key,val> (k,v) inputs
+         //Overload with hash_pair<key,val> (k,v) inputs
          //Used by the tombstone cleaning method.
-         static void insert(cuda::std::pair<KEY_TYPE, VAL_TYPE>* src,
-                            cuda::std::pair<KEY_TYPE, VAL_TYPE>* buckets,
+         static void insert(hash_pair<KEY_TYPE, VAL_TYPE>* src,
+                            hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
                             int sizePower,
                             size_t maxoverflow,
                             size_t* d_overflow,
@@ -554,7 +553,7 @@ namespace Hashinator{
          //Retrieve wrapper
          static void retrieve(KEY_TYPE* keys,
                               VAL_TYPE* vals,
-                              cuda::std::pair<KEY_TYPE, VAL_TYPE>* buckets,
+                              hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
                               int sizePower,
                               size_t maxoverflow,
                               size_t len,
@@ -572,7 +571,7 @@ namespace Hashinator{
 
          //Delete wrapper
          static void erase(KEY_TYPE* keys,
-                           cuda::std::pair<KEY_TYPE, VAL_TYPE>* buckets,
+                           hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
                            size_t* d_tombstoneCounter,
                            int sizePower,
                            size_t maxoverflow,

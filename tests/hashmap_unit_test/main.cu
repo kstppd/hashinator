@@ -4,7 +4,6 @@
 #include <random>
 #include "../../include/hashinator/hashinator.h"
 #include <gtest/gtest.h>
-#include <cuda/std/utility>
 
 #define BLOCKSIZE 32
 #define expect_true EXPECT_TRUE
@@ -18,14 +17,14 @@ using namespace std::chrono;
 using namespace Hashinator;
 typedef uint32_t val_type;
 typedef uint32_t key_type;
-typedef split::SplitVector<cuda::std::pair<key_type,val_type>,split::split_unified_allocator<cuda::std::pair<val_type,val_type>>,split::split_unified_allocator<size_t>> vector ;
+typedef split::SplitVector<hash_pair<key_type,val_type>,split::split_unified_allocator<hash_pair<val_type,val_type>>,split::split_unified_allocator<size_t>> vector ;
 typedef split::SplitVector<key_type,split::split_unified_allocator<key_type>,split::split_unified_allocator<size_t>> ivector ;
 typedef Hashmap<key_type,val_type> hashmap;
 
 
 struct Predicate{
    HASHINATOR_HOSTDEVICE
-   inline bool operator()( cuda::std::pair<key_type,val_type>& element)const{
+   inline bool operator()( hash_pair<key_type,val_type>& element)const{
       return element.second%2==0;
    }
 };
@@ -46,7 +45,7 @@ auto execute_and_time(const char* name,Fn fn, Args && ... args) ->bool{
 
 void create_input(vector& src, uint32_t bias=0){
    for (size_t i=0; i<src.size(); ++i){
-      cuda::std::pair<key_type,val_type>& kval=src.at(i);
+      hash_pair<key_type,val_type>& kval=src.at(i);
       kval.first=i + bias;
       kval.second=i;
    }
@@ -55,32 +54,31 @@ void create_input(vector& src, uint32_t bias=0){
 
 void cpu_write(hashmap& hmap, vector& src){
    for (size_t i=0; i<src.size(); ++i){
-      const cuda::std::pair<key_type,val_type>& kval=src.at(i);
+      const hash_pair<key_type,val_type>& kval=src.at(i);
       hmap.at(kval.first)=kval.second;
    }
 }
 
 __global__ 
-void gpu_write(hashmap* hmap, cuda::std::pair<key_type,val_type>*src, size_t N){
+void gpu_write(hashmap* hmap, hash_pair<key_type,val_type>*src, size_t N){
    size_t index = blockIdx.x * blockDim.x + threadIdx.x;
    if (index < N ){
-      //hmap->set_element(src[index].first, src[index].second);
-      hmap->device_insert(cuda::std::make_pair(src[index].first, src[index].second));
+      hmap->set_element(src[index].first, src[index].second);
    }
 }
 
 
 __global__ 
-void gpu_remove_insert(hashmap* hmap, cuda::std::pair<key_type,val_type>*rm,  cuda::std::pair<key_type,val_type>*add, size_t N){
+void gpu_remove_insert(hashmap* hmap, hash_pair<key_type,val_type>*rm,  hash_pair<key_type,val_type>*add, size_t N){
    size_t index = blockIdx.x * blockDim.x + threadIdx.x;
    if (index  ==0 ){
       for ( int i =0; i <N ;++i ){
-         cuda::std::pair<key_type,val_type>elem=rm[i];
+         hash_pair<key_type,val_type>elem=rm[i];
          auto rmval=hmap->read_element(elem.first);
          hmap->device_erase(elem.first);
       }
       for ( int i =0; i <N ;++i ){
-         cuda::std::pair<key_type,val_type>elem=add[i];
+         hash_pair<key_type,val_type>elem=add[i];
          hmap->set_element(elem.first,elem.second);
       }
    }
@@ -88,7 +86,7 @@ void gpu_remove_insert(hashmap* hmap, cuda::std::pair<key_type,val_type>*rm,  cu
 
 
 __global__
-void gpu_delete_even(hashmap* hmap, cuda::std::pair<key_type,val_type>*src,size_t N){
+void gpu_delete_even(hashmap* hmap, hash_pair<key_type,val_type>*src,size_t N){
    size_t index = blockIdx.x * blockDim.x + threadIdx.x;
    if (index<N ){
       auto kpos=hmap->device_find(src[index].first);
@@ -105,7 +103,7 @@ void gpu_delete_even(hashmap* hmap, cuda::std::pair<key_type,val_type>*src,size_
 }
 
 __global__
-void gpu_recover_all_elements(hashmap* hmap,cuda::std::pair<key_type,val_type>* src,size_t N  ){
+void gpu_recover_all_elements(hashmap* hmap,hash_pair<key_type,val_type>* src,size_t N  ){
    size_t index = blockIdx.x * blockDim.x + threadIdx.x;
    if (index < N ){
       key_type key= src[index].first;
@@ -124,7 +122,7 @@ void gpu_recover_all_elements(hashmap* hmap,cuda::std::pair<key_type,val_type>* 
 
 
 __global__
-void gpu_recover_odd_elements(hashmap* hmap,cuda::std::pair<key_type,val_type>* src,size_t N ){
+void gpu_recover_odd_elements(hashmap* hmap,hash_pair<key_type,val_type>* src,size_t N ){
    size_t index = blockIdx.x * blockDim.x + threadIdx.x;
    if (index < N ){
       key_type key= src[index].first;
@@ -154,7 +152,7 @@ void gpu_recover_odd_elements(hashmap* hmap,cuda::std::pair<key_type,val_type>* 
 
 bool recover_odd_elements(const hashmap& hmap, vector& src){
    for (size_t i=0; i<src.size(); ++i){
-      const cuda::std::pair<key_type,val_type>& kval=src.at(i);
+      const hash_pair<key_type,val_type>& kval=src.at(i);
       if (kval.second%2!=0){
          auto retval=hmap.find(kval.first);
          if (retval==hmap.end()){return false;}
@@ -169,7 +167,7 @@ bool recover_odd_elements(const hashmap& hmap, vector& src){
 
 bool recover_all_elements(const hashmap& hmap, vector& src){
    for (size_t i=0; i<src.size(); ++i){
-      const cuda::std::pair<key_type,val_type>& kval=src.at(i);
+      const hash_pair<key_type,val_type>& kval=src.at(i);
       auto retval=hmap.find(kval.first);
       if (retval==hmap.end()){
          std::cout<<"INVALID= "<<kval.first<<std::endl;
@@ -185,7 +183,7 @@ bool recover_all_elements(const hashmap& hmap, vector& src){
 
 bool recover_odd_elements(hashmap* hmap, vector& src){
    for (size_t i=0; i<src.size(); ++i){
-      const cuda::std::pair<key_type,val_type>& kval=src.at(i);
+      const hash_pair<key_type,val_type>& kval=src.at(i);
       if (kval.second%2!=0){
          auto retval=hmap->find(kval.first);
          if (retval==hmap->end()){return false;}
@@ -200,7 +198,7 @@ bool recover_odd_elements(hashmap* hmap, vector& src){
 
 bool recover_all_elements(hashmap* hmap, vector& src){
    for (size_t i=0; i<src.size(); ++i){
-      const cuda::std::pair<key_type,val_type>& kval=src.at(i);
+      const hash_pair<key_type,val_type>& kval=src.at(i);
       auto retval=hmap->find(kval.first);
       if (retval==hmap->end()){return false;}
       bool sane=retval->first==kval.first  &&  retval->second== kval.second ;
@@ -432,7 +430,7 @@ bool test_hashmap_4(int power){
    //Get all even elements in src
    vector evenBuffer(src.size());
    ivector keyBuffer;
-   split::tools::copy_if<cuda::std::pair<key_type, val_type>,Predicate>(src,evenBuffer,Predicate());
+   split::tools::copy_if<hash_pair<key_type, val_type>,Predicate>(src,evenBuffer,Predicate());
    for (auto i:evenBuffer){
       keyBuffer.push_back(i.first);
    }
@@ -607,7 +605,7 @@ template <typename T, typename U>
 struct Rule{
 Rule(){}
    __host__ __device__
-   inline bool operator()( cuda::std::pair<T,U>& element)const{
+   inline bool operator()( hash_pair<T,U>& element)const{
       return element.first<1000;
    }
 };

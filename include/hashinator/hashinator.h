@@ -30,7 +30,7 @@
 #include "../splitvector/split_allocators.h"
 #include "hashfunctions.h"
 #include "defaults.h"
-#include <cuda/std/utility>
+#include "hash_pair.h"
 #ifndef HASHINATOR_HOST_ONLY
 #include "../splitvector/split_tools.h"
 #include "hashers.h"
@@ -74,7 +74,7 @@ namespace Hashinator{
       //~CUDA device handle
 
       //Host members
-      split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> buckets;
+      split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>> buckets;
       Meta_Allocator _metaAllocator;    // Allocator used to allocate and deallocate memory for metadata
       MapInfo* _mapInfo;
       //~Host members
@@ -114,13 +114,13 @@ namespace Hashinator{
       template <typename T, typename U>
       struct Overflown_Predicate{
 
-      cuda::std::pair<KEY_TYPE, VAL_TYPE> *bck_ptr;
+      hash_pair<KEY_TYPE, VAL_TYPE> *bck_ptr;
       int currentSizePower;
    
-      explicit Overflown_Predicate(cuda::std::pair<KEY_TYPE, VAL_TYPE>*ptr,int s):bck_ptr(ptr),currentSizePower(s){}
+      explicit Overflown_Predicate(hash_pair<KEY_TYPE, VAL_TYPE>*ptr,int s):bck_ptr(ptr),currentSizePower(s){}
       Overflown_Predicate()=delete;
          HASHINATOR_HOSTDEVICE
-         inline bool operator()( cuda::std::pair<T,U>& element)const{
+         inline bool operator()( hash_pair<T,U>& element)const{
             if (element.first==TOMBSTONE){element.first=EMPTYBUCKET;return false;}
             if (element.first==EMPTYBUCKET){return false;}
             const size_t hashIndex = HashFunction::_hash(element.first,currentSizePower);
@@ -134,7 +134,7 @@ namespace Hashinator{
       struct Valid_Predicate{
       Valid_Predicate(){}
          HASHINATOR_HOSTDEVICE
-         inline bool operator()( cuda::std::pair<T,U>& element)const{
+         inline bool operator()( hash_pair<T,U>& element)const{
             if (element.first!=TOMBSTONE && element.first!=EMPTYBUCKET  ){return true;}
             return false;
          }
@@ -145,7 +145,7 @@ namespace Hashinator{
          preallocate_device_handles();
          _mapInfo=_metaAllocator.allocate(1);
          *_mapInfo=MapInfo(5);
-         buckets=split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> (1 << _mapInfo->sizePower, cuda::std::pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE()));
+         buckets=split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>> (1 << _mapInfo->sizePower, hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE()));
        };
 
       HASHINATOR_HOSTONLY
@@ -153,7 +153,7 @@ namespace Hashinator{
          preallocate_device_handles();
          _mapInfo=_metaAllocator.allocate(1);
          *_mapInfo=MapInfo(sizepower);
-         buckets=split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> (1 << _mapInfo->sizePower, cuda::std::pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE()));
+         buckets=split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>> (1 << _mapInfo->sizePower, hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE()));
        };
 
       HASHINATOR_HOSTONLY
@@ -226,8 +226,8 @@ namespace Hashinator{
          if (newSizePower > 32) {
             throw std::out_of_range("Hashmap ran into rehashing catastrophe and exceeded 32bit buckets.");
          }
-         split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> newBuckets(1 << newSizePower,
-                                                     cuda::std::pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE()));
+         split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>> newBuckets(1 << newSizePower,
+                                                     hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE()));
          _mapInfo->sizePower = newSizePower;
          int bitMask = (1 << _mapInfo->sizePower) - 1; // For efficient modulo of the array size
 
@@ -242,7 +242,7 @@ namespace Hashinator{
             uint32_t newHash = hash(e.first);
             bool found = false;
             for (int i = 0; i < Hashinator::defaults::BUCKET_OVERFLOW; i++) {
-               cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = newBuckets[(newHash + i) & bitMask];
+               hash_pair<KEY_TYPE, VAL_TYPE>& candidate = newBuckets[(newHash + i) & bitMask];
                if (candidate.first == EMPTYBUCKET) {
                   // Found an empty bucket, assign that one.
                   candidate = e;
@@ -276,18 +276,18 @@ namespace Hashinator{
 
          size_t priorFill=_mapInfo->fill;
          //Extract all valid elements
-         split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> validElements(_mapInfo->fill+1, {EMPTYBUCKET, VAL_TYPE()});
+         split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>> validElements(_mapInfo->fill+1, {EMPTYBUCKET, VAL_TYPE()});
          validElements.optimizeGPU(s);
          optimizeGPU(s);
          split::tools::copy_if
-                  <cuda::std::pair<KEY_TYPE, VAL_TYPE>,Valid_Predicate<KEY_TYPE,VAL_TYPE>,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
+                  <hash_pair<KEY_TYPE, VAL_TYPE>,Valid_Predicate<KEY_TYPE,VAL_TYPE>,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
                   (buckets,validElements,Valid_Predicate<KEY_TYPE,VAL_TYPE>(),s);
          cudaStreamSynchronize(s);
          size_t nValidElements=validElements.size();
          assert(nValidElements==_mapInfo->fill && "Something really bad happened during rehashing! Ask Kostis!");
          //We can now clear our buckets
          optimizeCPU(s);
-         buckets=std::move(split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> (1 << newSizePower, cuda::std::pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())));
+         buckets=std::move(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>> (1 << newSizePower, hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())));
          optimizeGPU(s);
          validElements.optimizeGPU(s);
          *_mapInfo=Info(newSizePower);
@@ -307,7 +307,7 @@ namespace Hashinator{
          // Try to find the matching bucket.
          for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
             
-            cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
+            hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
             
             if (candidate.first == key) {
                // Found a match, return that
@@ -332,7 +332,7 @@ namespace Hashinator{
                //If we find it then we swap the duplicate with empty and do not increment fill
                //but we only reduce the tombstone count
                for (size_t j = i+1; j < _mapInfo->currentMaxBucketOverflow; ++j) {
-                  cuda::std::pair<KEY_TYPE, VAL_TYPE>& duplicate = buckets[(hashIndex + j) & bitMask];
+                  hash_pair<KEY_TYPE, VAL_TYPE>& duplicate = buckets[(hashIndex + j) & bitMask];
                   if (duplicate.first==candidate.first){
                      alreadyExists=true;
                      candidate.second=duplicate.second;
@@ -369,7 +369,7 @@ namespace Hashinator{
 
          // Try to find the matching bucket.
          for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
-            const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
+            const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
             if (candidate.first == TOMBSTONE) {
                continue;
@@ -428,7 +428,7 @@ namespace Hashinator{
       #ifdef HASHINATOR_HOST_ONLY
       HASHINATOR_HOSTONLY
       void clear() {
-         buckets = split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>>(1 << _mapInfo->sizePower, {EMPTYBUCKET, VAL_TYPE()});
+         buckets = split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>(1 << _mapInfo->sizePower, {EMPTYBUCKET, VAL_TYPE()});
          *_mapInfo=MapInfo(_mapInfo->sizePower);
          return;
       }
@@ -439,7 +439,7 @@ namespace Hashinator{
          switch(t)
          {
             case targets::host :
-               buckets = split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>>(1 << _mapInfo->sizePower, {EMPTYBUCKET, VAL_TYPE()});
+               buckets = split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>(1 << _mapInfo->sizePower, {EMPTYBUCKET, VAL_TYPE()});
                *_mapInfo=MapInfo(_mapInfo->sizePower);
                break;
 
@@ -496,7 +496,7 @@ namespace Hashinator{
       #endif
 
       HASHINATOR_HOSTONLY
-         void print_pair(const cuda::std::pair<KEY_TYPE, VAL_TYPE>& i)const {
+         void print_pair(const hash_pair<KEY_TYPE, VAL_TYPE>& i)const {
             size_t currentSizePower=_mapInfo->sizePower;
             const size_t hashIndex = HashFunction::_hash(i.first,currentSizePower);
             const int bitMask = (1 <<(currentSizePower )) - 1; 
@@ -610,7 +610,7 @@ namespace Hashinator{
       
       
       // Iterator type. Iterates through all non-empty buckets.
-      class iterator : public std::iterator<std::random_access_iterator_tag, cuda::std::pair<KEY_TYPE, VAL_TYPE>> {
+      class iterator : public std::iterator<std::random_access_iterator_tag, hash_pair<KEY_TYPE, VAL_TYPE>> {
          Hashmap<KEY_TYPE, VAL_TYPE>* hashtable;
          size_t index;
 
@@ -645,15 +645,15 @@ namespace Hashinator{
             return &hashtable->buckets[index] != &other.hashtable->buckets[other.index];
          }
          HASHINATOR_HOSTONLY
-         cuda::std::pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
+         hash_pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
          HASHINATOR_HOSTONLY
-         cuda::std::pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
+         hash_pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
          HASHINATOR_HOSTONLY
          size_t getIndex() { return index; }
       };
 
       // Const iterator.
-      class const_iterator : public std::iterator<std::random_access_iterator_tag, cuda::std::pair<KEY_TYPE, VAL_TYPE>> {
+      class const_iterator : public std::iterator<std::random_access_iterator_tag, hash_pair<KEY_TYPE, VAL_TYPE>> {
          const Hashmap<KEY_TYPE, VAL_TYPE>* hashtable;
          size_t index;
 
@@ -687,9 +687,9 @@ namespace Hashinator{
             return &hashtable->buckets[index] != &other.hashtable->buckets[other.index];
          }
          HASHINATOR_HOSTONLY
-         const cuda::std::pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
+         const hash_pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
          HASHINATOR_HOSTONLY
-         const cuda::std::pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
+         const hash_pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
          HASHINATOR_HOSTONLY
          size_t getIndex() { return index; }
       };
@@ -702,7 +702,7 @@ namespace Hashinator{
 
          // Try to find the matching bucket.
          for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
-            const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
+            const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
             
             if(candidate.first==TOMBSTONE){continue;}
 
@@ -729,7 +729,7 @@ namespace Hashinator{
 
          // Try to find the matching bucket.
          for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
-            const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
+            const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
             if(candidate.first==TOMBSTONE){continue;}
             
@@ -789,12 +789,12 @@ namespace Hashinator{
       }
 
       HASHINATOR_HOSTONLY
-      cuda::std::pair<iterator, bool> insert(cuda::std::pair<KEY_TYPE, VAL_TYPE> newEntry) {
+      hash_pair<iterator, bool> insert(hash_pair<KEY_TYPE, VAL_TYPE> newEntry) {
          bool found = find(newEntry.first) != end();
          if (!found) {
             at(newEntry.first) = newEntry.second;
          }
-         return cuda::std::pair<iterator, bool>(find(newEntry.first), !found);
+         return hash_pair<iterator, bool>(find(newEntry.first), !found);
       }
 
       HASHINATOR_HOSTONLY
@@ -822,7 +822,7 @@ namespace Hashinator{
        *  struct Rule{
        *  Rule(){}
        *     __host__ __device__
-       *     inline bool operator()( cuda::std::pair<T,U>& element)const{
+       *     inline bool operator()( hash_pair<T,U>& element)const{
        *        if (element.first<100 ){return true;}
        *        return false;
        *     }
@@ -832,11 +832,11 @@ namespace Hashinator{
        *   hmap.extractPattern(elements,Rule<uint32_t,uint32_t>());
        * */
       template <typename  Rule>
-      void extractPattern(split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>>& elements ,Rule, cudaStream_t s=0){
+      void extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements ,Rule, cudaStream_t s=0){
          elements.resize(1<<_mapInfo->sizePower);
          elements.optimizeGPU(s);
          //Extract elements matching the Pattern Rule(element)==true;
-         split::tools::copy_if<cuda::std::pair<KEY_TYPE, VAL_TYPE>,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,elements,Rule(),s);
+         split::tools::copy_if<hash_pair<KEY_TYPE, VAL_TYPE>,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,elements,Rule(),s);
       }
 
       template <typename  Rule>
@@ -844,7 +844,7 @@ namespace Hashinator{
          elements.resize(1<<_mapInfo->sizePower);
          elements.optimizeGPU(s);
          //Extract element **keys** matching the Pattern Rule(element)==true;
-         size_t retval=split::tools::copy_keys_if<cuda::std::pair<KEY_TYPE, VAL_TYPE>,KEY_TYPE,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,elements,Rule(),s);
+         size_t retval=split::tools::copy_keys_if<hash_pair<KEY_TYPE, VAL_TYPE>,KEY_TYPE,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,elements,Rule(),s);
          return retval;
       }
 
@@ -860,9 +860,9 @@ namespace Hashinator{
          _mapInfo->tombstoneCounter=0;
          //Allocate memory for overflown elements. So far this is the same size as our buckets but we can be better than this 
          //TODO size of overflown elements is known beforhand.
-         split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> overflownElements(1 << _mapInfo->sizePower, {EMPTYBUCKET, VAL_TYPE()});
+         split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>> overflownElements(1 << _mapInfo->sizePower, {EMPTYBUCKET, VAL_TYPE()});
          //Extract all overflown elements-This also resets TOMSBTONES to EMPTYBUCKET!
-         split::tools::copy_if<cuda::std::pair<KEY_TYPE, VAL_TYPE>,Overflown_Predicate<KEY_TYPE,VAL_TYPE>,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,overflownElements,Overflown_Predicate<KEY_TYPE,VAL_TYPE>(buckets.data(),_mapInfo->sizePower),s);
+         split::tools::copy_if<hash_pair<KEY_TYPE, VAL_TYPE>,Overflown_Predicate<KEY_TYPE,VAL_TYPE>,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,overflownElements,Overflown_Predicate<KEY_TYPE,VAL_TYPE>(buckets.data(),_mapInfo->sizePower),s);
          size_t nOverflownElements=overflownElements.size();
          if (nOverflownElements ==0 ){
             return ;
@@ -904,13 +904,13 @@ namespace Hashinator{
          _mapInfo->tombstoneCounter=0;
          //Allocate memory for overflown elements. So far this is the same size as our buckets but we can be better than this 
          
-         cuda::std::pair<KEY_TYPE, VAL_TYPE>* overflownElements; 
-         cudaMallocAsync((void**)&overflownElements, (1<<_mapInfo->sizePower) * sizeof(cuda::std::pair<KEY_TYPE, VAL_TYPE>),s);
+         hash_pair<KEY_TYPE, VAL_TYPE>* overflownElements; 
+         cudaMallocAsync((void**)&overflownElements, (1<<_mapInfo->sizePower) * sizeof(hash_pair<KEY_TYPE, VAL_TYPE>),s);
 
          optimizeGPU(s);
          cudaStreamSynchronize(s);
          uint32_t nOverflownElements=split::tools::copy_if_raw
-            <cuda::std::pair<KEY_TYPE, VAL_TYPE>,Overflown_Predicate<KEY_TYPE,VAL_TYPE>,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
+            <hash_pair<KEY_TYPE, VAL_TYPE>,Overflown_Predicate<KEY_TYPE,VAL_TYPE>,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
             (buckets,
              overflownElements,
              Overflown_Predicate<KEY_TYPE,VAL_TYPE>(buckets.data(),_mapInfo->sizePower),
@@ -966,7 +966,7 @@ namespace Hashinator{
      
       //Uses Hasher's insert_kernel to insert all elements
       HASHINATOR_HOSTONLY
-      void insert(cuda::std::pair<KEY_TYPE,VAL_TYPE>* src, size_t len,float targetLF=0.5,cudaStream_t s=0){
+      void insert(hash_pair<KEY_TYPE,VAL_TYPE>* src, size_t len,float targetLF=0.5,cudaStream_t s=0){
          if(len==0){
             set_status(status::success);
             return;
@@ -1107,9 +1107,9 @@ namespace Hashinator{
          }
          
          HASHINATOR_DEVICEONLY
-         cuda::std::pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
+         hash_pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
          HASHINATOR_DEVICEONLY
-         cuda::std::pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
+         hash_pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
 
       };
 
@@ -1154,9 +1154,9 @@ namespace Hashinator{
          }
          
          HASHINATOR_DEVICEONLY
-         const cuda::std::pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
+         const hash_pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
          HASHINATOR_DEVICEONLY
-         const cuda::std::pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
+         const hash_pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
       };
 
 
@@ -1168,7 +1168,7 @@ namespace Hashinator{
 
          // Try to find the matching bucket.
          for (int i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
-            const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
+            const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
             if (candidate.first==TOMBSTONE){continue;}
 
@@ -1194,7 +1194,7 @@ namespace Hashinator{
 
          // Try to find the matching bucket.
          for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
-            const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
+            const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
             if (candidate.first==TOMBSTONE){continue;}
 
@@ -1315,12 +1315,12 @@ namespace Hashinator{
 
       public:
       HASHINATOR_DEVICEONLY
-      cuda::std::pair<device_iterator, bool> device_insert(cuda::std::pair<KEY_TYPE, VAL_TYPE> newEntry) {
+      hash_pair<device_iterator, bool> device_insert(hash_pair<KEY_TYPE, VAL_TYPE> newEntry) {
          bool found = device_find(newEntry.first) != device_end();
          if (!found) {
             set_element(newEntry.first,newEntry.second);
          }
-         return cuda::std::pair<device_iterator, bool>(device_find(newEntry.first), !found);
+         return hash_pair<device_iterator, bool>(device_find(newEntry.first), !found);
       }
 
       HASHINATOR_DEVICEONLY
@@ -1338,7 +1338,7 @@ namespace Hashinator{
          // Try to find the matching bucket.
          for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
             uint32_t vecindex=(hashIndex + i) & bitMask;
-            const cuda::std::pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[vecindex];
+            const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[vecindex];
             if (candidate.first == key) {
                // Found a match, return that
                return candidate.second;
@@ -1366,7 +1366,7 @@ namespace Hashinator{
      
       //Uses Hasher's insert_kernel to insert all elements
       HASHINATOR_HOSTONLY
-      void insert(cuda::std::pair<KEY_TYPE,VAL_TYPE>* src, size_t len,float targetLF=0.5){
+      void insert(hash_pair<KEY_TYPE,VAL_TYPE>* src, size_t len,float targetLF=0.5){
          for (size_t i=0; i<len; ++i){
             _at(src[i].first)=src[i].second;
          }
