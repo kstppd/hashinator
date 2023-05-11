@@ -34,6 +34,22 @@ namespace Hashinator{
       //Constructors
       hash_pair():first(T()),second(U()){}
       hash_pair(const T& f,const U& s):first(f),second(s){}
+      
+      inline bool operator==(const hash_pair& y)const{
+         return first == y.first && second == y.second;
+      }
+
+      inline bool operator!=(const hash_pair& y)const{
+         return !(*this==y);
+      }
    };
+
+   template<class T, class U>
+   inline hash_pair<T,U> make_pair(T x, U y){
+      return hash_pair<T, U>(x, y); 
+   }
+
+
+
 }//namespace Hashinator
 
