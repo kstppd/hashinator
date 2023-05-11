@@ -306,14 +306,14 @@ namespace Hashinator{
 
          size_t priorFill=_mapInfo->fill;
          //Extract all valid elements
-         hash_pair<KEY_TYPE, VAL_TYPE>* validElements; 
-         cudaMallocAsync((void**)&validElements, (_mapInfo->fill+1) * sizeof(hash_pair<KEY_TYPE, VAL_TYPE>),s);
+         cuda::std::pair<KEY_TYPE, VAL_TYPE>* validElements; 
+         cudaMallocAsync((void**)&validElements, (_mapInfo->fill+1) * sizeof(cuda::std::pair<KEY_TYPE, VAL_TYPE>),s);
          optimizeGPU(s);
          cudaStreamSynchronize(s);
 
 
          uint32_t nValidElements = split::tools::copy_if_raw
-                  <hash_pair<KEY_TYPE, VAL_TYPE>,Valid_Predicate<KEY_TYPE,VAL_TYPE>,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
+                  <cuda::std::pair<KEY_TYPE, VAL_TYPE>,Valid_Predicate<KEY_TYPE,VAL_TYPE>,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
                   (buckets,validElements,Valid_Predicate<KEY_TYPE,VAL_TYPE>(),s);
 
 
@@ -321,7 +321,7 @@ namespace Hashinator{
          assert(nValidElements==_mapInfo->fill && "Something really bad happened during rehashing! Ask Kostis!");
          //We can now clear our buckets
          optimizeCPU(s);
-         buckets=std::move(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>> (1 << newSizePower, hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())));
+         buckets=std::move(split::SplitVector<cuda::std::pair<KEY_TYPE, VAL_TYPE>> (1 << newSizePower, cuda::std::pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())));
          optimizeGPU(s);
          *_mapInfo=Info(newSizePower);
          //Insert valid elements to now larger buckets
@@ -869,7 +869,7 @@ namespace Hashinator{
          elements.resize(1<<_mapInfo->sizePower);
          elements.optimizeGPU(s);
          //Extract elements matching the Pattern Rule(element)==true;
-         split::tools::copy_if_raw<hash_pair<KEY_TYPE, VAL_TYPE>,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,elements.data(),Rule(),s);
+         split::tools::copy_if_raw<cuda::std::pair<KEY_TYPE, VAL_TYPE>,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,elements.data(),Rule(),s);
       }
 
       template <typename  Rule>
@@ -877,7 +877,7 @@ namespace Hashinator{
          elements.resize(1<<_mapInfo->sizePower);
          elements.optimizeGPU(s);
          //Extract element **keys** matching the Pattern Rule(element)==true;
-         size_t retval=split::tools::copy_keys_if<hash_pair<KEY_TYPE, VAL_TYPE>,KEY_TYPE,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,elements,Rule(),s);
+         size_t retval=split::tools::copy_keys_if<cuda::std::pair<KEY_TYPE, VAL_TYPE>,KEY_TYPE,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,elements,Rule(),s);
          return retval;
       }
 

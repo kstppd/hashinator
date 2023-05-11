@@ -438,6 +438,110 @@ namespace split{
          }
       }
 
+
+      template <typename T,typename U,typename Rule,size_t BLOCKSIZE=1024, size_t WARP=32>
+      __global__
+      void split_compact_keys(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* input,
+                         split::SplitVector<uint32_t,split::split_unified_allocator<uint32_t>,split::split_unified_allocator<size_t>>* counts,
+                         split::SplitVector<uint32_t,split::split_unified_allocator<uint32_t>,split::split_unified_allocator<size_t>>* offsets,
+                         split::SplitVector<U,split::split_unified_allocator<U>,split::split_unified_allocator<size_t>>* output,
+                         Rule rule)
+      {
+         extern __shared__ uint32_t buffer[];
+         const size_t size=input->size();
+         const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
+         if (tid>=size) {return;}
+         unsigned int offset = BLOCKSIZE/WARP;
+         const unsigned int wid = tid/WARP;
+         const unsigned int widb = threadIdx.x/WARP;
+         const unsigned int w_tid=tid%WARP;
+         const unsigned int warps_in_block = blockDim.x/WARP;
+         const bool tres=rule(input->at(tid));
+
+         unsigned int  mask= __ballot_sync(SPLIT_VOTING_MASK,tres);
+         unsigned int n_neighbors= mask & ((1 << w_tid) - 1);
+         unsigned int total_valid_in_warp	= __popc(mask);
+         if (w_tid==0 ){
+            buffer[widb]=total_valid_in_warp;
+         }
+         __syncthreads();
+         if (w_tid==0 && wid%warps_in_block==0){
+            buffer[offset+widb]=0;
+            for (unsigned int i =0 ; i < warps_in_block-1;++i){
+               buffer[offset+widb+i+1]=buffer[offset+widb+i] +buffer[widb+i];
+            }
+         }
+         __syncthreads();
+         const unsigned int neighbor_count= __popc(n_neighbors);
+         const unsigned int private_index	= buffer[offset+widb] + offsets->at(wid/warps_in_block) + neighbor_count ;
+         if (tres && widb!=warps_in_block){
+            output->at(private_index) = (input->at(tid)).first;
+         }
+
+         __syncthreads();
+         if (tid==0){
+            const unsigned int actual_total_blocks=offsets->back()+counts->back();
+            output->erase(&output->at(actual_total_blocks),output->end());
+         }
+      }
+
+
+      
+      template <typename T,typename U, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=32>
+      size_t copy_keys_if(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
+                   split::SplitVector<U,split::split_unified_allocator<U>,split::split_unified_allocator<size_t>>& output,
+                   Rule rule,
+                   cudaStream_t s=0)
+      {
+
+
+         using vector=split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>;
+         using keyvector=split::SplitVector<U,split::split_unified_allocator<U>,split::split_unified_allocator<size_t>>;
+         using vector_int=split::SplitVector<uint32_t,split::split_unified_allocator<uint32_t>,split::split_unified_allocator<size_t>>;
+         
+         //Figure out Blocks to use
+         size_t nBlocks=input.size()/BLOCKSIZE; 
+         if (nBlocks==0){nBlocks+=1;}
+         vector_int counts(nBlocks);
+         vector_int offsets(nBlocks);
+
+               
+         //Phase 1 -- Calculate per warp workload
+         vector * d_input=input.upload();
+         vector_int * d_counts=counts.upload();
+         split::tools::scan_reduce<<<nBlocks,BLOCKSIZE,0,s>>>(d_input,d_counts,rule);
+         cudaStreamSynchronize(s);
+         cudaFree(d_input);
+         cudaFree(d_counts);
+
+
+         //Step 2 -- Exclusive Prefix Scan on offsets
+         if (nBlocks==1){
+            split_prefix_scan<uint32_t,2,WARP>(counts,offsets,s);
+         }else{
+            split_prefix_scan<uint32_t,BLOCKSIZE,WARP>(counts,offsets,s);
+         }
+         cudaStreamSynchronize(s);
+
+
+         //Step 3 -- Compaction
+         keyvector* d_output=output.upload();
+         vector_int* d_offsets=offsets.upload();
+         d_input=input.upload();
+         d_counts=counts.upload();
+         split::tools::split_compact_keys<T,U,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int),s>>>(d_input,d_counts,d_offsets,d_output,rule);
+         cudaStreamSynchronize(s);
+         size_t retval = output.size();
+         //Deallocate the handle pointers
+
+         cudaFree(d_input);
+         cudaFree(d_counts);
+         cudaFree(d_output);
+         cudaFree(d_offsets);
+         return retval;
+      }
+   
+
       template <typename T, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=32>
       uint32_t copy_if_raw(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
                    T* output,
