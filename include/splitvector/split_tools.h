@@ -461,8 +461,9 @@ namespace split{
 
             void* allocate(const size_t bytes){
                assert(bytes_used+bytes<total_bytes && "Mempool run out of space and crashed!");
+               void* ptr=reinterpret_cast<void*> (reinterpret_cast<char*>(_data)+bytes_used);
                bytes_used+=bytes;
-               return (char*)_data+bytes_used;
+               return ptr;
             };
 
             void deallocate(const size_t bytes){

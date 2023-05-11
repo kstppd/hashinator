@@ -270,6 +270,8 @@ namespace Hashinator{
       // maxBucketOverflow has triggered. This can only be done on host (so far)
       HASHINATOR_HOSTONLY
       void device_rehash(int newSizePower, cudaStream_t s=0) {
+         device_rehash_async(newSizePower,s);
+         return;
          if (newSizePower > 32) {
             throw std::out_of_range("Hashmap ran into rehashing catastrophe and exceeded 32bit buckets.");
          }
@@ -293,6 +295,37 @@ namespace Hashinator{
          *_mapInfo=Info(newSizePower);
          //Insert valid elements to now larger buckets
          insert(validElements.data(),validElements.size(),1,s);
+         set_status((priorFill==_mapInfo->fill)?status::success:status::fail);
+      }
+
+      HASHINATOR_HOSTONLY
+      void device_rehash_async(int newSizePower, cudaStream_t s=0) {
+         if (newSizePower > 32) {
+            throw std::out_of_range("Hashmap ran into rehashing catastrophe and exceeded 32bit buckets.");
+         }
+
+         size_t priorFill=_mapInfo->fill;
+         //Extract all valid elements
+         hash_pair<KEY_TYPE, VAL_TYPE>* validElements; 
+         cudaMallocAsync((void**)&validElements, (_mapInfo->fill+1) * sizeof(hash_pair<KEY_TYPE, VAL_TYPE>),s);
+         optimizeGPU(s);
+         cudaStreamSynchronize(s);
+
+
+         uint32_t nValidElements = split::tools::copy_if_raw
+                  <hash_pair<KEY_TYPE, VAL_TYPE>,Valid_Predicate<KEY_TYPE,VAL_TYPE>,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
+                  (buckets,validElements,Valid_Predicate<KEY_TYPE,VAL_TYPE>(),s);
+
+
+         cudaStreamSynchronize(s);
+         assert(nValidElements==_mapInfo->fill && "Something really bad happened during rehashing! Ask Kostis!");
+         //We can now clear our buckets
+         optimizeCPU(s);
+         buckets=std::move(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>> (1 << newSizePower, hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())));
+         optimizeGPU(s);
+         *_mapInfo=Info(newSizePower);
+         //Insert valid elements to now larger buckets
+         insert(validElements,nValidElements,1,s);
          set_status((priorFill==_mapInfo->fill)?status::success:status::fail);
       }
       #endif
@@ -836,7 +869,7 @@ namespace Hashinator{
          elements.resize(1<<_mapInfo->sizePower);
          elements.optimizeGPU(s);
          //Extract elements matching the Pattern Rule(element)==true;
-         split::tools::copy_if<hash_pair<KEY_TYPE, VAL_TYPE>,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,elements,Rule(),s);
+         split::tools::copy_if_raw<hash_pair<KEY_TYPE, VAL_TYPE>,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,elements.data(),Rule(),s);
       }
 
       template <typename  Rule>
@@ -852,6 +885,8 @@ namespace Hashinator{
       //the member Hasher
       HASHINATOR_HOSTONLY
       void clean_tombstones(cudaStream_t s=0){
+         clean_tombstones_async(s);
+         return;
 
          if (_mapInfo->tombstoneCounter == 0){
             return ;
@@ -887,9 +922,6 @@ namespace Hashinator{
                               &_mapInfo->fill,
                               overflownElements.size(),&_mapInfo->err,s);
 
-         if (_mapInfo->currentMaxBucketOverflow>Hashinator::defaults::BUCKET_OVERFLOW){
-            rehash(_mapInfo->sizePower++);
-         }
          return ;
       }
 
@@ -942,9 +974,6 @@ namespace Hashinator{
                               nOverflownElements,&_mapInfo->err,s);
 
          cudaFreeAsync(overflownElements,s);
-         if (_mapInfo->currentMaxBucketOverflow>Hashinator::defaults::BUCKET_OVERFLOW){
-            rehash(_mapInfo->sizePower++);
-         }
          assert(_mapInfo->fill==priorFill && "Broken tombstone cleaning modified fill");
          return ;
       }
