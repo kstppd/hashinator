@@ -877,7 +877,7 @@ namespace Hashinator{
          elements.resize(1<<_mapInfo->sizePower);
          elements.optimizeGPU(s);
          //Extract element **keys** matching the Pattern Rule(element)==true;
-         size_t retval=split::tools::copy_keys_if<hash_pair<KEY_TYPE, VAL_TYPE>,KEY_TYPE,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,elements,Rule(),s);
+         size_t retval=split::tools::copy_keys_if_raw<hash_pair<KEY_TYPE, VAL_TYPE>,KEY_TYPE,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,elements.data(),Rule(),s);
          return retval;
       }
 
