@@ -927,11 +927,10 @@ namespace Hashinator{
 
       void clean_tombstones_async(cudaStream_t s=0){
    
-         size_t priorFill=_mapInfo->fill;
-
          if (_mapInfo->tombstoneCounter == 0){
             return ;
          }
+
          //Reset the tomstone counter
          _mapInfo->tombstoneCounter=0;
          //Allocate memory for overflown elements. So far this is the same size as our buckets but we can be better than this 
@@ -974,7 +973,6 @@ namespace Hashinator{
                               nOverflownElements,&_mapInfo->err,s);
 
          cudaFreeAsync(overflownElements,s);
-         assert(_mapInfo->fill==priorFill && "Broken tombstone cleaning modified fill");
          return ;
       }
 

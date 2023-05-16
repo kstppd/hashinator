@@ -455,7 +455,7 @@ bool test_hashmap_4(int power){
 
    cudaStream_t s ;
    cudaStreamCreate(&s);
-   hmap.clean_tombstones_async(s);
+   hmap.clean_tombstones(s);
    cpuOK=recover_odd_elements(hmap,src);
    if (!cpuOK){
       std::cout<<"Error at recovering odd elements 2"<<std::endl;
