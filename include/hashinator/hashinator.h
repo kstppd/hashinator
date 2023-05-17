@@ -270,36 +270,6 @@ namespace Hashinator{
       // maxBucketOverflow has triggered. This can only be done on host (so far)
       HASHINATOR_HOSTONLY
       void device_rehash(int newSizePower, cudaStream_t s=0) {
-         device_rehash_async(newSizePower,s);
-         return;
-         if (newSizePower > 32) {
-            throw std::out_of_range("Hashmap ran into rehashing catastrophe and exceeded 32bit buckets.");
-         }
-
-         size_t priorFill=_mapInfo->fill;
-         //Extract all valid elements
-         split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>> validElements(_mapInfo->fill+1, {EMPTYBUCKET, VAL_TYPE()});
-         validElements.optimizeGPU(s);
-         optimizeGPU(s);
-         split::tools::copy_if
-                  <hash_pair<KEY_TYPE, VAL_TYPE>,Valid_Predicate<KEY_TYPE,VAL_TYPE>,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
-                  (buckets,validElements,Valid_Predicate<KEY_TYPE,VAL_TYPE>(),s);
-         cudaStreamSynchronize(s);
-         size_t nValidElements=validElements.size();
-         assert(nValidElements==_mapInfo->fill && "Something really bad happened during rehashing! Ask Kostis!");
-         //We can now clear our buckets
-         optimizeCPU(s);
-         buckets=std::move(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>> (1 << newSizePower, hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())));
-         optimizeGPU(s);
-         validElements.optimizeGPU(s);
-         *_mapInfo=Info(newSizePower);
-         //Insert valid elements to now larger buckets
-         insert(validElements.data(),validElements.size(),1,s);
-         set_status((priorFill==_mapInfo->fill)?status::success:status::fail);
-      }
-
-      HASHINATOR_HOSTONLY
-      void device_rehash_async(int newSizePower, cudaStream_t s=0) {
          if (newSizePower > 32) {
             throw std::out_of_range("Hashmap ran into rehashing catastrophe and exceeded 32bit buckets.");
          }
@@ -865,11 +835,17 @@ namespace Hashinator{
        *   hmap.extractPattern(elements,Rule<uint32_t,uint32_t>());
        * */
       template <typename  Rule>
-      void extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements ,Rule, cudaStream_t s=0){
+      size_t extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements ,Rule, cudaStream_t s=0){
          elements.resize(1<<_mapInfo->sizePower);
          elements.optimizeGPU(s);
          //Extract elements matching the Pattern Rule(element)==true;
-         split::tools::copy_if_raw<hash_pair<KEY_TYPE, VAL_TYPE>,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,elements.data(),Rule(),s);
+         size_t retval = split::tools::copy_if_raw<hash_pair
+                         <KEY_TYPE, VAL_TYPE>,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
+                         (buckets,elements.data(),Rule(),s);
+
+         //Remove unwanted elements
+         elements.erase(&elements->at(retval),elements->end());
+         return retval;
       }
 
       template <typename  Rule>
@@ -877,55 +853,13 @@ namespace Hashinator{
          elements.resize(_mapInfo->fill);
          elements.optimizeGPU(s);
          //Extract element **keys** matching the Pattern Rule(element)==true;
-         size_t retval=split::tools::copy_keys_if_raw<hash_pair<KEY_TYPE, VAL_TYPE>,KEY_TYPE,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,elements.data(),Rule(),s);
+         size_t retval=split::tools::copy_keys_if_raw
+                       <hash_pair<KEY_TYPE, VAL_TYPE>,KEY_TYPE,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
+                       (buckets,elements.data(),Rule(),s);
          return retval;
       }
 
-      //Cleans all tombstones using splitvectors stream compcation and
-      //the member Hasher
-      HASHINATOR_HOSTONLY
       void clean_tombstones(cudaStream_t s=0){
-         clean_tombstones_async(s);
-         return;
-
-         if (_mapInfo->tombstoneCounter == 0){
-            return ;
-         }
-         //Reset the tomstone counter
-         _mapInfo->tombstoneCounter=0;
-         //Allocate memory for overflown elements. So far this is the same size as our buckets but we can be better than this 
-         //TODO size of overflown elements is known beforhand.
-         split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>> overflownElements(1 << _mapInfo->sizePower, {EMPTYBUCKET, VAL_TYPE()});
-         //Extract all overflown elements-This also resets TOMSBTONES to EMPTYBUCKET!
-         split::tools::copy_if<hash_pair<KEY_TYPE, VAL_TYPE>,Overflown_Predicate<KEY_TYPE,VAL_TYPE>,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>(buckets,overflownElements,Overflown_Predicate<KEY_TYPE,VAL_TYPE>(buckets.data(),_mapInfo->sizePower),s);
-         size_t nOverflownElements=overflownElements.size();
-         if (nOverflownElements ==0 ){
-            return ;
-         }
-
-         //If we do have overflown elements we put them back in the buckets
-         Hashers::reset_to_empty<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction>
-                                 <<<overflownElements.size(),defaults::MAX_BLOCKSIZE,0,s>>>
-                                 (overflownElements.data(),
-                                  buckets.data(),
-                                  _mapInfo->sizePower,
-                                  _mapInfo->currentMaxBucketOverflow,
-                                  overflownElements.size());
-         _mapInfo->fill-=overflownElements.size();
-         cudaStreamSynchronize(s);
-
-         DeviceHasher::insert(overflownElements.data(),
-                              buckets.data(),
-                              _mapInfo->sizePower,
-                              _mapInfo->currentMaxBucketOverflow,
-                              &_mapInfo->currentMaxBucketOverflow,
-                              &_mapInfo->fill,
-                              overflownElements.size(),&_mapInfo->err,s);
-
-         return ;
-      }
-
-      void clean_tombstones_async(cudaStream_t s=0){
    
          if (_mapInfo->tombstoneCounter == 0){
             return ;
