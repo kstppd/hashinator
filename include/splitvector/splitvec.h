@@ -624,6 +624,27 @@ namespace split{
               _data-=1;
               return *this;
             }
+            HOSTDEVICE
+            iterator& operator+=(int64_t offset){
+               _data += offset;
+               return *this;
+            }
+            HOSTDEVICE
+            iterator& operator-=(int64_t offset){
+               _data -=offset;
+               return *this;
+            }
+            HOSTDEVICE
+            iterator operator+(int64_t offset)const{
+               iterator itt(*this);
+               return itt += offset;
+            }
+            HOSTDEVICE
+            iterator operator-(int64_t offset)const{
+               iterator itt(*this);
+               return itt -= offset;
+            }
+
          };
 
          class const_iterator{
@@ -674,6 +695,26 @@ namespace split{
             const_iterator operator--(){
               _data-=1;
               return *this;
+            }
+            HOSTDEVICE
+            const_iterator& operator+=(int64_t offset){
+               _data += offset;
+               return *this;
+            }
+            HOSTDEVICE
+            const_iterator& operator-=(int64_t offset){
+               _data -= offset;
+               return *this;
+            }
+            HOSTDEVICE
+            const_iterator operator+(int64_t offset)const{
+               const_iterator itt(*this);
+               return itt += offset;
+            }
+            HOSTDEVICE
+            const_iterator operator-(int64_t offset)const{
+               const_iterator itt(*this);
+               return itt -= offset;
             }
          };
          
