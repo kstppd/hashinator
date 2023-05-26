@@ -217,12 +217,14 @@ namespace Hashinator{
       void operator delete[] (void* ptr) {
          cudaFree(ptr);
       }
-      #endif
 
       HASHINATOR_HOSTONLY
       void copyMetadata(MapInfo* dst,cudaStream_t s=0){
          cudaMemcpyAsync(dst, _mapInfo, sizeof(MapInfo),cudaMemcpyDeviceToHost,s);
       }
+
+      #endif
+
 
       // Resize the table to fit more things. This is automatically invoked once
       // maxBucketOverflow has triggered. This can only be done on host (so far)

@@ -271,12 +271,16 @@ namespace split{
             cudaGetDevice(&device);
             CheckErrors("Prefetch GPU-Device-ID");
             cudaMemPrefetchAsync(_data ,capacity()*sizeof(T),device,stream);
+            cudaMemPrefetchAsync(_size ,sizeof(size_t),device,stream);
+            cudaMemPrefetchAsync(_capacity ,sizeof(size_t),device,stream);
             CheckErrors("Prefetch GPU");
          }
 
          /*Manually prefetch data on Host*/
          HOSTONLY void optimizeCPU(cudaStream_t stream = 0)noexcept{
             cudaMemPrefetchAsync(_data ,capacity()*sizeof(T),cudaCpuDeviceId,stream);
+            cudaMemPrefetchAsync(_size ,sizeof(size_t),cudaCpuDeviceId,stream);
+            cudaMemPrefetchAsync(_capacity ,sizeof(size_t),cudaCpuDeviceId,stream);
             CheckErrors("Prefetch CPU");
          }
 
@@ -287,12 +291,14 @@ namespace split{
             CheckErrors("Stream Attach");
             return;
          }
-         #endif
 
          void copyMetadata(SplitInfo* dst,cudaStream_t s=0){
             cudaMemcpyAsync(&dst->size,_size,sizeof(size_t),cudaMemcpyDeviceToHost,s);
             cudaMemcpyAsync(&dst->capacity,_capacity,sizeof(size_t),cudaMemcpyDeviceToHost,s);
          }
+
+         #endif
+
 
          /* Custom swap mehtod. 
           * Pointers outside of splitvector's source
