@@ -289,9 +289,9 @@ namespace split{
          }
          #endif
 
-         void copyMetadata(SplitInfo* dst,cudaStream_t s=0){
-            cudaMemcpyAsync(&dst->size,_size,sizeof(size_t),cudaMemcpyDeviceToHost,s);
-            cudaMemcpyAsync(&dst->capacity,_capacity,sizeof(size_t),cudaMemcpyDeviceToHost,s);
+         void copyMetadata(SplitInfo* dst,hipStream_t s=0){
+            hipMemcpyAsync(&dst->size,_size,sizeof(size_t),hipMemcpyDeviceToHost,s);
+            hipMemcpyAsync(&dst->capacity,_capacity,sizeof(size_t),hipMemcpyDeviceToHost,s);
          }
 
          /* Custom swap mehtod. 

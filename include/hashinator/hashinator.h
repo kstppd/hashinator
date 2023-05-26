@@ -220,8 +220,8 @@ namespace Hashinator{
       #endif
 
       HASHINATOR_HOSTONLY
-      void copyMetadata(MapInfo* dst,cudaStream_t s=0){
-         cudaMemcpyAsync(dst, _mapInfo, sizeof(MapInfo),cudaMemcpyDeviceToHost,s);
+      void copyMetadata(MapInfo* dst,hipStream_t s=0){
+         hipMemcpyAsync(dst, _mapInfo, sizeof(MapInfo),hipMemcpyDeviceToHost,s);
       }
 
       // Resize the table to fit more things. This is automatically invoked once
