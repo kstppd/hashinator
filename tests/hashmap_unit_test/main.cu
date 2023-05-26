@@ -624,6 +624,24 @@ TEST(HashmapUnitTets ,Test_ErrorCodes_ExtractKeysByPattern){
 }
 
 
+TEST(HashmapUnitTets ,Test_Copy_Metadata){
+   const int sz=18;
+   vector src(1<<sz);
+   create_input(src);
+   hashmap hmap;
+   hmap.insert(src.data(),src.size());
+   bool cpuOK=recover_all_elements(hmap,src);
+   expect_true(cpuOK);
+   expect_true(hmap.peek_status()==status::success);
+   Info* info;
+   cudaMallocHost((void **) &info, sizeof(Info));
+   hmap.copyMetadata(info);
+   cudaDeviceSynchronize();
+   expect_true(1<<info->sizePower==hmap.bucket_count());
+   expect_true(info->tombstoneCounter==hmap.tombstone_count());
+   cudaFree(info);
+
+}
 
 int main(int argc, char* argv[]){
    srand(time(NULL));

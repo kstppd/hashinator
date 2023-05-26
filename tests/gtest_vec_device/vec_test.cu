@@ -470,6 +470,21 @@ TEST(Vector_Functionality , Resizing_Device){
    }
 }
 
+TEST(Vector_Functionality , Test_CopyMetaData){
+
+   vec a(32,42);
+   expect_true(a.size()==a.capacity());
+   a.resize(16);
+   expect_true(a.size()==16);
+   expect_true(a.capacity()==32);
+   split::SplitInfo* info;
+   cudaMallocHost((void **) &info, sizeof(split::SplitInfo));
+   a.copyMetadata(info);
+   cudaDeviceSynchronize();
+   expect_true(a.capacity()==info->capacity);
+   expect_true(a.size()==info->size);
+}
+
 
 int main(int argc, char* argv[]){
    ::testing::InitGoogleTest(&argc, argv);
