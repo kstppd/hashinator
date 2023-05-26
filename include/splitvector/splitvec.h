@@ -63,6 +63,10 @@ namespace split{
        t2 = std::move(tmp);
    }
 
+   typedef struct SplitVectorInfo{
+      size_t size;
+      size_t capacity;
+   }SplitInfo;
 
    template<typename T,
             class Allocator=DefaultAllocator<T>,
@@ -284,6 +288,11 @@ namespace split{
             return;
          }
          #endif
+
+         void copyMetadata(SplitInfo* dst,cudaStream_t s=0){
+            cudaMemcpyAsync(&dst->size,_size,sizeof(size_t),cudaMemcpyDeviceToHost,s);
+            cudaMemcpyAsync(&dst->capacity,_capacity,sizeof(size_t),cudaMemcpyDeviceToHost,s);
+         }
 
          /* Custom swap mehtod. 
           * Pointers outside of splitvector's source
