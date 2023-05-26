@@ -217,12 +217,14 @@ namespace Hashinator{
       void operator delete[] (void* ptr) {
          hipFree(ptr);
       }
-      #endif
 
       HASHINATOR_HOSTONLY
       void copyMetadata(MapInfo* dst,hipStream_t s=0){
          hipMemcpyAsync(dst, _mapInfo, sizeof(MapInfo),hipMemcpyDeviceToHost,s);
       }
+
+      #endif
+
 
       // Resize the table to fit more things. This is automatically invoked once
       // maxBucketOverflow has triggered. This can only be done on host (so far)

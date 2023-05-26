@@ -271,12 +271,16 @@ namespace split{
             hipGetDevice(&device);
             CheckErrors("Prefetch GPU-Device-ID");
             hipMemPrefetchAsync(_data ,capacity()*sizeof(T),device,stream);
+            hipMemPrefetchAsync(_size ,sizeof(size_t),device,stream);
+            hipMemPrefetchAsync(_capacity ,sizeof(size_t),device,stream);
             CheckErrors("Prefetch GPU");
          }
 
          /*Manually prefetch data on Host*/
          HOSTONLY void optimizeCPU(hipStream_t stream = 0)noexcept{
             hipMemPrefetchAsync(_data ,capacity()*sizeof(T),hipCpuDeviceId,stream);
+            hipMemPrefetchAsync(_size ,sizeof(size_t),hipCpuDeviceId,stream);
+            hipMemPrefetchAsync(_capacity ,sizeof(size_t),hipCpuDeviceId,stream);
             CheckErrors("Prefetch CPU");
          }
 
@@ -287,12 +291,14 @@ namespace split{
             CheckErrors("Stream Attach");
             return;
          }
-         #endif
 
          void copyMetadata(SplitInfo* dst,hipStream_t s=0){
             hipMemcpyAsync(&dst->size,_size,sizeof(size_t),hipMemcpyDeviceToHost,s);
             hipMemcpyAsync(&dst->capacity,_capacity,sizeof(size_t),hipMemcpyDeviceToHost,s);
          }
+
+         #endif
+
 
          /* Custom swap mehtod. 
           * Pointers outside of splitvector's source
