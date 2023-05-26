@@ -1,12 +1,12 @@
-CC=nvcc  
-LNK=nvcc 
-OPT=  -Xcompiler 
-CXXFLAGS= 
+CC=hipcc -fgpu-sanitize -fsanitize-thread-memory-access -fsanitize-stats -munsafe-fp-atomics
+LNK=hipcc
+OPT=  
+CXXFLAGS= -Wno-unused-result --amdgpu-target=gfx90a -I/pfs/lustrep1/users/kpapadak/bins/googletest/googletest/include -L/pfs/lustrep1/users/kpapadak/bins/googletest/build/lib
 EXTRA= -g3  --std=c++17
-EXTRA+= -gencode arch=compute_60,code=sm_60  -L /usr/lib/x86_64-linux-gnu
-EXTRA+=  -DHASHMAPDEBUG --expt-relaxed-constexpr 
-GTEST=-lgtest -lgtest_main -lpthread
-OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o delete_mechanism.o insertion_mechanism.o hybrid_cpu.o hybrid_gpu.o pointer_test.o
+EXTRA+= 
+EXTRA+=  -DHASHMAPDEBUG 
+GTEST=-lgtest  -lpthread
+OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o  delete_mechanism.o insertion_mechanism.o hybrid_cpu.o hybrid_gpu.o pointer_test.o
 
 default: tests
 tests: ${OBJ}

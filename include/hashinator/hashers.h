@@ -1,3 +1,4 @@
+#include "hip/hip_runtime.h"
 /* File:    hashers.h
  * Authors: Kostis Papadakis, Urs Ganse and Markus Battarbee (2023)
  * Description: Defines parallel hashers that insert elements
@@ -111,7 +112,7 @@ namespace Hashinator{
                typename VAL_TYPE,
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
                class HashFunction=HashFunctions::Murmur<KEY_TYPE>,
-               int WARPSIZE=32,
+               int WARPSIZE=64,
                int elementsPerWarp>
       __global__ 
       void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src,
@@ -127,25 +128,26 @@ namespace Hashinator{
          const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
          const size_t wid = tid/VIRTUALWARP;
          const size_t w_tid=tid%VIRTUALWARP;
-         unsigned int subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
-         
+         uint64_t subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
+
          //Early quit if we have more warps than elements to insert
          if (wid>=len || *err==status::fail){
             return;
          }
 
-         auto getIntraWarpMask = [](unsigned int n ,unsigned int l ,unsigned int r)->unsigned int{
-            int num = ((1<<r)-1)^((1<<(l-1))-1);
-            return (n^num);
+         auto getIntraWarpMask = [](uint64_t n, uint64_t l, uint64_t r) -> uint64_t {
+            uint64_t num = ((1ull << r) - 1) ^ ((1ull << (l - 1)) - 1);
+            return (n ^ num);
          };
 
-         uint32_t submask;
+         uint64_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
             submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
+
          hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[wid];
          const int bitMask = (1 <<(sizePower )) - 1; 
          const size_t hashIndex = HashFunction::_hash(candidate.first,sizePower);
@@ -157,15 +159,15 @@ namespace Hashinator{
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
             //If we encounter empty  break as the
-            uint32_t mask_already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidate.first)&submask;
-            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            uint64_t mask_already_exists = __ballot(buckets[probingindex].first==candidate.first)&submask;
+            uint64_t emptyFound = __ballot(buckets[probingindex].first==EMPTYBUCKET)&submask;
             //If we encountered empty and there is no duplicate in this probing
             //chain we are done.
             if (!mask_already_exists && emptyFound){
                break;
             }
             if (mask_already_exists){
-               int winner =__ffs ( mask_already_exists ) -1;
+               auto winner =__ffsll( (unsigned long long int)mask_already_exists ) -1;
                winner-=(subwarp_relative_index)*VIRTUALWARP;
                if(w_tid==winner){
                   atomicExch(&buckets[probingindex].second,candidate.second);
@@ -182,10 +184,10 @@ namespace Hashinator{
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
             //vote for available emptybuckets in warp region
-            uint32_t mask = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            uint64_t mask = __ballot(buckets[probingindex].first==EMPTYBUCKET)&submask;
             while(mask){
-               int winner =__ffs ( mask ) -1;
-               int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
+               auto winner =__ffsll( (unsigned long long int)mask ) -1;
+               auto sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
                   KEY_TYPE old = atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidate.first);
                   if (old == EMPTYBUCKET){
@@ -204,7 +206,7 @@ namespace Hashinator{
                      done=true;
                   }
                }
-               int warp_done=__any_sync(submask,done);
+               int warp_done=__any(done);
                if(warp_done>0){
                   return;
                }
@@ -237,7 +239,7 @@ namespace Hashinator{
                typename VAL_TYPE,
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
                class HashFunction=HashFunctions::Murmur<KEY_TYPE>,
-               int WARPSIZE=32,
+               int WARPSIZE=64,
                int elementsPerWarp>
       __global__ 
       void insert_kernel(KEY_TYPE* keys,
@@ -254,19 +256,19 @@ namespace Hashinator{
          const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
          const size_t wid = tid/VIRTUALWARP;
          const size_t w_tid=tid%VIRTUALWARP;
-         unsigned int subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
+         uint64_t subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
          
          //Early quit if we have more warps than elements to insert
          if (wid>=len || *err==status::fail){
             return;
          }
 
-         auto getIntraWarpMask = [](unsigned int n ,unsigned int l ,unsigned int r)->unsigned int{
-            int num = ((1<<r)-1)^((1<<(l-1))-1);
-            return (n^num);
+         auto getIntraWarpMask = [](uint64_t n, uint64_t l, uint64_t r) -> uint64_t {
+            uint64_t num = ((1ull << r) - 1) ^ ((1ull << (l - 1)) - 1);
+            return (n ^ num);
          };
 
-         uint32_t submask;
+         uint64_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
@@ -285,15 +287,15 @@ namespace Hashinator{
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
             //If we encounter empty  break as the
-            uint32_t mask_already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidateKey)&submask;
-            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            uint64_t mask_already_exists = __ballot(buckets[probingindex].first==candidateKey)&submask;
+            uint64_t emptyFound = __ballot(buckets[probingindex].first==EMPTYBUCKET)&submask;
             //If we encountered empty and there is no duplicate in this probing
             //chain we are done.
             if (!mask_already_exists && emptyFound){
                break;
             }
             if (mask_already_exists){
-               int winner =__ffs ( mask_already_exists ) -1;
+               auto winner =__ffsll((unsigned long long int) mask_already_exists ) -1;
                winner-=(subwarp_relative_index)*VIRTUALWARP;
                if(w_tid==winner){
                   atomicExch(&buckets[probingindex].second,candidateVal);
@@ -310,10 +312,10 @@ namespace Hashinator{
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
             //vote for available emptybuckets in warp region
-            uint32_t mask = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            uint64_t mask = __ballot(buckets[probingindex].first==EMPTYBUCKET)&submask;
             while(mask){
-               int winner =__ffs ( mask ) -1;
-               int sub_winner=winner-(subwarp_relative_index)*VIRTUALWARP;
+               auto winner =__ffsll ( (unsigned long long int)mask ) -1;
+               auto sub_winner=winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
                   KEY_TYPE old = atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
                   if (old == EMPTYBUCKET){
@@ -332,7 +334,7 @@ namespace Hashinator{
                      done=true;
                   }
                }
-               int warp_done=__any_sync(submask,done);
+               int warp_done=__any(done);
                if(warp_done>0){
                   return;
                }
@@ -350,7 +352,7 @@ namespace Hashinator{
                typename VAL_TYPE,
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
                class HashFunction=HashFunctions::Murmur<KEY_TYPE>,
-               int WARPSIZE=32,
+               int WARPSIZE=64,
                int elementsPerWarp>
       __global__ 
       void retrieve_kernel(KEY_TYPE* keys,
@@ -364,14 +366,14 @@ namespace Hashinator{
          const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
          const size_t wid = tid/VIRTUALWARP;
          const size_t w_tid=tid%VIRTUALWARP;
-         unsigned int subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
+         uint64_t subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
          
-         auto getIntraWarpMask = [](unsigned int n ,unsigned int l ,unsigned int r)->unsigned int{
-            int num = ((1<<r)-1)^((1<<(l-1))-1);
-            return (n^num);
+         auto getIntraWarpMask = [](uint64_t n, uint64_t l, uint64_t r) -> uint64_t {
+            uint64_t num = ((1ull << r) - 1) ^ ((1ull << (l - 1)) - 1);
+            return (n ^ num);
          };
 
-         uint32_t submask;
+         uint64_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
@@ -388,14 +390,14 @@ namespace Hashinator{
             
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
-            uint32_t maskExists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidateKey)&submask;
-            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            uint64_t maskExists = __ballot(buckets[probingindex].first==candidateKey)&submask;
+            uint64_t emptyFound = __ballot(buckets[probingindex].first==EMPTYBUCKET)&submask;
             //If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
             if (!maskExists && emptyFound){
                return;
             }
             if (maskExists){
-               int winner =__ffs ( maskExists ) -1;
+               auto winner =__ffsll ( (unsigned long long int )maskExists ) -1;
                winner-=(subwarp_relative_index)*VIRTUALWARP;
                if(w_tid==winner){
                   atomicExch(&candidateVal,buckets[probingindex].second);
@@ -417,7 +419,7 @@ namespace Hashinator{
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
                KEY_TYPE TOMBSTONE=EMPTYBUCKET-1,
                class HashFunction=HashFunctions::Murmur<KEY_TYPE>,
-               int WARPSIZE=32,
+               int WARPSIZE=64,
                int elementsPerWarp>
       __global__ 
       void delete_kernel(KEY_TYPE* keys,
@@ -432,19 +434,18 @@ namespace Hashinator{
          const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
          const size_t wid = tid/VIRTUALWARP;
          const size_t w_tid=tid%VIRTUALWARP;
-         unsigned int subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
+         uint64_t  subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
          
          //Early quit if we have more warps than elements to insert
          if (wid>=len){
             return;
          }
 
-         auto getIntraWarpMask = [](unsigned int n ,unsigned int l ,unsigned int r)->unsigned int{
-            int num = ((1<<r)-1)^((1<<(l-1))-1);
-            return (n^num);
+         auto getIntraWarpMask = [](uint64_t n, uint64_t l, uint64_t r) -> uint64_t {
+            uint64_t num = ((1ull << r) - 1) ^ ((1ull << (l - 1)) - 1);
+            return (n ^ num);
          };
-
-         uint32_t submask;
+         uint64_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
@@ -460,14 +461,14 @@ namespace Hashinator{
             
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
-            uint32_t maskExists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidateKey)&submask;
-            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            uint64_t maskExists = __ballot(buckets[probingindex].first==candidateKey)&submask;
+            uint64_t emptyFound = __ballot(buckets[probingindex].first==EMPTYBUCKET)&submask;
             //If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
             if (!maskExists && emptyFound){
                return;
             }
             if (maskExists){
-               int winner =__ffs ( maskExists ) -1;
+               auto winner =__ffsll ( (unsigned long long int )maskExists ) -1;
                winner-=(subwarp_relative_index)*VIRTUALWARP;
                if(w_tid==winner){
                   atomicExch(&buckets[probingindex].first, TOMBSTONE);
@@ -485,7 +486,7 @@ namespace Hashinator{
                class HashFunction,
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
                KEY_TYPE TOMBSTONE=EMPTYBUCKET=1,
-               int WARP=32,
+               int WARP=64,
                int elementsPerWarp=1>
       class Hasher{
       
@@ -504,7 +505,7 @@ namespace Hashinator{
                             size_t* d_fill,
                             size_t len,
                             status* err,
-                            cudaStream_t s=0)
+                            hipStream_t s=0)
          {
             size_t blocks,blockSize;
             *err=status::success;
@@ -512,7 +513,7 @@ namespace Hashinator{
             insert_kernel<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction,defaults::WARPSIZE,elementsPerWarp>
                      <<<blocks,blockSize,0,s>>>
                      (keys,vals,buckets,sizePower,maxoverflow,d_overflow,d_fill,len,err);
-            cudaStreamSynchronize(s);
+            hipStreamSynchronize(s);
             #ifndef NDEBUG
             if (*err==status::fail){
                std::cerr<<"***** Hashinator Runtime Warning ********"<<std::endl;
@@ -532,7 +533,7 @@ namespace Hashinator{
                             size_t* d_fill,
                             size_t len,
                             status* err,
-                            cudaStream_t s=0)
+                            hipStream_t s=0)
          {
             size_t blocks,blockSize;
             *err=status::success;
@@ -540,7 +541,7 @@ namespace Hashinator{
             insert_kernel<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction,defaults::WARPSIZE,elementsPerWarp>
                      <<<blocks,blockSize,0,s>>>
                      (src,buckets,sizePower,maxoverflow,d_overflow,d_fill,len,err);
-            cudaStreamSynchronize(s);
+            hipStreamSynchronize(s);
             #ifndef NDEBUG
             if (*err==status::fail){
                std::cerr<<"***** Hashinator Runtime Warning ********"<<std::endl;
@@ -557,7 +558,7 @@ namespace Hashinator{
                               int sizePower,
                               size_t maxoverflow,
                               size_t len,
-                              cudaStream_t s=0)
+                              hipStream_t s=0)
          {
 
             size_t blocks,blockSize;
@@ -565,7 +566,7 @@ namespace Hashinator{
             retrieve_kernel<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction,defaults::WARPSIZE,elementsPerWarp>
                      <<<blocks,blockSize,0,s>>>
                      (keys,vals,buckets,sizePower,maxoverflow);
-            cudaStreamSynchronize(s);
+            hipStreamSynchronize(s);
 
          }
 
@@ -576,7 +577,7 @@ namespace Hashinator{
                            int sizePower,
                            size_t maxoverflow,
                            size_t len,
-                           cudaStream_t s=0)
+                           hipStream_t s=0)
          {
 
             size_t blocks,blockSize;
@@ -584,7 +585,7 @@ namespace Hashinator{
             delete_kernel<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,TOMBSTONE,HashFunction,defaults::WARPSIZE,elementsPerWarp>
                      <<<blocks,blockSize,0,s>>>
                      (keys,buckets,d_tombstoneCounter,sizePower,maxoverflow,len);
-            cudaStreamSynchronize(s);
+            hipStreamSynchronize(s);
 
          }
 

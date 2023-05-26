@@ -3,7 +3,7 @@
 #include <chrono>
 #include <gtest/gtest.h>
 #include "../../include/splitvector/splitvec.h"
-#include <cuda_profiler_api.h>
+#include <hip/hip_runtime_api.h>
 #include "../../include/splitvector/split_tools.h"
 
 #define expect_true EXPECT_TRUE

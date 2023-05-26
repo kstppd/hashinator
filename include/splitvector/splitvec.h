@@ -32,8 +32,8 @@
 
 
 #ifndef SPLIT_HOST_ONLY
-#include <cuda_runtime_api.h>
-#include <cuda.h>
+#include <hip/hip_runtime_api.h>
+#include <hip/hip_runtime.h>
 #define HOSTONLY __host__
 #define DEVICEONLY __device__
 #define HOSTDEVICE __host__ __device__
@@ -251,35 +251,35 @@ namespace split{
 
          #ifndef SPLIT_HOST_ONLY
          //Method that return a pointer which can be passed to GPU kernels
-         //Has to be cudaFree'd after use otherwise memleak (small one but still)!
+         //Has to be hipFree'd after use otherwise memleak (small one but still)!
          HOSTONLY
-         SplitVector<T,Allocator,Meta_Allocator>* upload(cudaStream_t stream = 0 ){
+         SplitVector<T,Allocator,Meta_Allocator>* upload(hipStream_t stream = 0 ){
             SplitVector* d_vec;
             optimizeGPU(stream);
-            cudaMallocAsync((void **)&d_vec, sizeof(SplitVector),stream);
-            cudaMemcpyAsync(d_vec, this, sizeof(SplitVector),cudaMemcpyHostToDevice,stream);
+            hipMallocAsync((void **)&d_vec, sizeof(SplitVector),stream);
+            hipMemcpyAsync(d_vec, this, sizeof(SplitVector),hipMemcpyHostToDevice,stream);
             return d_vec;
          }
 
          /*Manually prefetch data on Device*/
-         HOSTONLY void optimizeGPU(cudaStream_t stream = 0)noexcept{
+         HOSTONLY void optimizeGPU(hipStream_t stream = 0)noexcept{
             int device;
-            cudaGetDevice(&device);
+            hipGetDevice(&device);
             CheckErrors("Prefetch GPU-Device-ID");
-            cudaMemPrefetchAsync(_data ,capacity()*sizeof(T),device,stream);
+            hipMemPrefetchAsync(_data ,capacity()*sizeof(T),device,stream);
             CheckErrors("Prefetch GPU");
          }
 
          /*Manually prefetch data on Host*/
-         HOSTONLY void optimizeCPU(cudaStream_t stream = 0)noexcept{
-            cudaMemPrefetchAsync(_data ,capacity()*sizeof(T),cudaCpuDeviceId,stream);
+         HOSTONLY void optimizeCPU(hipStream_t stream = 0)noexcept{
+            hipMemPrefetchAsync(_data ,capacity()*sizeof(T),hipCpuDeviceId,stream);
             CheckErrors("Prefetch CPU");
          }
 
-         HOSTONLY void streamAttach(cudaStream_t s,uint32_t flags=cudaMemAttachSingle){
-            cudaStreamAttachMemAsync( s,(void*)_size,     sizeof(size_t),flags );
-            cudaStreamAttachMemAsync( s,(void*)_capacity, sizeof(size_t),flags );
-            cudaStreamAttachMemAsync( s,(void*)_data,     *_capacity*sizeof(T), flags );
+         HOSTONLY void streamAttach(hipStream_t s,uint32_t flags=hipMemAttachSingle){
+            hipStreamAttachMemAsync( s,(void*)_size,     sizeof(size_t),flags );
+            hipStreamAttachMemAsync( s,(void*)_capacity, sizeof(size_t),flags );
+            hipStreamAttachMemAsync( s,(void*)_data,     *_capacity*sizeof(T), flags );
             CheckErrors("Stream Attach");
             return;
          }

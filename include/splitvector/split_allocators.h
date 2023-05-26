@@ -26,10 +26,10 @@
 #ifdef CUDAVEC
    #define CheckErrors(msg) \
       do { \
-         cudaError_t __err = cudaGetLastError(); \
-         if (__err != cudaSuccess) { \
+         hipError_t __err = hipGetLastError(); \
+         if (__err != hipSuccess) { \
                fprintf(stderr, "Fatal error: %s (%s at %s:%d)\n", \
-                  msg, cudaGetErrorString(__err), \
+                  msg, hipGetErrorString(__err), \
                   __FILE__, __LINE__); \
                fprintf(stderr, "***** FAILED - ABORTING*****\n"); \
                exit(1); \
@@ -65,7 +65,7 @@ namespace split{
 
       pointer allocate(size_type n, const void* /*hint*/ = 0){
          T* ret;
-         cudaMallocManaged((void**)&ret, n * sizeof(value_type));
+         hipMallocManaged((void**)&ret, n * sizeof(value_type));
          CheckErrors("Managed Allocation");
          if (ret == nullptr) {throw std::bad_alloc();}
          return ret;
@@ -73,19 +73,19 @@ namespace split{
 
      static void* allocate_raw(size_type n, const void* /*hint*/ = 0){
          void* ret;
-         cudaMallocManaged((void**)&ret, n );
+         hipMallocManaged((void**)&ret, n );
          CheckErrors("Managed Allocation");
          if (ret == nullptr) {throw std::bad_alloc();}
          return ret;
       }
 
       void deallocate(pointer p, size_type){
-         cudaFree(p);
+         hipFree(p);
          CheckErrors("Managed Deallocation");
       }
 
       static void deallocate(void* p, size_type){
-         cudaFree(p);
+         hipFree(p);
       }
 
       size_type max_size() const throw(){

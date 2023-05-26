@@ -5,6 +5,8 @@
 #include <vector>
 #include <random>
 #include "../../include/hashinator/hashinator.h"
+#include "hip/hip_runtime.h"
+
 #include <gtest/gtest.h>
 
 #define BLOCKSIZE 1024
@@ -66,16 +68,16 @@ bool test_hashmap_insertionDM(keyval_type power){
 
    keyval_type* dkeys;
    keyval_type* dvals;
-   cudaMalloc(&dkeys, N*sizeof(keyval_type)); 
-   cudaMalloc(&dvals, N*sizeof(keyval_type)); 
-   cudaMemcpy(dkeys,keys.data(),N*sizeof(keyval_type),cudaMemcpyHostToDevice);
-   cudaMemcpy(dvals,vals.data(),N*sizeof(keyval_type),cudaMemcpyHostToDevice);
+   hipMalloc(&dkeys, N*sizeof(keyval_type)); 
+   hipMalloc(&dvals, N*sizeof(keyval_type)); 
+   hipMemcpy(dkeys,keys.data(),N*sizeof(keyval_type),hipMemcpyHostToDevice);
+   hipMemcpy(dvals,vals.data(),N*sizeof(keyval_type),hipMemcpyHostToDevice);
 
    hashmap hmap;
    hmap.insert(dkeys,dvals,N); 
    assert(recover_elements(hmap,keys.data(),vals.data(),N) && "Hashmap is illformed!");
-   cudaFree(dkeys);
-   cudaFree(dvals);
+   hipFree(dkeys);
+   hipFree(dvals);
    return true;
 }
 
@@ -95,7 +97,7 @@ bool test_hashmap_retrievalUM(keyval_type power){
    keys.optimizeGPU();
    vals.optimizeGPU();
    vals2.optimizeGPU();
-   cudaDeviceSynchronize();
+   hipDeviceSynchronize();
    hmap.retrieve(keys.data(),vals2.data(),N);
    assert(recover_elements(hmap,keys.data(),vals2.data(),N) && "Hashmap is illformed!");
    return true;

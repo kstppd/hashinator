@@ -5,7 +5,7 @@
 #include <random>
 #include <gtest/gtest.h>
 #include "../../include/splitvector/splitvec.h"
-#include <cuda_profiler_api.h>
+#include <hip/hip_runtime_api.h>
 #include "../../include/splitvector/split_tools.h"
 #include <thrust/device_vector.h>
 #include <thrust/execution_policy.h>
@@ -73,20 +73,20 @@ void split_test_prefix(split_vector& input_split,split_vector& output_split,size
 
    input_split.optimizeGPU();
    output_split.optimizeGPU();
-   cudaDeviceSynchronize();
+   hipDeviceSynchronize();
    split::tools::split_prefix_scan(input_split,output_split);
 
 
  /*  val_type* in; */
    /*val_type* out; */
-   /*cudaMalloc( (void**)&in , size*sizeof(val_type));*/
-   /*cudaMalloc( (void**)&out, size*sizeof(val_type));*/
-   /*cudaMemcpy(in,input_split.data(),size*sizeof(val_type),cudaMemcpyDeviceToDevice);*/
-   /*cudaMemset(out, 0, size*sizeof(val_type));*/
+   /*hipMalloc( (void**)&in , size*sizeof(val_type));*/
+   /*hipMalloc( (void**)&out, size*sizeof(val_type));*/
+   /*hipMemcpy(in,input_split.data(),size*sizeof(val_type),hipMemcpyDeviceToDevice);*/
+   /*hipMemset(out, 0, size*sizeof(val_type));*/
    /*split::tools::split_prefix_scan_raw<val_type,1024,32>(in,out,mPool,input_split.size());*/
-   /*cudaMemcpy(output_split.data(),out,size*sizeof(val_type),cudaMemcpyDeviceToHost);*/
-   /*cudaFree(in);*/
-      /*cudaFree(out);*/
+   /*hipMemcpy(output_split.data(),out,size*sizeof(val_type),hipMemcpyDeviceToHost);*/
+   /*hipFree(in);*/
+      /*hipFree(out);*/
 }
 
 void split_test_compaction(split_vector& input_split,split_vector& output_split,size_t size){

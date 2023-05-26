@@ -1,9 +1,10 @@
+#include "hip/hip_runtime.h"
 #include <iostream>
 #include <stdlib.h>
 #include <chrono>
 #include <gtest/gtest.h>
 #include "../../include/splitvector/splitvec.h"
-#include <cuda_profiler_api.h>
+#include <hip/hip_runtime_api.h>
 #include "../../include/splitvector/split_tools.h"
 
 #define expect_true EXPECT_TRUE
@@ -85,10 +86,10 @@ TEST(Test_GPU,VectorAddition){
    vec* d_c=c.upload();
 
    add_vectors<<<N,32>>>(d_a,d_b,d_c);
-   cudaDeviceSynchronize();
-   cudaFree(d_a);
-   cudaFree(d_b);
-   cudaFree(d_c);
+   hipDeviceSynchronize();
+   hipFree(d_a);
+   hipFree(d_b);
+   hipFree(d_c);
 
 
    for (const auto& e:c){
@@ -388,12 +389,12 @@ TEST(Vector_Functionality , PushBack_And_Erase_Device){
       a.reserve(100);
       vec* d_a=a.upload();
       push_back_kernel<<<4,8>>>(d_a);
-      cudaDeviceSynchronize();
-      cudaFree(d_a);
+      hipDeviceSynchronize();
+      hipFree(d_a);
       vec* d_b=a.upload();
       erase_kernel<<<1,1>>>(d_b);
-      cudaDeviceSynchronize();
-      cudaFree(d_b);
+      hipDeviceSynchronize();
+      hipFree(d_b);
 }
 
 TEST(Vector_Functionality , Insert_Device){
@@ -403,11 +404,11 @@ TEST(Vector_Functionality , Insert_Device){
       vec* d_a=a.upload();
       vec* d_b=b.upload();
       merge_kernel<<<1,1>>>(d_a,d_b);
-      cudaDeviceSynchronize();
+      hipDeviceSynchronize();
       merge_kernel<<<1,1>>>(d_a,d_b);
-      cudaDeviceSynchronize();
-      cudaFree(d_a);
-      cudaFree(d_b);
+      hipDeviceSynchronize();
+      hipFree(d_a);
+      hipFree(d_b);
       expect_true(a.size()==12);
 }
 
@@ -418,8 +419,8 @@ TEST(Vector_Functionality , Insert_Device_N){
       a.reserve(30);
       vec* d_a=a.upload();
       merge_kernel_2<<<1,1>>>(d_a);
-      cudaDeviceSynchronize();
-      cudaFree(d_a);
+      hipDeviceSynchronize();
+      hipFree(d_a);
       expect_true(a==b);
 }
 
@@ -445,8 +446,8 @@ TEST(Vector_Functionality , Resizing_Device){
       expect_true(a.size()==a.capacity());
       vec* d_a=a.upload();
       resize_vector<<<1,1>>>(d_a,16);
-      cudaDeviceSynchronize();
-      cudaFree(d_a);
+      hipDeviceSynchronize();
+      hipFree(d_a);
       expect_true(a.size()==16);
       expect_true(a.capacity()==32);
    }
@@ -459,8 +460,8 @@ TEST(Vector_Functionality , Resizing_Device){
       expect_true(a.capacity()>100);
       vec* d_a=a.upload();
       resize_vector<<<1,1>>>(d_a,64);
-      cudaDeviceSynchronize();
-      cudaFree(d_a);
+      hipDeviceSynchronize();
+      hipFree(d_a);
       expect_true(a.size()==64);
       expect_true(a.capacity()>100);
       for (size_t i = 0 ; i< a.size(); ++i){

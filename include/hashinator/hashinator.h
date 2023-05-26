@@ -88,11 +88,11 @@ namespace Hashinator{
        }
       
       // Used by the constructors. Preallocates the device pointer and bookeepping info for later use on device. 
-      // This helps in reducing the number of calls to cudaMalloc
+      // This helps in reducing the number of calls to hipMalloc
       HASHINATOR_HOSTONLY
       void preallocate_device_handles(){
          #ifndef HASHINATOR_HOST_ONLY
-         cudaMalloc((void **)&device_map, sizeof(Hashmap));
+         hipMalloc((void **)&device_map, sizeof(Hashmap));
          #endif
       }
 
@@ -100,7 +100,7 @@ namespace Hashinator{
       HASHINATOR_HOSTONLY
       void deallocate_device_handles(){
          #ifndef HASHINATOR_HOST_ONLY
-         cudaFree(device_map);
+         hipFree(device_map);
          device_map=nullptr;
          #endif
       }   
@@ -144,7 +144,7 @@ namespace Hashinator{
       Hashmap(){
          preallocate_device_handles();
          _mapInfo=_metaAllocator.allocate(1);
-         *_mapInfo=MapInfo(5);
+         *_mapInfo=MapInfo(6);
          buckets=split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>> (1 << _mapInfo->sizePower, hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE()));
        };
 
@@ -197,25 +197,25 @@ namespace Hashinator{
       HASHINATOR_HOSTONLY
       void *operator new(size_t len) {
          void *ptr;
-         cudaMallocManaged(&ptr, len);
+         hipMallocManaged(&ptr, len);
          return ptr;
       }
 
       HASHINATOR_HOSTONLY
       void operator delete(void *ptr) {
-         cudaFree(ptr);
+         hipFree(ptr);
       }
 
       HASHINATOR_HOSTONLY
       void* operator new[] (size_t len) {
          void *ptr;
-         cudaMallocManaged(&ptr, len);
+         hipMallocManaged(&ptr, len);
          return ptr;
       }
 
       HASHINATOR_HOSTONLY
       void operator delete[] (void* ptr) {
-         cudaFree(ptr);
+         hipFree(ptr);
       }
       #endif
 
@@ -269,7 +269,7 @@ namespace Hashinator{
       // Resize the table to fit more things. This is automatically invoked once
       // maxBucketOverflow has triggered. This can only be done on host (so far)
       HASHINATOR_HOSTONLY
-      void device_rehash(int newSizePower, cudaStream_t s=0) {
+      void device_rehash(int newSizePower, hipStream_t s=0) {
          if (newSizePower > 32) {
             throw std::out_of_range("Hashmap ran into rehashing catastrophe and exceeded 32bit buckets.");
          }
@@ -277,9 +277,9 @@ namespace Hashinator{
          size_t priorFill=_mapInfo->fill;
          //Extract all valid elements
          hash_pair<KEY_TYPE, VAL_TYPE>* validElements; 
-         cudaMallocAsync((void**)&validElements, (_mapInfo->fill+1) * sizeof(hash_pair<KEY_TYPE, VAL_TYPE>),s);
+         hipMallocAsync((void**)&validElements, (_mapInfo->fill+1) * sizeof(hash_pair<KEY_TYPE, VAL_TYPE>),s);
          optimizeGPU(s);
-         cudaStreamSynchronize(s);
+         hipStreamSynchronize(s);
 
 
          uint32_t nValidElements = split::tools::copy_if_raw
@@ -287,7 +287,7 @@ namespace Hashinator{
                   (buckets,validElements,Valid_Predicate<KEY_TYPE,VAL_TYPE>(),s);
 
 
-         cudaStreamSynchronize(s);
+         hipStreamSynchronize(s);
          assert(nValidElements==_mapInfo->fill && "Something really bad happened during rehashing! Ask Kostis!");
          //We can now clear our buckets
          optimizeCPU(s);
@@ -437,7 +437,7 @@ namespace Hashinator{
       }
       #else
       HASHINATOR_HOSTONLY
-      void clear(targets t=targets::host, cudaStream_t s=0) {
+      void clear(targets t=targets::host, hipStream_t s=0) {
          size_t blocksNeeded;
          switch(t)
          {
@@ -452,7 +452,7 @@ namespace Hashinator{
                blocksNeeded=blocksNeeded+(blocksNeeded==0);
                Hashers::reset_all_to_empty<KEY_TYPE,VAL_TYPE,EMPTYBUCKET>
                <<<blocksNeeded,defaults::MAX_BLOCKSIZE,0,s>>>(buckets.data(),buckets.size(),&_mapInfo->fill);
-               cudaStreamSynchronize(s);
+               hipStreamSynchronize(s);
                set_status(( _mapInfo->fill==0 )?success:fail);
                break;
 
@@ -480,7 +480,7 @@ namespace Hashinator{
       }
       #else
       HASHINATOR_HOSTONLY
-      void resize(int newSizePower,targets t=targets::host,cudaStream_t s=0){
+      void resize(int newSizePower,targets t=targets::host,hipStream_t s=0){
          switch(t)
          {
             case targets::host:
@@ -579,7 +579,7 @@ namespace Hashinator{
       #else
       //Try to get the overflow back to the original one 
       HASHINATOR_HOSTONLY
-      void performCleanupTasks(cudaStream_t s=0){
+      void performCleanupTasks(hipStream_t s=0){
          while (_mapInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW){
             rehash(_mapInfo->sizePower+1);
          }
@@ -835,7 +835,7 @@ namespace Hashinator{
        *   hmap.extractPattern(elements,Rule<uint32_t,uint32_t>());
        * */
       template <typename  Rule>
-      size_t extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements ,Rule, cudaStream_t s=0){
+      size_t extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements ,Rule, hipStream_t s=0){
          elements.resize(1<<_mapInfo->sizePower);
          elements.optimizeGPU(s);
          //Extract elements matching the Pattern Rule(element)==true;
@@ -849,7 +849,7 @@ namespace Hashinator{
       }
 
       template <typename  Rule>
-      size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements ,Rule, cudaStream_t s=0){
+      size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements ,Rule, hipStream_t s=0){
          elements.resize(_mapInfo->fill);
          elements.optimizeGPU(s);
          //Extract element **keys** matching the Pattern Rule(element)==true;
@@ -859,7 +859,7 @@ namespace Hashinator{
          return retval;
       }
 
-      void clean_tombstones(cudaStream_t s=0){
+      void clean_tombstones(hipStream_t s=0){
    
          if (_mapInfo->tombstoneCounter == 0){
             return ;
@@ -870,10 +870,10 @@ namespace Hashinator{
          //Allocate memory for overflown elements. So far this is the same size as our buckets but we can be better than this 
          
          hash_pair<KEY_TYPE, VAL_TYPE>* overflownElements; 
-         cudaMallocAsync((void**)&overflownElements, (1<<_mapInfo->sizePower) * sizeof(hash_pair<KEY_TYPE, VAL_TYPE>),s);
+         hipMallocAsync((void**)&overflownElements, (1<<_mapInfo->sizePower) * sizeof(hash_pair<KEY_TYPE, VAL_TYPE>),s);
 
          optimizeGPU(s);
-         cudaStreamSynchronize(s);
+         hipStreamSynchronize(s);
          uint32_t nOverflownElements=split::tools::copy_if_raw
             <hash_pair<KEY_TYPE, VAL_TYPE>,Overflown_Predicate<KEY_TYPE,VAL_TYPE>,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
             (buckets,
@@ -883,11 +883,11 @@ namespace Hashinator{
          
 
          if (nOverflownElements ==0 ){
-            cudaFreeAsync(overflownElements,s);
+            hipFreeAsync(overflownElements,s);
             return ;
          }
          //If we do have overflown elements we put them back in the buckets
-         cudaStreamSynchronize(s);
+         hipStreamSynchronize(s);
          Hashers::reset_to_empty<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction>
                                  <<<nOverflownElements,defaults::MAX_BLOCKSIZE,0,s>>>
                                  (overflownElements,
@@ -896,7 +896,7 @@ namespace Hashinator{
                                   _mapInfo->currentMaxBucketOverflow,
                                   nOverflownElements);
          _mapInfo->fill-=nOverflownElements;
-         cudaStreamSynchronize(s);
+         hipStreamSynchronize(s);
 
          DeviceHasher::insert(overflownElements,
                               buckets.data(),
@@ -906,13 +906,13 @@ namespace Hashinator{
                               &_mapInfo->fill,
                               nOverflownElements,&_mapInfo->err,s);
 
-         cudaFreeAsync(overflownElements,s);
+         hipFreeAsync(overflownElements,s);
          return ;
       }
 
       //Uses Hasher's insert_kernel to insert all elements
       HASHINATOR_HOSTONLY
-      void insert(KEY_TYPE* keys,VAL_TYPE* vals,size_t len,float targetLF=0.5,cudaStream_t s=0){
+      void insert(KEY_TYPE* keys,VAL_TYPE* vals,size_t len,float targetLF=0.5,hipStream_t s=0){
          //Here we do some calculations to estimate how much if any we need to grow our buckets
          size_t neededPowerSize=std::ceil(std::log2((_mapInfo->fill+len)*(1.0/targetLF)));
          if (neededPowerSize>_mapInfo->sizePower){
@@ -927,7 +927,7 @@ namespace Hashinator{
      
       //Uses Hasher's insert_kernel to insert all elements
       HASHINATOR_HOSTONLY
-      void insert(hash_pair<KEY_TYPE,VAL_TYPE>* src, size_t len,float targetLF=0.5,cudaStream_t s=0){
+      void insert(hash_pair<KEY_TYPE,VAL_TYPE>* src, size_t len,float targetLF=0.5,hipStream_t s=0){
          if(len==0){
             set_status(status::success);
             return;
@@ -944,7 +944,7 @@ namespace Hashinator{
 
       //Uses Hasher's retrieve_kernel to read all elements
       HASHINATOR_HOSTONLY
-      void retrieve(KEY_TYPE* keys,VAL_TYPE* vals,size_t len,cudaStream_t s=0){
+      void retrieve(KEY_TYPE* keys,VAL_TYPE* vals,size_t len,hipStream_t s=0){
          buckets.optimizeGPU(s);
          DeviceHasher::retrieve(keys,vals,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,len,s);
          return;
@@ -952,7 +952,7 @@ namespace Hashinator{
 
       //Uses Hasher's erase_kernel to delete all elements
       HASHINATOR_HOSTONLY
-      void erase(KEY_TYPE* keys,size_t len,cudaStream_t s=0){
+      void erase(KEY_TYPE* keys,size_t len,hipStream_t s=0){
          buckets.optimizeGPU(s);
          //Remember the last numeber of tombstones
          size_t tbStore=tombstone_count();
@@ -969,31 +969,31 @@ namespace Hashinator{
        * call download() after usage on device.
        */
       HASHINATOR_HOSTONLY
-      Hashmap* upload(cudaStream_t stream = 0 ){
+      Hashmap* upload(hipStream_t stream = 0 ){
          optimizeGPU(stream);
-         cudaMemcpyAsync(device_map, this, sizeof(Hashmap),cudaMemcpyHostToDevice,stream);
+         hipMemcpyAsync(device_map, this, sizeof(Hashmap),hipMemcpyHostToDevice,stream);
          return device_map;
       }
 
       HASHINATOR_HOSTONLY
-      void optimizeGPU(cudaStream_t stream=0) noexcept{
+      void optimizeGPU(hipStream_t stream=0) noexcept{
          int device;
-         cudaGetDevice(&device);
-         cudaMemPrefetchAsync(_mapInfo ,sizeof(MapInfo),device,stream);
+         hipGetDevice(&device);
+         hipMemPrefetchAsync(_mapInfo ,sizeof(MapInfo),device,stream);
          buckets.optimizeGPU(stream);
       }
 
       /*Manually prefetch data on Host*/
       HASHINATOR_HOSTONLY
-      void optimizeCPU(cudaStream_t stream = 0)noexcept{
-         cudaMemPrefetchAsync(_mapInfo ,sizeof(MapInfo),cudaCpuDeviceId,stream);
+      void optimizeCPU(hipStream_t stream = 0)noexcept{
+         hipMemPrefetchAsync(_mapInfo ,sizeof(MapInfo),hipCpuDeviceId,stream);
          buckets.optimizeCPU(stream);
       }
 
       HASHINATOR_HOSTONLY 
-      void streamAttach(cudaStream_t s, uint32_t  flags=cudaMemAttachSingle){
+      void streamAttach(hipStream_t s, uint32_t  flags=hipMemAttachSingle){
          buckets.streamAttach(s,flags);
-         cudaStreamAttachMemAsync( s,(void*)_mapInfo, sizeof(MapInfo),flags );
+         hipStreamAttachMemAsync( s,(void*)_mapInfo, sizeof(MapInfo),flags );
          CheckErrors("Stream Attach");
          return;
       }
@@ -1013,7 +1013,7 @@ namespace Hashinator{
        *  • If there are Tombstones then those are removed
        * */ 
       HASHINATOR_HOSTONLY
-      void download(cudaStream_t stream = 0){
+      void download(hipStream_t stream = 0){
          //Copy over fill as it might have changed
          optimizeCPU(stream);
          if (_mapInfo->currentMaxBucketOverflow>Hashinator::defaults::BUCKET_OVERFLOW){
@@ -1310,7 +1310,6 @@ namespace Hashinator{
             }
          }
           assert(false && "Key does not exist");
-          return ; //to get the compiler not to yell
       }
 
       
