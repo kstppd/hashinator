@@ -857,7 +857,7 @@ namespace Hashinator{
 
       template <typename  Rule>
       size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements ,Rule, hipStream_t s=0){
-         elements.resize(_mapInfo->fill);
+         elements.resize(1<<_mapInfo->sizePower);
          elements.optimizeGPU(s);
          //Extract element **keys** matching the Pattern Rule(element)==true;
          size_t retval=split::tools::copy_keys_if_raw
