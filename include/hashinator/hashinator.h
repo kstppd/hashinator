@@ -863,7 +863,7 @@ namespace Hashinator{
          size_t retval=split::tools::copy_keys_if_raw
                        <hash_pair<KEY_TYPE, VAL_TYPE>,KEY_TYPE,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
                        (buckets,elements.data(),Rule(),s);
-         elements.erase(&elements->at(retval),elements->end());
+         elements.erase(&(elements.at(retval)),elements.end());
          return retval;
       }
 

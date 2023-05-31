@@ -132,20 +132,19 @@ namespace split{
       template <typename T,typename U, typename Rule,size_t BLOCKSIZE=1024, size_t WARP=64>
       __global__
       void split_compact_keys_raw(T* input, uint32_t* counts, uint32_t* offsets, U* output, Rule rule,const size_t size,size_t nBlocks,uint32_t* retval){
-/*
          extern __shared__ uint32_t buffer[];
          const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
          if (tid>=size) {return;}
          unsigned int offset = BLOCKSIZE/WARP;
-         const unsigned int wid = tid/WARP;
-         const unsigned int widb = threadIdx.x/WARP;
-         const unsigned int w_tid=tid%WARP;
-         const unsigned int warps_in_block = blockDim.x/WARP;
+         const uint64_t wid = tid/WARP;
+         const uint64_t widb = threadIdx.x/WARP;
+         const uint64_t w_tid=tid%WARP;
+         const uint64_t warps_in_block = blockDim.x/WARP;
          const bool tres=rule(input[tid]);
 
-         unsigned int  mask= __ballot_sync(SPLIT_VOTING_MASK,tres);
-         unsigned int n_neighbors= mask & ((1 << w_tid) - 1);
-         unsigned int total_valid_in_warp	= __popc(mask);
+         uint64_t  mask= __ballot(tres);
+         uint64_t n_neighbors= mask & ((1ul << w_tid) - 1);
+         uint64_t total_valid_in_warp   = __popcll(mask);
          if (w_tid==0 ){
             buffer[widb]=total_valid_in_warp;
          }
@@ -157,8 +156,8 @@ namespace split{
             }
          }
          __syncthreads();
-         const unsigned int neighbor_count= __popc(n_neighbors);
-         const unsigned int private_index	= buffer[offset+widb] + offsets[(wid/warps_in_block)] + neighbor_count ;
+         const uint64_t neighbor_count= __popcll(n_neighbors);
+         const uint64_t private_index   = buffer[offset+widb] + offsets[(wid/warps_in_block)] + neighbor_count ;
          if (tres && widb!=warps_in_block){
             output[private_index] = input[tid].first;
          }
@@ -166,7 +165,6 @@ namespace split{
             //const unsigned int actual_total_blocks=offsets->back()+counts->back();
             *retval=offsets[nBlocks-1]+counts[nBlocks-1];
          }
-         */
       }
 
       
