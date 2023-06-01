@@ -125,7 +125,7 @@ namespace Hashinator{
             if (element.first==EMPTYBUCKET){return false;}
             const size_t hashIndex = HashFunction::_hash(element.first,currentSizePower);
             const int bitMask = (1 <<(currentSizePower )) - 1; 
-            bool isOverflown=(bck_ptr[hashIndex&bitMask].first!=(int)element.first);
+            bool isOverflown=(bck_ptr[hashIndex&bitMask].first!=element.first);
             return isOverflown;
          }
       };
