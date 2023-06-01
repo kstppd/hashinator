@@ -1137,7 +1137,7 @@ namespace Hashinator{
          uint32_t hashIndex = hash(key);
 
          // Try to find the matching bucket.
-         for (int i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
+         for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
             const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
             if (candidate.first==TOMBSTONE){continue;}
