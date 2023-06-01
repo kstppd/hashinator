@@ -851,7 +851,7 @@ namespace Hashinator{
                          (buckets,elements.data(),Rule(),s);
 
          //Remove unwanted elements
-         elements.erase(&elements->at(retval),elements->end());
+         elements.erase(&(elements.at(retval)),elements.end());
          return retval;
       }
 

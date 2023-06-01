@@ -42,6 +42,7 @@
 #endif
 #endif
 
+#include <hip/hip_runtime.h>
 namespace split{
 
 #ifndef SPLIT_HOST_ONLY
