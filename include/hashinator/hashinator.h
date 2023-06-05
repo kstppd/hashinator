@@ -851,19 +851,20 @@ namespace Hashinator{
                          (buckets,elements.data(),Rule(),s);
 
          //Remove unwanted elements
-         elements.erase(&elements->at(retval),elements->end());
+         elements.erase(&(elements.at(retval)),elements.end());
          return retval;
       }
 
       template <typename  Rule>
       size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements ,Rule, cudaStream_t s=0){
-         elements.resize(_mapInfo->fill);
+         elements.resize(1<<_mapInfo->sizePower);
          elements.optimizeGPU(s);
          //Extract element **keys** matching the Pattern Rule(element)==true;
          size_t retval=split::tools::copy_keys_if_raw
                        <hash_pair<KEY_TYPE, VAL_TYPE>,KEY_TYPE,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
                        (buckets,elements.data(),Rule(),s);
-         elements.erase(&elements->at(retval),elements->end());
+         //Remove unwanted elements
+         elements.erase(&(elements.at(retval)),elements.end());
          return retval;
       }
 
