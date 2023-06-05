@@ -842,13 +842,14 @@ namespace Hashinator{
        *   hmap.extractPattern(elements,Rule<uint32_t,uint32_t>());
        * */
       template <typename  Rule>
-      size_t extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements ,Rule, cudaStream_t s=0){
+      HASHINATOR_HOSTONLY
+      size_t extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements ,Rule rule, cudaStream_t s=0){
          elements.resize(1<<_mapInfo->sizePower);
          elements.optimizeGPU(s);
          //Extract elements matching the Pattern Rule(element)==true;
          size_t retval = split::tools::copy_if_raw<hash_pair
                          <KEY_TYPE, VAL_TYPE>,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
-                         (buckets,elements.data(),Rule(),s);
+                         (buckets,elements.data(),rule,s);
 
          //Remove unwanted elements
          elements.erase(&(elements.at(retval)),elements.end());
@@ -856,13 +857,30 @@ namespace Hashinator{
       }
 
       template <typename  Rule>
-      size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements ,Rule, cudaStream_t s=0){
+      HASHINATOR_HOSTONLY
+      size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements ,Rule rule, cudaStream_t s=0){
          elements.resize(1<<_mapInfo->sizePower);
          elements.optimizeGPU(s);
          //Extract element **keys** matching the Pattern Rule(element)==true;
          size_t retval=split::tools::copy_keys_if_raw
                        <hash_pair<KEY_TYPE, VAL_TYPE>,KEY_TYPE,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
-                       (buckets,elements.data(),Rule(),s);
+                       (buckets,elements.data(),rule,s);
+         //Remove unwanted elements
+         elements.erase(&(elements.at(retval)),elements.end());
+         return retval;
+      }
+
+      HASHINATOR_HOSTONLY
+      size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, cudaStream_t s=0){
+         elements.resize(1<<_mapInfo->sizePower);
+         elements.optimizeGPU(s);
+         //Extract element **keys** matching the Pattern Rule(element)==true;
+         auto rule=[] __host__ __device__ (const hash_pair<KEY_TYPE, VAL_TYPE>& kval)->bool{
+            return kval.first!=EMPTYBUCKET && kval.first != TOMBSTONE;
+         };
+         size_t retval=split::tools::copy_keys_if_raw
+                       <hash_pair<KEY_TYPE, VAL_TYPE>,KEY_TYPE,decltype(rule),defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
+                       (buckets,elements.data(),rule,s);
          //Remove unwanted elements
          elements.erase(&(elements.at(retval)),elements.end());
          return retval;
