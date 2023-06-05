@@ -45,6 +45,7 @@
 namespace split{
 
 #ifndef SPLIT_HOST_ONLY
+#include <cuda_runtime.h> 
    template <class T>
    class split_unified_allocator{
       public:
