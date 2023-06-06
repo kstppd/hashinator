@@ -15,5 +15,5 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: run_tests
-      run: export TERM=xterm ; cd tests; ./run_tests.sh
+      run: export TERM=xterm ; cd tests; bash -ic ./run_tests.sh
     
