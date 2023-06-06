@@ -15,5 +15,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: run_tests
-      run:  cd tests; which nvcc ; /bin/bash ./run_tests.sh
+      run:  cd tests; which nvcc ; zsh -c  ./run_tests.sh
+      shell: zsh
     
