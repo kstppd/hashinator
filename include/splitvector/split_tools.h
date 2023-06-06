@@ -237,6 +237,45 @@ namespace split{
 
       }
 
+      template <typename T,typename U, typename Rule,size_t BLOCKSIZE=1024, size_t WARP=32>
+      __global__
+      void split_compact_keys_raw(T* input, uint32_t* counts, uint32_t* offsets, U* output, Rule rule,const size_t size,size_t nBlocks,uint32_t* retval){
+
+         extern __shared__ uint32_t buffer[];
+         const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
+         if (tid>=size) {return;}
+         unsigned int offset = BLOCKSIZE/WARP;
+         const unsigned int wid = tid/WARP;
+         const unsigned int widb = threadIdx.x/WARP;
+         const unsigned int w_tid=tid%WARP;
+         const unsigned int warps_in_block = blockDim.x/WARP;
+         const bool tres=rule(input[tid]);
+
+         unsigned int  mask= __ballot_sync(SPLIT_VOTING_MASK,tres);
+         unsigned int n_neighbors= mask & ((1 << w_tid) - 1);
+         unsigned int total_valid_in_warp	= __popc(mask);
+         if (w_tid==0 ){
+            buffer[widb]=total_valid_in_warp;
+         }
+         __syncthreads();
+         if (w_tid==0 && wid%warps_in_block==0){
+            buffer[offset+widb]=0;
+            for (unsigned int i =0 ; i < warps_in_block-1;++i){
+               buffer[offset+widb+i+1]=buffer[offset+widb+i] +buffer[widb+i];
+            }
+         }
+         __syncthreads();
+         const unsigned int neighbor_count= __popc(n_neighbors);
+         const unsigned int private_index	= buffer[offset+widb] + offsets[(wid/warps_in_block)] + neighbor_count ;
+         if (tres && widb!=warps_in_block){
+            output[private_index] = input[tid].first;
+         }
+         if (tid==0){
+            //const unsigned int actual_total_blocks=offsets->back()+counts->back();
+            *retval=offsets[nBlocks-1]+counts[nBlocks-1];
+         }
+      }
+
 
       template <typename T, size_t BLOCKSIZE=1024,size_t WARP=32>
       void split_prefix_scan(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
@@ -461,8 +500,9 @@ namespace split{
 
             void* allocate(const size_t bytes){
                assert(bytes_used+bytes<total_bytes && "Mempool run out of space and crashed!");
+               void* ptr=reinterpret_cast<void*> (reinterpret_cast<char*>(_data)+bytes_used);
                bytes_used+=bytes;
-               return (char*)_data+bytes_used;
+               return ptr;
             };
 
             void deallocate(const size_t bytes){
@@ -584,5 +624,53 @@ namespace split{
          cudaStreamSynchronize(s);
          return numel;
       }
+
+
+      template <typename T,typename U, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=32>
+      size_t copy_keys_if_raw(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
+                   U* output,
+                   Rule rule,
+                   cudaStream_t s=0)
+      {
+
+         //Figure out Blocks to use
+         size_t nBlocks=input.size()/BLOCKSIZE; 
+         if (nBlocks==0){nBlocks+=1;}
+         
+         //Allocate with Mempool
+         const size_t memory_for_pool = 8*nBlocks*sizeof(uint32_t) ;
+         Cuda_mempool mPool(memory_for_pool,s);
+
+         uint32_t* d_counts;
+         uint32_t* d_offsets;
+         cudaStreamSynchronize(s);
+         d_counts=(uint32_t*)mPool.allocate(nBlocks*sizeof(uint32_t));
+
+               
+         //Phase 1 -- Calculate per warp workload
+         split::tools::scan_reduce_raw<<<nBlocks,BLOCKSIZE,0,s>>>(input.data(),d_counts,rule,input.size());
+         d_offsets=(uint32_t*)mPool.allocate(nBlocks*sizeof(uint32_t));
+         cudaStreamSynchronize(s);
+
+
+         //Step 2 -- Exclusive Prefix Scan on offsets
+         if (nBlocks==1){
+            split_prefix_scan_raw<uint32_t,2,WARP>(d_counts,d_offsets,mPool,nBlocks,s);
+         }else{
+            split_prefix_scan_raw<uint32_t,BLOCKSIZE,WARP>(d_counts,d_offsets,mPool,nBlocks,s);
+         }
+         cudaStreamSynchronize(s);
+
+
+         //Step 3 -- Compaction
+         uint32_t* retval=(uint32_t*)mPool.allocate(sizeof(uint32_t));
+         split::tools::split_compact_keys_raw<T,U,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int),s>>>(input.data(),d_counts,d_offsets,output,rule,input.size(),nBlocks,retval);
+         cudaStreamSynchronize(s);
+         uint32_t numel;
+         cudaMemcpyAsync(&numel,retval,sizeof(uint32_t),cudaMemcpyDeviceToHost,s);
+         cudaStreamSynchronize(s);
+         return numel;
+      }
+
    }//namespace tools
 }//namespace split

@@ -38,7 +38,7 @@ auto execute_and_time(const char* name,Fn fn, Args && ... args) ->bool{
    stop = std::chrono::high_resolution_clock::now();
    auto duration = duration_cast<microseconds>(stop- start).count();
    total_time+=duration;
-   std::cout<<name<<" took "<<total_time<<" us"<<std::endl;
+   //std::cout<<name<<" took "<<total_time<<" us"<<std::endl;
    return retval;
 }
 
@@ -455,7 +455,7 @@ bool test_hashmap_4(int power){
 
    cudaStream_t s ;
    cudaStreamCreate(&s);
-   hmap.clean_tombstones_async(s);
+   hmap.clean_tombstones(s);
    cpuOK=recover_odd_elements(hmap,src);
    if (!cpuOK){
       std::cout<<"Error at recovering odd elements 2"<<std::endl;
@@ -517,7 +517,6 @@ TEST(HashmapUnitTets ,Test_Clear_Perf_Host){
       std::cout<<"Error at recovering all elements 1"<<std::endl;
       expect_true(false);
    }
-   hmap.stats();
    hmap.optimizeGPU();
    cudaDeviceSynchronize();
    std::chrono::time_point<std::chrono::_V2::system_clock, std::chrono::_V2::system_clock::duration> start,stop;
@@ -525,8 +524,7 @@ TEST(HashmapUnitTets ,Test_Clear_Perf_Host){
    hmap.clear();
    stop = std::chrono::high_resolution_clock::now();
    auto duration = duration_cast<microseconds>(stop- start).count();
-   std::cout<<"Clear took "<<duration<<" us status= "<<hmap.peek_status()<<std::endl;
-   hmap.stats();
+   //std::cout<<"Clear took "<<duration<<" us status= "<<hmap.peek_status()<<std::endl;
 }
 
 TEST(HashmapUnitTets ,Test_Clear_Perf_Device){
@@ -542,7 +540,6 @@ TEST(HashmapUnitTets ,Test_Clear_Perf_Device){
       std::cout<<"Error at recovering all elements 1"<<std::endl;
       expect_true(false);
    }
-   hmap.stats();
    hmap.optimizeGPU();
    cudaDeviceSynchronize();
    std::chrono::time_point<std::chrono::_V2::system_clock, std::chrono::_V2::system_clock::duration> start,stop;
@@ -550,8 +547,7 @@ TEST(HashmapUnitTets ,Test_Clear_Perf_Device){
    hmap.clear(targets::device);
    stop = std::chrono::high_resolution_clock::now();
    auto duration = duration_cast<microseconds>(stop- start).count();
-   std::cout<<"Clear took "<<duration<<" us status= "<<hmap.peek_status()<<std::endl;
-   hmap.stats();
+   //std::cout<<"Clear took "<<duration<<" us status= "<<hmap.peek_status()<<std::endl;
 }
 
 TEST(HashmapUnitTets ,Test_Resize_Perf_Host){
@@ -573,7 +569,7 @@ TEST(HashmapUnitTets ,Test_Resize_Perf_Host){
    hmap.resize(sz+2);
    stop = std::chrono::high_resolution_clock::now();
    auto duration = duration_cast<microseconds>(stop- start).count();
-   std::cout<<"Resize took "<<duration<<" us status= "<<hmap.peek_status()<<std::endl;
+   //std::cout<<"Resize took "<<duration<<" us status= "<<hmap.peek_status()<<std::endl;
 }
 
 
@@ -596,7 +592,7 @@ TEST(HashmapUnitTets ,Test_Resize_Perf_Device){
    hmap.resize(sz+2,targets::device);
    stop = std::chrono::high_resolution_clock::now();
    auto duration = duration_cast<microseconds>(stop- start).count();
-   std::cout<<"Resize took "<<duration<<" us"<<std::endl;
+   //std::cout<<"Resize took "<<duration<<" us"<<std::endl;
    expect_true(hmap.peek_status()==status::success);
 }
 
@@ -620,7 +616,6 @@ TEST(HashmapUnitTets ,Test_ErrorCodes_ExtractKeysByPattern){
    bool cpuOK=recover_all_elements(hmap,src);
    expect_true(cpuOK);
    expect_true(hmap.peek_status()==status::success);
-   hmap.stats();
    ivector out;
    hmap.extractKeysByPattern(out,Rule<uint32_t,uint32_t>());
    for (auto i:out){
@@ -629,6 +624,24 @@ TEST(HashmapUnitTets ,Test_ErrorCodes_ExtractKeysByPattern){
 }
 
 
+TEST(HashmapUnitTets ,Test_Copy_Metadata){
+   const int sz=18;
+   vector src(1<<sz);
+   create_input(src);
+   hashmap hmap;
+   hmap.insert(src.data(),src.size());
+   bool cpuOK=recover_all_elements(hmap,src);
+   expect_true(cpuOK);
+   expect_true(hmap.peek_status()==status::success);
+   Info* info;
+   cudaMallocHost((void **) &info, sizeof(Info));
+   hmap.copyMetadata(info);
+   cudaDeviceSynchronize();
+   expect_true(1<<info->sizePower==hmap.bucket_count());
+   expect_true(info->tombstoneCounter==hmap.tombstone_count());
+   cudaFree(info);
+
+}
 
 int main(int argc, char* argv[]){
    srand(time(NULL));
