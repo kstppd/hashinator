@@ -872,18 +872,11 @@ namespace Hashinator{
 
       HASHINATOR_HOSTONLY
       size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, cudaStream_t s=0){
-         elements.resize(1<<_mapInfo->sizePower);
-         elements.optimizeGPU(s);
-         //Extract element **keys** matching the Pattern Rule(element)==true;
+         //Extract all keys
          auto rule=[] __host__ __device__ (const hash_pair<KEY_TYPE, VAL_TYPE>& kval)->bool{
             return kval.first!=EMPTYBUCKET && kval.first != TOMBSTONE;
          };
-         size_t retval=split::tools::copy_keys_if_raw
-                       <hash_pair<KEY_TYPE, VAL_TYPE>,KEY_TYPE,decltype(rule),defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
-                       (buckets,elements.data(),rule,s);
-         //Remove unwanted elements
-         elements.erase(&(elements.at(retval)),elements.end());
-         return retval;
+         return extractKeysByPattern(elements,rule,s);
       }
 
       void clean_tombstones(cudaStream_t s=0){
