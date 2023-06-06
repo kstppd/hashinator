@@ -16,5 +16,5 @@ jobs:
     - uses: actions/checkout@v3
     - name: run_tests
       shell: bash
-      run: ls ; make gtest_hashmap.o
+      run: ls ;cd tests &&  make gtest_hashmap.o
     
