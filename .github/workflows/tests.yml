@@ -16,5 +16,5 @@ jobs:
     - uses: actions/checkout@v3
     - name: run_tests
       shell: bash
-      run: ls ; echo "/usr/local/" >> $GITHUB_PATH ;echo $PATH; gcc --help
+      run: ls ; echo "/usr/local/" >> $GITHUB_PATH ;echo $PATH; nvcc --help
     
