@@ -83,11 +83,66 @@ namespace Hashinator{
          if(dst[tid].first!=EMPTYBUCKET){
             dst[tid].first=EMPTYBUCKET;
             dst[tid].second=VAL_TYPE();
-            atomicSub((unsigned int*)fill,1);
+            size_t res=*fill-1;
+            atomicExch((unsigned long long int*)fill,res);
          }
          return;
       }
 
+      /*
+       * Returns the submask needed by each Virtual Warp during voting
+       */
+      template <typename T>
+      __device__  __forceinline__
+      T getIntraWarpMask(T n ,T l ,T r){
+         uint32_t num = ((T(1)<<r)-1)^((1<<(T(1)-1))-1);
+         return (n^num);
+      };
+      
+      /*
+       * Wraps over ballots for AMD and NVIDIA
+       */
+      template <typename T>
+      __device__  __forceinline__
+      T warpVote(bool predicate,T votingMask=T(-1)){
+         #ifdef __CUDACC__
+         return __ballot_sync(votingMask,predicate);
+         #endif 
+
+         #ifdef __HIP_PLATFORM_AMD__
+         return __ballot(predicate);
+         #endif 
+      }
+
+      /*
+       * Wraps over __ffs for AMD and NVIDIA
+       */
+      template <typename T>
+      __device__  __forceinline__
+      int findFirstSig(T mask){
+         #ifdef __CUDACC__
+         return __ffs ( mask);
+         #endif 
+
+         #ifdef __HIP_PLATFORM_AMD__
+         return __ffsll( mask);
+         #endif 
+      }
+
+      /*
+       * Wraps over __ffs for AMD and NVIDIA
+       */
+      template <typename T>
+      __device__  __forceinline__
+      int warpVoteAny(bool predicate,T votingMask=T(-1)){
+         #ifdef __CUDACC__
+         return __any_sync(votingMask,predicate);
+         #endif 
+
+         #ifdef __HIP_PLATFORM_AMD__
+         return __any(predicate);
+         #endif 
+      }
       
          /*Warp Synchronous hashing kernel for hashinator's internal use:
        * This method uses 32-thread Warps to hash an element from src.
@@ -134,17 +189,12 @@ namespace Hashinator{
             return;
          }
 
-         auto getIntraWarpMask = [](unsigned int n ,unsigned int l ,unsigned int r)->unsigned int{
-            int num = ((1<<r)-1)^((1<<(l-1))-1);
-            return (n^num);
-         };
-
          uint32_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=getIntraWarpMask<uint32_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
          hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[wid];
          const int bitMask = (1 <<(sizePower )) - 1; 
@@ -157,15 +207,16 @@ namespace Hashinator{
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
             //If we encounter empty  break as the
-            uint32_t mask_already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidate.first)&submask;
-            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            auto mask_already_exists=warpVote(buckets[probingindex].first==candidate.first,SPLIT_VOTING_MASK)&submask;
+            auto emptyFound = warpVote(buckets[probingindex].first==EMPTYBUCKET,SPLIT_VOTING_MASK)&submask;
+
             //If we encountered empty and there is no duplicate in this probing
             //chain we are done.
             if (!mask_already_exists && emptyFound){
                break;
             }
             if (mask_already_exists){
-               int winner =__ffs ( mask_already_exists ) -1;
+               int winner =findFirstSig(mask_already_exists) -1;
                winner-=(subwarp_relative_index)*VIRTUALWARP;
                if(w_tid==winner){
                   atomicExch(&buckets[probingindex].second,candidate.second);
@@ -182,9 +233,9 @@ namespace Hashinator{
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
             //vote for available emptybuckets in warp region
-            uint32_t mask = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            auto mask =warpVote(buckets[probingindex].first==EMPTYBUCKET,SPLIT_VOTING_MASK)&submask;
             while(mask){
-               int winner =__ffs ( mask ) -1;
+               int winner =findFirstSig ( mask ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
                   KEY_TYPE old = atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidate.first);
@@ -204,7 +255,7 @@ namespace Hashinator{
                      done=true;
                   }
                }
-               int warp_done=__any_sync(submask,done);
+               int warp_done=warpVoteAny(done,submask);
                if(warp_done>0){
                   return;
                }
@@ -261,17 +312,12 @@ namespace Hashinator{
             return;
          }
 
-         auto getIntraWarpMask = [](unsigned int n ,unsigned int l ,unsigned int r)->unsigned int{
-            int num = ((1<<r)-1)^((1<<(l-1))-1);
-            return (n^num);
-         };
-
          uint32_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=getIntraWarpMask<uint32_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
          KEY_TYPE& candidateKey=keys[wid];
          VAL_TYPE& candidateVal=vals[wid];
@@ -285,15 +331,15 @@ namespace Hashinator{
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
             //If we encounter empty  break as the
-            uint32_t mask_already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidateKey)&submask;
-            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            auto mask_already_exists = warpVote(buckets[probingindex].first==candidateKey,SPLIT_VOTING_MASK)&submask;
+            auto emptyFound = warpVote(buckets[probingindex].first==EMPTYBUCKET,SPLIT_VOTING_MASK)&submask;
             //If we encountered empty and there is no duplicate in this probing
             //chain we are done.
             if (!mask_already_exists && emptyFound){
                break;
             }
             if (mask_already_exists){
-               int winner =__ffs ( mask_already_exists ) -1;
+               int winner =findFirstSig( mask_already_exists ) -1;
                winner-=(subwarp_relative_index)*VIRTUALWARP;
                if(w_tid==winner){
                   atomicExch(&buckets[probingindex].second,candidateVal);
@@ -310,9 +356,9 @@ namespace Hashinator{
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
             //vote for available emptybuckets in warp region
-            uint32_t mask = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            auto mask = warpVote(buckets[probingindex].first==EMPTYBUCKET,SPLIT_VOTING_MASK)&submask;
             while(mask){
-               int winner =__ffs ( mask ) -1;
+               int winner =findFirstSig ( mask ) -1;
                int sub_winner=winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
                   KEY_TYPE old = atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
@@ -332,7 +378,7 @@ namespace Hashinator{
                      done=true;
                   }
                }
-               int warp_done=__any_sync(submask,done);
+               int warp_done=warpVoteAny(done,submask);
                if(warp_done>0){
                   return;
                }
@@ -366,17 +412,12 @@ namespace Hashinator{
          const size_t w_tid=tid%VIRTUALWARP;
          unsigned int subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
          
-         auto getIntraWarpMask = [](unsigned int n ,unsigned int l ,unsigned int r)->unsigned int{
-            int num = ((1<<r)-1)^((1<<(l-1))-1);
-            return (n^num);
-         };
-
          uint32_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=getIntraWarpMask<uint32_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
          KEY_TYPE& candidateKey=keys[wid];
          VAL_TYPE& candidateVal=vals[wid];
@@ -388,14 +429,14 @@ namespace Hashinator{
             
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
-            uint32_t maskExists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidateKey)&submask;
-            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            auto maskExists =warpVote(buckets[probingindex].first==candidateKey,SPLIT_VOTING_MASK)&submask;
+            auto emptyFound =warpVote(buckets[probingindex].first==EMPTYBUCKET,SPLIT_VOTING_MASK)&submask;
             //If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
             if (!maskExists && emptyFound){
                return;
             }
             if (maskExists){
-               int winner =__ffs ( maskExists ) -1;
+               int winner =findFirstSig( maskExists ) -1;
                winner-=(subwarp_relative_index)*VIRTUALWARP;
                if(w_tid==winner){
                   atomicExch(&candidateVal,buckets[probingindex].second);
@@ -439,17 +480,12 @@ namespace Hashinator{
             return;
          }
 
-         auto getIntraWarpMask = [](unsigned int n ,unsigned int l ,unsigned int r)->unsigned int{
-            int num = ((1<<r)-1)^((1<<(l-1))-1);
-            return (n^num);
-         };
-
          uint32_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=getIntraWarpMask<uint32_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
          KEY_TYPE& candidateKey=keys[wid];
          const int bitMask = (1 <<(sizePower )) - 1; 
@@ -460,14 +496,14 @@ namespace Hashinator{
             
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
-            uint32_t maskExists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidateKey)&submask;
-            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            auto maskExists = warpVote(buckets[probingindex].first==candidateKey,SPLIT_VOTING_MASK)&submask;
+            auto emptyFound = warpVote(buckets[probingindex].first==EMPTYBUCKET,SPLIT_VOTING_MASK)&submask;
             //If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
             if (!maskExists && emptyFound){
                return;
             }
             if (maskExists){
-               int winner =__ffs ( maskExists ) -1;
+               int winner =findFirstSig ( maskExists ) -1;
                winner-=(subwarp_relative_index)*VIRTUALWARP;
                if(w_tid==winner){
                   atomicExch(&buckets[probingindex].first, TOMBSTONE);
