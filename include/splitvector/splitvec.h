@@ -271,10 +271,9 @@ namespace split{
             cudaGetDevice(&device);
             CheckErrors("Prefetch GPU-Device-ID");
             
-            //First make sure _capacity and _size do not page-fault ie prefetch them to host
-            //This is done because _capacity and _size would page-fault otherwise as pointed by Markus
+            //First make sure _capacity does not page-fault ie prefetch it to host
+            //This is done because _capacity would page-fault otherwise as pointed by Markus
             cudaMemPrefetchAsync(_capacity,sizeof(size_t),cudaCpuDeviceId,stream);
-            cudaMemPrefetchAsync(_size,sizeof(size_t),cudaCpuDeviceId,stream);
 
             //Now prefetch everything to device
             cudaMemPrefetchAsync(_data ,capacity()*sizeof(T),device,stream);
