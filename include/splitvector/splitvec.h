@@ -270,6 +270,13 @@ namespace split{
             int device;
             cudaGetDevice(&device);
             CheckErrors("Prefetch GPU-Device-ID");
+            
+            //First make sure _capacity and _size do not page-fault ie prefetch them to host
+            //This is done because _capacity and _size would page-fault otherwise as pointed by Markus
+            cudaMemPrefetchAsync(_capacity,sizeof(size_t),cudaCpuDeviceId,stream);
+            cudaMemPrefetchAsync(_size,sizeof(size_t),cudaCpuDeviceId,stream);
+
+            //Now prefetch everything to device
             cudaMemPrefetchAsync(_data ,capacity()*sizeof(T),device,stream);
             cudaMemPrefetchAsync(_size ,sizeof(size_t),device,stream);
             cudaMemPrefetchAsync(_capacity ,sizeof(size_t),device,stream);
@@ -278,9 +285,9 @@ namespace split{
 
          /*Manually prefetch data on Host*/
          HOSTONLY void optimizeCPU(cudaStream_t stream = 0)noexcept{
-            cudaMemPrefetchAsync(_data ,capacity()*sizeof(T),cudaCpuDeviceId,stream);
-            cudaMemPrefetchAsync(_size ,sizeof(size_t),cudaCpuDeviceId,stream);
             cudaMemPrefetchAsync(_capacity ,sizeof(size_t),cudaCpuDeviceId,stream);
+            cudaMemPrefetchAsync(_size ,sizeof(size_t),cudaCpuDeviceId,stream);
+            cudaMemPrefetchAsync(_data ,capacity()*sizeof(T),cudaCpuDeviceId,stream);
             CheckErrors("Prefetch CPU");
          }
 
