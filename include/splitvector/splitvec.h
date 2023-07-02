@@ -89,7 +89,7 @@ namespace split{
          }
 
          /*Internal range check for use in .at()*/
-         HOSTDEVICE void _rangeCheck(size_t index){
+         HOSTDEVICE void _rangeCheck(size_t index)const noexcept{
             if (index>=size()){printf("Tried indexing %d/%d\n",(int)index,(int)size());}
             assert(index<size() &&  "out of range ");
          }
