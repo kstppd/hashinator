@@ -4,6 +4,9 @@
 #include <random>
 #include "../../include/hashinator/hashinator.h"
 #include <gtest/gtest.h>
+#include <random>
+#include <algorithm>
+#include <limits.h>
 
 #define BLOCKSIZE 32
 #define expect_true EXPECT_TRUE
@@ -168,6 +171,7 @@ bool recover_odd_elements(const hashmap& hmap, vector& src){
 bool recover_all_elements(const hashmap& hmap, vector& src){
    for (size_t i=0; i<src.size(); ++i){
       const hash_pair<key_type,val_type>& kval=src.at(i);
+      //std::cout<<"Validating "<<kval.first<<std::endl;
       auto retval=hmap.find(kval.first);
       if (retval==hmap.end()){
          std::cout<<"INVALID= "<<kval.first<<std::endl;
@@ -177,6 +181,7 @@ bool recover_all_elements(const hashmap& hmap, vector& src){
       if (!sane){ 
          return false; 
       }
+   //std::cout<<"Key validated "<<retval->first<<" "<<retval->second<<std::endl;
    }
    return true;
 }
@@ -642,6 +647,57 @@ TEST(HashmapUnitTets ,Test_Copy_Metadata){
    cudaFree(info);
 
 }
+
+std::vector<key_type> generateUniqueRandomKeys(size_t size, size_t range=std::numeric_limits<int>::max()) {
+    std::vector<key_type> elements;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<int> dist(1, range);
+
+    for (int i = 0; i < size; ++i) {
+        key_type randomNum = i;//dist(gen);
+        if (std::find(elements.begin(), elements.end(), randomNum) == elements.end()) {
+            elements.push_back(randomNum);
+        } else {
+            --i;  
+        }
+    }
+    return elements;
+}
+
+void insertDuplicates(std::vector<key_type>& vec, key_type element, size_t count) {
+   if (count>0){
+    vec.insert(vec.end(), count, element);
+   }
+   srand(time(NULL));
+   std::random_shuffle(vec.begin(),vec.end());
+}
+
+TEST(HashmapUnitTets ,Test_Duplicate_Insertion){
+   const int sz=10;
+   for (size_t duplicates=2; duplicates<=(1<<sz);duplicates*=2){
+      std::vector<key_type> keys=generateUniqueRandomKeys(1<<sz);
+
+      for (size_t i = 0; i < duplicates;i++){
+         insertDuplicates(keys,keys[0],1);
+      }
+
+      vector src(keys.size());
+      for (size_t i =0;i<keys.size(); i++){
+         src[i].first=keys[i];
+         src[i].second=keys[i];
+      }
+      hashmap hmap;
+      hmap.insert(src.data(),src.size(),1);
+      bool cpuOK=recover_all_elements(hmap,src);
+      expect_true(cpuOK);
+      expect_true(hmap.peek_status()==status::success);
+      expect_true(hmap.size()==((1<<sz)));
+   }
+}
+
+
+
 
 int main(int argc, char* argv[]){
    srand(time(NULL));

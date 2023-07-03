@@ -151,29 +151,6 @@ namespace Hashinator{
          const size_t hashIndex = HashFunction::_hash(candidate.first,sizePower);
          const size_t optimalindex=(hashIndex) & bitMask;
 
-         //Check for duplicates
-         for(size_t i=0; i<(*d_overflow); i+=VIRTUALWARP){
-            
-            //Get the position we should be looking into
-            size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
-            //If we encounter empty  break as the
-            uint32_t mask_already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidate.first)&submask;
-            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
-            //If we encountered empty and there is no duplicate in this probing
-            //chain we are done.
-            if (!mask_already_exists && emptyFound){
-               break;
-            }
-            if (mask_already_exists){
-               int winner =__ffs ( mask_already_exists ) -1;
-               winner-=(subwarp_relative_index)*VIRTUALWARP;
-               if(w_tid==winner){
-                  atomicExch(&buckets[probingindex].second,candidate.second);
-               }
-               return;
-             }
-         }
-
 
          //No duplicates so we insert
          bool done=false;
@@ -181,8 +158,22 @@ namespace Hashinator{
 
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
+
             //vote for available emptybuckets in warp region
+            //Note that this has to be done before voting for already existing elements (below)
             uint32_t mask = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+
+            //Check if this elements already exists
+            uint32_t already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidate.first)&submask;
+            if (already_exists){
+               int winner =__ffs ( already_exists ) -1;
+               int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
+               if (w_tid==sub_winner){
+                  atomicExch(&buckets[probingindex].second,candidate.second);
+               }
+               return;
+            }
+
             while(mask){
                int winner =__ffs ( mask ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
@@ -279,38 +270,28 @@ namespace Hashinator{
          const size_t hashIndex = HashFunction::_hash(candidateKey,sizePower);
          const size_t optimalindex=(hashIndex) & bitMask;
 
-         //Check for duplicates
-         for(size_t i=0; i<(*d_overflow); i+=VIRTUALWARP){
-            
-            //Get the position we should be looking into
-            size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
-            //If we encounter empty  break as the
-            uint32_t mask_already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidateKey)&submask;
-            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
-            //If we encountered empty and there is no duplicate in this probing
-            //chain we are done.
-            if (!mask_already_exists && emptyFound){
-               break;
-            }
-            if (mask_already_exists){
-               int winner =__ffs ( mask_already_exists ) -1;
-               winner-=(subwarp_relative_index)*VIRTUALWARP;
-               if(w_tid==winner){
-                  atomicExch(&buckets[probingindex].second,candidateVal);
-               }
-               return;
-             }
-         }
-
-
          //No duplicates so we insert
          bool done=false;
          for(size_t i=0; i<(1<<sizePower); i+=VIRTUALWARP){
 
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
+
             //vote for available emptybuckets in warp region
+            //Note that this has to be done before voting for already existing elements (below)
             uint32_t mask = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+
+            //Check if this elements already exists
+            uint32_t already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidateKey)&submask;
+            if (already_exists){
+               int winner =__ffs ( already_exists ) -1;
+               int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
+               if (w_tid==sub_winner){
+                  atomicExch(&buckets[probingindex].second,candidateVal);
+               }
+               return;
+            }
+
             while(mask){
                int winner =__ffs ( mask ) -1;
                int sub_winner=winner-(subwarp_relative_index)*VIRTUALWARP;
