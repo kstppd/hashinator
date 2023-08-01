@@ -622,7 +622,7 @@ TEST(HashmapUnitTets ,Test_ErrorCodes_ExtractKeysByPattern){
    expect_true(cpuOK);
    expect_true(hmap.peek_status()==status::success);
    ivector out;
-   hmap.extractKeysByPattern(out,Rule<uint32_t,uint32_t>());
+   hmap.extractKeysByPattern(out,Rule<key_type,key_type>());
    for (auto i:out){
       expect_true(i<1000);
    }
