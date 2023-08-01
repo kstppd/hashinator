@@ -31,6 +31,7 @@
 #include "hashfunctions.h"
 #include "defaults.h"
 #include "../common.h"
+#include "../hashinator_atomics.h"
 
 namespace Hashinator{
 
@@ -56,11 +57,11 @@ namespace Hashinator{
          if (tid>=Nsrc){return ;}
          hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[tid];
          int bitMask = (1 <<(sizePower )) - 1; 
-         uint32_t hashIndex = HashFunction::_hash(candidate.first,sizePower);
+         auto hashIndex = HashFunction::_hash(candidate.first,sizePower);
 
          for(size_t i =0; i< (1<<sizePower);++i){
             uint32_t probing_index=(hashIndex+i)&bitMask;
-            KEY_TYPE old = atomicCAS(&dst[probing_index].first,candidate.first,EMPTYBUCKET);
+            KEY_TYPE old = h_atomicCAS(&dst[probing_index].first,candidate.first,EMPTYBUCKET);
             if (old==candidate.first){
                return ;
             }
@@ -83,7 +84,7 @@ namespace Hashinator{
          if(dst[tid].first!=EMPTYBUCKET){
             dst[tid].first=EMPTYBUCKET;
             dst[tid].second=VAL_TYPE();
-            atomicSub((unsigned int*)fill,1);
+            h_atomicSub((unsigned int*)fill,1);
          }
          return;
       }
@@ -148,8 +149,8 @@ namespace Hashinator{
          }
          hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[wid];
          const int bitMask = (1 <<(sizePower )) - 1; 
-         const size_t hashIndex = HashFunction::_hash(candidate.first,sizePower);
-         const size_t optimalindex=(hashIndex) & bitMask;
+         const auto hashIndex = HashFunction::_hash(candidate.first,sizePower);
+         const auto  optimalindex=(hashIndex) & bitMask;
 
 
          //No duplicates so we insert
@@ -169,7 +170,7 @@ namespace Hashinator{
                int winner =__ffs ( already_exists ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
-                  atomicExch(&buckets[probingindex].second,candidate.second);
+                  h_atomicExch(&buckets[probingindex].second,candidate.second);
                }
                return;
             }
@@ -178,20 +179,20 @@ namespace Hashinator{
                int winner =__ffs ( mask ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
-                  KEY_TYPE old = atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidate.first);
+                  KEY_TYPE old = h_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidate.first);
                   if (old == EMPTYBUCKET){
                      size_t  overflow = (probingindex<optimalindex)?(1<<sizePower):(probingindex-optimalindex);
-                     atomicExch(&buckets[probingindex].second,candidate.second);
+                     h_atomicExch(&buckets[probingindex].second,candidate.second);
                      //For some reason this is faster than callign atomicMax without the if
                      if (overflow>*d_overflow){
-                        atomicExch(( unsigned long long*)d_overflow,(unsigned long long)nextPow2(overflow));
+                        h_atomicExch(( unsigned long long*)d_overflow,(unsigned long long)nextPow2(overflow));
                      }
-                     atomicAdd((unsigned long long int*)d_fill, 1);
+                     h_atomicAdd(d_fill, 1);
                      done=true;
                   }
                   //Parallel stuff are fun. Major edge case!
                   if (old==candidate.first){
-                     atomicExch(&buckets[probingindex].second,candidate.second);
+                     h_atomicExch(&buckets[probingindex].second,candidate.second);
                      done=true;
                   }
                }
@@ -202,7 +203,7 @@ namespace Hashinator{
                mask ^= (1UL << winner);
             }
          }
-         atomicExch((int*)err,status::fail);
+         h_atomicExch((uint32_t*)err,(uint32_t)status::fail);
       }
 
 
@@ -267,8 +268,8 @@ namespace Hashinator{
          KEY_TYPE& candidateKey=keys[wid];
          VAL_TYPE& candidateVal=vals[wid];
          const int bitMask = (1 <<(sizePower )) - 1; 
-         const size_t hashIndex = HashFunction::_hash(candidateKey,sizePower);
-         const size_t optimalindex=(hashIndex) & bitMask;
+         const auto hashIndex = HashFunction::_hash(candidateKey,sizePower);
+         const auto optimalindex=(hashIndex) & bitMask;
 
          //No duplicates so we insert
          bool done=false;
@@ -287,7 +288,7 @@ namespace Hashinator{
                int winner =__ffs ( already_exists ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
-                  atomicExch(&buckets[probingindex].second,candidateVal);
+                  h_atomicExch(&buckets[probingindex].second,candidateVal);
                }
                return;
             }
@@ -296,20 +297,20 @@ namespace Hashinator{
                int winner =__ffs ( mask ) -1;
                int sub_winner=winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
-                  KEY_TYPE old = atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
+                  KEY_TYPE old = h_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
                   if (old == EMPTYBUCKET){
                      size_t  overflow = (probingindex<optimalindex)?(1<<sizePower):(probingindex-optimalindex);
-                     atomicExch(&buckets[probingindex].second,candidateVal);
+                     h_atomicExch(&buckets[probingindex].second,candidateVal);
                      //For some reason this is faster than callign atomicMax without the if
                      if (overflow>*d_overflow){
-                        atomicExch(( unsigned long long*)d_overflow,(unsigned long long)nextPow2(overflow));
+                        h_atomicExch(( unsigned long long*)d_overflow,(unsigned long long)nextPow2(overflow));
                      }
-                     atomicAdd((unsigned long long int*)d_fill, 1);
+                     h_atomicAdd(d_fill, 1);
                      done=true;
                   }
                   //Parallel stuff are fun. Major edge case!
                   if (old==candidateKey){
-                     atomicExch(&buckets[probingindex].second,candidateVal);
+                     h_atomicExch(&buckets[probingindex].second,candidateVal);
                      done=true;
                   }
                }
@@ -320,7 +321,7 @@ namespace Hashinator{
                mask ^= (1UL << winner);
             }
          }
-         atomicExch((int*)err,status::fail);
+         h_atomicExch((uint32_t*)err,(uint32_t)status::fail);
       }
 
       /*
@@ -362,7 +363,7 @@ namespace Hashinator{
          KEY_TYPE& candidateKey=keys[wid];
          VAL_TYPE& candidateVal=vals[wid];
          const int bitMask = (1 <<(sizePower )) - 1; 
-         const size_t hashIndex = HashFunction::_hash(candidateKey,sizePower);
+         const auto hashIndex = HashFunction::_hash(candidateKey,sizePower);
 
          //Check for duplicates
          for(size_t i=0; i<maxoverflow; i+=VIRTUALWARP){
@@ -379,7 +380,7 @@ namespace Hashinator{
                int winner =__ffs ( maskExists ) -1;
                winner-=(subwarp_relative_index)*VIRTUALWARP;
                if(w_tid==winner){
-                  atomicExch(&candidateVal,buckets[probingindex].second);
+                  h_atomicExch(&candidateVal,buckets[probingindex].second);
                }
                return;
              }
@@ -434,7 +435,7 @@ namespace Hashinator{
          }
          KEY_TYPE& candidateKey=keys[wid];
          const int bitMask = (1 <<(sizePower )) - 1; 
-         const size_t hashIndex = HashFunction::_hash(candidateKey,sizePower);
+         const auto  hashIndex = HashFunction::_hash(candidateKey,sizePower);
 
          //Check for duplicates
          for(size_t i=0; i<maxoverflow; i+=VIRTUALWARP){
@@ -451,8 +452,8 @@ namespace Hashinator{
                int winner =__ffs ( maskExists ) -1;
                winner-=(subwarp_relative_index)*VIRTUALWARP;
                if(w_tid==winner){
-                  atomicExch(&buckets[probingindex].first, TOMBSTONE);
-                  atomicAdd((unsigned long long int*)d_tombstoneCounter, 1);
+                  h_atomicExch(&buckets[probingindex].first, TOMBSTONE);
+                  h_atomicAdd(d_tombstoneCounter, 1);
                }
                return;
              }

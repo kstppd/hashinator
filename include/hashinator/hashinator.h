@@ -26,6 +26,7 @@
 #include <cassert>
 #include <limits>
 #include "../common.h"
+#include "../hashinator_atomics.h"
 #include "../splitvector/splitvec.h"
 #include "../splitvector/split_allocators.h"
 #include "hashfunctions.h"
@@ -83,7 +84,7 @@ namespace Hashinator{
        // Wrapper over available hash functions 
       HASHINATOR_HOSTDEVICE
       uint32_t hash(KEY_TYPE in) const {
-          static_assert(std::is_arithmetic<KEY_TYPE>::value && sizeof(KEY_TYPE) <= sizeof(uint32_t));
+          static_assert(std::is_arithmetic<KEY_TYPE>::value );
           return HashFunction::_hash(in,_mapInfo->sizePower);
        }
       
@@ -312,7 +313,7 @@ namespace Hashinator{
       HASHINATOR_HOSTONLY
       VAL_TYPE& _at(const KEY_TYPE& key) {
          int bitMask = (1 << _mapInfo->sizePower) - 1; // For efficient modulo of the array size
-         uint32_t hashIndex = hash(key);
+         auto hashIndex = hash(key);
 
          // Try to find the matching bucket.
          for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
@@ -375,7 +376,7 @@ namespace Hashinator{
       HASHINATOR_HOSTONLY
       const VAL_TYPE& _at(const KEY_TYPE& key) const {
          int bitMask = (1 << _mapInfo->sizePower) - 1; // For efficient modulo of the array size
-         uint32_t hashIndex = hash(key);
+         auto hashIndex = hash(key);
 
          // Try to find the matching bucket.
          for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
@@ -708,7 +709,7 @@ namespace Hashinator{
       HASHINATOR_HOSTONLY
       const const_iterator find(KEY_TYPE key) const {
          int bitMask = (1 << _mapInfo->sizePower) - 1; // For efficient modulo of the array size
-         uint32_t hashIndex = hash(key);
+         auto hashIndex = hash(key);
 
          // Try to find the matching bucket.
          for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
@@ -735,7 +736,7 @@ namespace Hashinator{
       iterator find(KEY_TYPE key) {
          performCleanupTasks();
          int bitMask = (1 << _mapInfo->sizePower) - 1; // For efficient modulo of the array size
-         uint32_t hashIndex = hash(key);
+         auto hashIndex = hash(key);
 
          // Try to find the matching bucket.
          for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
@@ -1145,7 +1146,7 @@ namespace Hashinator{
       HASHINATOR_DEVICEONLY 
       device_iterator device_find(KEY_TYPE key) {
          int bitMask = (1 << _mapInfo->sizePower) - 1; // For efficient modulo of the array size
-         uint32_t hashIndex = hash(key);
+         auto hashIndex = hash(key);
 
          // Try to find the matching bucket.
          for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
@@ -1171,7 +1172,7 @@ namespace Hashinator{
       HASHINATOR_DEVICEONLY 
       const const_device_iterator device_find(KEY_TYPE key)const {
          int bitMask = (1 << _mapInfo->sizePower) - 1; // For efficient modulo of the array size
-         uint32_t hashIndex = hash(key);
+         auto hashIndex = hash(key);
 
          // Try to find the matching bucket.
          for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
@@ -1254,9 +1255,9 @@ namespace Hashinator{
          if (item==EMPTYBUCKET || item==TOMBSTONE){return ++keyPos;}
 
          //Let's simply add a tombstone here
-         atomicExch(&buckets[index].first,TOMBSTONE);
-         atomicSub((unsigned int*)(&_mapInfo->fill), 1);
-         atomicAdd((unsigned int*)(&_mapInfo->tombstoneCounter), 1);
+         h_atomicExch(&buckets[index].first,TOMBSTONE);
+         h_atomicSub((unsigned int*)(&_mapInfo->fill), 1);
+         h_atomicAdd((unsigned int*)(&_mapInfo->tombstoneCounter), 1);
          ++keyPos;
          return keyPos;
       }
@@ -1268,23 +1269,23 @@ namespace Hashinator{
       HASHINATOR_DEVICEONLY
       void insert_element(const KEY_TYPE& key,VAL_TYPE value, size_t &thread_overflowLookup) {
          int bitMask = (1 <<_mapInfo->sizePower) - 1; // For efficient modulo of the array size
-         uint32_t hashIndex = hash(key);
+         auto hashIndex = hash(key);
          size_t i =0;
          while(i<buckets.size()){
             uint32_t vecindex=(hashIndex + i) & bitMask;
-            KEY_TYPE old = atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, key);
+            KEY_TYPE old = h_atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, key);
             //Key does not exist so we create it and incerement fill
             if (old == EMPTYBUCKET){
-               atomicExch(&buckets[vecindex].first,key);
-               atomicExch(&buckets[vecindex].second,value);
-               atomicAdd((unsigned int*)(&_mapInfo->fill), 1);
+               h_atomicExch(&buckets[vecindex].first,key);
+               h_atomicExch(&buckets[vecindex].second,value);
+               h_atomicAdd((unsigned int*)(&_mapInfo->fill), 1);
                thread_overflowLookup = i+1;
                return;
             }
 
             //Key exists so we overwrite it. Fill stays the same
             if (old == key){
-               atomicExch(&buckets[vecindex].second,value);
+               h_atomicExch(&buckets[vecindex].second,value);
                thread_overflowLookup = i+1;
                return;
             }
@@ -1314,7 +1315,7 @@ namespace Hashinator{
       HASHINATOR_DEVICEONLY
       const VAL_TYPE& read_element(const KEY_TYPE& key) const {
          int bitMask = (1 << _mapInfo->sizePower) - 1; // For efficient modulo of the array size
-         uint32_t hashIndex = hash(key);
+         auto hashIndex = hash(key);
 
          // Try to find the matching bucket.
          for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
