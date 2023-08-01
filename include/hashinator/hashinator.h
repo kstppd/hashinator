@@ -304,6 +304,7 @@ namespace Hashinator{
          //Insert valid elements to now larger buckets
          insert(validElements,nValidElements,1,s);
          set_status((priorFill==_mapInfo->fill)?status::success:status::fail);
+         cudaFreeAsync(validElements,s);
       }
       #endif
 
@@ -588,9 +589,9 @@ namespace Hashinator{
       HASHINATOR_HOSTONLY
       void performCleanupTasks(cudaStream_t s=0){
          while (_mapInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW){
-            rehash(_mapInfo->sizePower+1);
+            device_rehash(_mapInfo->sizePower+1);
          }
-         if (tombstone_ratio()>0.25){
+         if (tombstone_ratio()>0.025){
             clean_tombstones(s);
          }
       }
@@ -1306,7 +1307,7 @@ namespace Hashinator{
 
       HASHINATOR_DEVICEONLY
       void set_element(const KEY_TYPE& key,VAL_TYPE val){
-         size_t thread_overflowLookup;
+         size_t thread_overflowLookup=0;
          insert_element(key,val,thread_overflowLookup);
          atomicMax((unsigned long long*)&(_mapInfo->currentMaxBucketOverflow),nextPow2(thread_overflowLookup));
       }
