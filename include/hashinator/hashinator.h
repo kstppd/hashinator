@@ -846,9 +846,11 @@ namespace Hashinator{
        * */
       template <typename  Rule>
       HASHINATOR_HOSTONLY
-      size_t extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements ,Rule rule, cudaStream_t s=0){
-         elements.resize(1<<_mapInfo->sizePower);
-         elements.optimizeGPU(s);
+      size_t extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements ,Rule rule, cudaStream_t s=0, bool prefetches=true){
+         elements.resize(_mapInfo->fill+1,true);
+         if (prefetches) {
+            elements.optimizeGPU(s);
+         }
          //Extract elements matching the Pattern Rule(element)==true;
          size_t retval = split::tools::copy_if_raw<hash_pair
                          <KEY_TYPE, VAL_TYPE>,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
@@ -861,8 +863,8 @@ namespace Hashinator{
 
       template <typename  Rule>
       HASHINATOR_HOSTONLY
-      size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements ,Rule rule, cudaStream_t s=0,bool prefetches=true){
-         elements.resize(1<<_mapInfo->sizePower);
+      size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements ,Rule rule, cudaStream_t s=0, bool prefetches=true){
+         elements.resize(_mapInfo->fill+1,true);
          if (prefetches) {
             elements.optimizeGPU(s);
          }

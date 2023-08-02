@@ -72,16 +72,16 @@ namespace split{
             class Allocator=DefaultAllocator<T>,
             class Meta_Allocator=DefaultMetaAllocator<size_t>>
    class SplitVector{
-      
+
       private:
-         T* _data=nullptr;                  // actual pointer to our data      
+         T* _data=nullptr;                  // actual pointer to our data
          size_t* _size;                     // number of elements in vector.
          size_t* _capacity;                 // number of allocated elements
          size_t  _alloc_multiplier = 2;     // host variable; multiplier for  when reserving more space
          Allocator _allocator;              // Allocator used to allocate and deallocate memory;
          Meta_Allocator _meta_allocator;    // Allocator used to allocate and deallocate memory for metadata
                                             //   (currently: _size, _capacity);
- 
+
          void _check_ptr(void* ptr){
             if (ptr==nullptr){
                throw std::bad_alloc();
@@ -144,12 +144,12 @@ namespace split{
 
       public:
          /* Available Constructors :
-          *    -- SplitVector()                       --> Default constructor. Almost a no OP but _size and _capacity have  to be allocated for device usage. 
+          *    -- SplitVector()                       --> Default constructor. Almost a no OP but _size and _capacity have  to be allocated for device usage.
           *    -- SplitVector(size_t)                 --> Instantiates a splitvector with a specific size. (capacity == size)
           *    -- SplitVector(size_t,T)               --> Instantiates a splitvector with a specific size and sets all elements to T.(capacity == size)
-          *    -- SplitVector(SplitVector&)           --> Copy constructor. 
-          *    -- SplitVector(SplitVector&&)          --> Move constructor. 
-          *    -- SplitVector(std::initializer_list&) --> Creates a SplitVector and copies over the elemets of the init. list. 
+          *    -- SplitVector(SplitVector&)           --> Copy constructor.
+          *    -- SplitVector(SplitVector&&)          --> Move constructor.
+          *    -- SplitVector(std::initializer_list&) --> Creates a SplitVector and copies over the elemets of the init. list.
           *    -- SplitVector(std::vector&)           --> Creates a SplitVector and copies over the elemets of the std vector
           * */
 
@@ -176,7 +176,7 @@ namespace split{
                   _data[i]=other._data[i];
                }
             }
-         
+
          HOSTONLY SplitVector(SplitVector<T,Allocator,Meta_Allocator> &&other)noexcept{
                _data=other._data;
                *_size=other.size();
@@ -192,7 +192,7 @@ namespace split{
                   _data[i]=init_list.begin()[i];
                }
             }
-    
+
          HOSTONLY explicit  SplitVector(const std::vector<T> &other ){
                this->_allocate(other.size());
                for (size_t i=0; i<size(); i++){
@@ -205,7 +205,7 @@ namespace split{
             _deallocate();
          }
 
-         
+
          /*Custom Assignment operator*/
          HOSTONLY  SplitVector<T,Allocator,Meta_Allocator>& operator=(const SplitVector<T,Allocator,Meta_Allocator>& other){
             //Match other's size prior to copying
@@ -270,7 +270,7 @@ namespace split{
             int device;
             cudaGetDevice(&device);
             CheckErrors("Prefetch GPU-Device-ID");
-            
+
             //First make sure _capacity does not page-fault ie prefetch it to host
             //This is done because _capacity would page-fault otherwise as pointed by Markus
             cudaMemPrefetchAsync(_capacity,sizeof(size_t),cudaCpuDeviceId,stream);
@@ -306,7 +306,7 @@ namespace split{
          #endif
 
 
-         /* Custom swap mehtod. 
+         /* Custom swap mehtod.
           * Pointers outside of splitvector's source
           * are invalidated after swap is called.
           */
@@ -332,19 +332,19 @@ namespace split{
          /*Bracket accessor - no bounds check*/
          HOSTDEVICE T& operator [](size_t index)noexcept{
                return _data[index];
-         } 
-                  
+         }
+
          /*Const Bracket accessor - no bounds check*/
          HOSTDEVICE const T& operator [](size_t index)const noexcept{
                return _data[index];
-         } 
+         }
 
          /*at accesor with bounds check*/
          HOSTDEVICE T& at(size_t index){
             _rangeCheck(index);
             return _data[index];
          }
-         
+
          /*const at accesor with bounds check*/
          HOSTDEVICE const T& at(size_t index)const{
             _rangeCheck(index);
@@ -373,7 +373,7 @@ namespace split{
                this->_deallocate();
                throw std::bad_alloc();
             }
-            
+
             //Copy over
             for (size_t i=0; i<size();i++){
                _new_data[i] = _data[i];
@@ -422,10 +422,10 @@ namespace split{
             return;
          }
 
-          /* 
+          /*
             Resize method:
             Supports only host resizing.
-            If new size is smaller than the current size we just reduce size but 
+            If new size is smaller than the current size we just reduce size but
             the capacity remains the same
             Memory location will change so any old pointers/iterators
             will be invalid from now on.
@@ -434,13 +434,13 @@ namespace split{
          void resize(size_t newSize,bool eco=false ){
             //Let's reserve some space and change our size
             if (newSize<=size()){
-               *_size=newSize; 
+               *_size=newSize;
                return;
             }
             reserve(newSize,eco);
-            *_size  =newSize; 
+            *_size  =newSize;
          }
-         
+
          #ifndef SPLIT_HOST_ONLY
          DEVICEONLY
          void device_resize(size_t newSize){
@@ -450,7 +450,7 @@ namespace split{
             for (size_t i=size(); i<newSize; ++i ){
                _allocator.construct(&_data[i],T());
             }
-            *_size=newSize; 
+            *_size=newSize;
          }
          #endif
 
@@ -459,7 +459,7 @@ namespace split{
          void grow(){
             reserve(capacity()+1);
          }
- 
+
          HOSTONLY
          void shrink_to_fit(){
             size_t curr_cap =*_capacity;
@@ -472,7 +472,7 @@ namespace split{
             reallocate(curr_size);
             return;
          }
-         
+
          /*Removes the last element of the vector*/
          HOSTDEVICE
          void pop_back(){
@@ -487,8 +487,10 @@ namespace split{
          HOSTDEVICE
         void remove_from_back(size_t n)noexcept{
           const size_t end = size() - n;
-          for (auto i = size(); i > end;) {
-            (_data + --i)->~T();
+          if constexpr(!std::is_pod<T>::value){
+             for (auto i = size(); i > end;) {
+               (_data + --i)->~T();
+             }
           }
           *_size = end;
         }
@@ -514,30 +516,30 @@ namespace split{
 
          HOSTDEVICE
          const T& back()const noexcept{return _data[*_size-1];}
-         
+
          HOSTDEVICE
          T& front()noexcept{return _data[0];}
-         
+
          HOSTDEVICE
          const T& front() const noexcept{ return _data[0]; }
 
-         HOSTDEVICE 
+         HOSTDEVICE
          bool empty() const noexcept{
             return  size()==0;
          }
 
-         /* 
+         /*
             PushBack  method:
             Supports only host  resizing.
             Will never reduce the vector's size.
             Memory location will change so any old pointers/iterators
             will be invalid from now on.
             Not thread safe
-         */      
-         HOSTONLY 
+         */
+         HOSTONLY
          void push_back(const T& val){
-            // If we have no allocated memory because the default ctor was used then 
-            // allocate one element, set it and return 
+            // If we have no allocated memory because the default ctor was used then
+            // allocate one element, set it and return
             if (_data==nullptr){
                *this=SplitVector<T,Allocator,Meta_Allocator>(1,val);
                return;
@@ -546,13 +548,13 @@ namespace split{
             _data[size()-1] = val;
             return;
          }
-         
 
-         HOSTONLY  
+
+         HOSTONLY
          void push_back(const T&& val){
 
-            // If we have no allocated memory because the default ctor was used then 
-            // allocate one element, set it and return 
+            // If we have no allocated memory because the default ctor was used then
+            // allocate one element, set it and return
             if (_data==nullptr){
                *this=SplitVector<T,Allocator,Meta_Allocator>(1,std::move(val));
                return;
@@ -563,13 +565,13 @@ namespace split{
          }
 
          #ifndef SPLIT_HOST_ONLY
-         /* 
+         /*
             Device PushBack  method:
             Will never reduce the vector's size.
             Memory location will not change.
             Will crash if it runs out of space
-         */      
-         DEVICEONLY 
+         */
+         DEVICEONLY
          void device_push_back(const T& val){
             size_t old= atomicAdd((unsigned int*)_size, 1);
             if (old>=capacity()){
@@ -578,12 +580,12 @@ namespace split{
             atomicCAS(&(_data[old]), _data[old],val);
             return;
          }
-         
 
-         DEVICEONLY 
+
+         DEVICEONLY
          void device_push_back(const T&& val){
 
-            //We need at least capacity=size+1 otherwise this 
+            //We need at least capacity=size+1 otherwise this
             //pushback cannot be done
             size_t old= atomicAdd((unsigned int*)_size, 1);
             if (old>=capacity()){
@@ -596,12 +598,12 @@ namespace split{
 
          //Iterators
          class iterator{
-             
+
             private:
             T* _data;
-            
+
             public:
-            
+
             using iterator_category = std::forward_iterator_tag;
             using value_type = T;
             using difference_type = int64_t;
@@ -669,12 +671,12 @@ namespace split{
          };
 
          class const_iterator{
-             
+
             private:
             const T* _data;
-            
+
             public:
-            
+
             using iterator_category = std::forward_iterator_tag;
             using value_type = T;
             using difference_type = int64_t;
@@ -738,7 +740,7 @@ namespace split{
                return itt -= offset;
             }
          };
-         
+
          HOSTDEVICE
          iterator begin() noexcept{
             return iterator(_data);
@@ -760,7 +762,7 @@ namespace split{
 
          HOSTONLY
          iterator insert (iterator it, const T& val){
-            
+
             //If empty or inserting at the end no relocating is needed
             if (it==end()){
                push_back(val);
@@ -771,7 +773,7 @@ namespace split{
             if (index<0 || index>size()){
                throw std::out_of_range("Insert");
             }
-            
+
             //Do we do need to increase our capacity?
             if (size()==capacity()){
                grow();
@@ -794,7 +796,7 @@ namespace split{
             if (index<0 || index>size()){
                throw std::out_of_range("Insert");
             }
-            
+
             //Do we do need to increase our capacity?
             if (newSize>size()){
                resize(newSize);
@@ -809,14 +811,14 @@ namespace split{
             return retval;
          }
 
-            
+
          template<typename InputIterator, class = typename std::enable_if< !std::is_integral<InputIterator>::value >::type>
-         HOSTONLY 
+         HOSTONLY
          iterator insert(iterator it, InputIterator p0, InputIterator p1){
 
             const int64_t count = std::distance(p0, p1);
             const int64_t index = it.data() - begin().data();
-      
+
             if (index<0 || index>size()){
                throw std::out_of_range("Insert");
             }
@@ -832,14 +834,14 @@ namespace split{
             return retval;
          }
 
-         #ifndef SPLIT_HOST_ONLY 
+         #ifndef SPLIT_HOST_ONLY
          template<typename InputIterator, class = typename std::enable_if< !std::is_integral<InputIterator>::value >::type>
-         DEVICEONLY 
+         DEVICEONLY
          iterator device_insert(iterator it, InputIterator p0, InputIterator p1) noexcept{
 
             const int64_t count = p1.data()-p0.data();
             const int64_t index = it.data() - begin().data();
-      
+
             if (index<0 || index>size()){
                assert(0 && "Splitvector has a catastrophic failure trying to insert on device because the vector has no space available.");
             }
@@ -859,7 +861,7 @@ namespace split{
 
          DEVICEONLY
          iterator device_insert (iterator it, const T& val)noexcept{
-            
+
             //If empty or inserting at the end no relocating is needed
             if (it==end()){
                device_push_back(val);
@@ -894,7 +896,7 @@ namespace split{
             if (index<0 || index>size()){
                assert(0 && "Splitvector has a catastrophic failure trying to insert on device because the vector has no space available.");
             }
-            
+
             //Do we do need to increase our capacity?
             if (newSize>size()){
                device_resize(newSize);
@@ -922,33 +924,44 @@ namespace split{
 
          #endif
 
-         HOSTDEVICE 
+         HOSTDEVICE
          iterator erase(iterator it)noexcept{
             const int64_t index = it.data() - begin().data();
-            _data[index].~T();
-
-            for (auto i = index; i < size() - 1; i++) {
-               new (&_data[i]) T(_data[i+1]); 
-               _data[i+1].~T();
+            if constexpr(!std::is_pod<T>::value){
+               _data[index].~T();
+               for (auto i = index; i < size() - 1; i++) {
+                  new (&_data[i]) T(_data[i+1]);
+                  _data[i+1].~T();
+               }
+            } else {
+               for (auto i = index; i < size() - 1; i++) {
+                  new (&_data[i]) T(_data[i+1]);
+               }
             }
             *_size-=1;
             iterator retval = &_data[index];
-            return retval;   
+            return retval;
          }
-            
+
 
          HOSTDEVICE
          iterator erase(iterator p0, iterator  p1)noexcept {
-            const int64_t start = p0.data() - begin().data();
-            const int64_t end   =  p1.data() - begin().data();
-            const int64_t offset= end- start;
+            const int64_t start  = p0.data() - begin().data();
+            const int64_t end    =  p1.data() - begin().data();
+            const int64_t offset = end- start;
 
-            for (int64_t i = 0; i < end - start; i++) {
-               _data[i].~T();
-            }
-            for (auto i =start; i < size()-offset; ++i){
-               new (&_data[i]) T(_data[i+offset]); 
-               _data[i+offset].~T();
+            if constexpr(!std::is_pod<T>::value) {
+               for (int64_t i = 0; i < offset; i++) {
+                  _data[i].~T();
+               }
+               for (auto i =start; i < size()-offset; ++i){
+                  new (&_data[i]) T(_data[i+offset]);
+                  _data[i+offset].~T();
+               }
+            } else {
+               for (auto i =start; i < size()-offset; ++i){
+                  new (&_data[i]) T(_data[i+offset]);
+               }
             }
             *_size -= end - start;
             iterator it = &_data[start];
@@ -956,7 +969,7 @@ namespace split{
          }
 
 
-         HOSTONLY 
+         HOSTONLY
          Allocator get_allocator() const noexcept{
             return _allocator;
          }
