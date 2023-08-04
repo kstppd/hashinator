@@ -28,19 +28,6 @@ namespace Hashinator{
    namespace HashFunctions{
 
       template<typename T>
-      struct Murmur{
-         HOSTDEVICE
-         inline static uint32_t _hash(T key,const int sizePower){
-            key ^= key >> 16;
-            key *= 0x85ebca6b;
-            key ^= key >> 13;
-            key *= 0xc2b2ae35;
-            key ^= key >> 16;
-            return key;
-         }
-      };
-
-      template<typename T>
       struct Fibonacci{
          HOSTDEVICE
          [[nodiscard]]

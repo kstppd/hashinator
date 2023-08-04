@@ -111,8 +111,8 @@ namespace Hashinator{
       template<typename KEY_TYPE, 
                typename VAL_TYPE,
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
-               class HashFunction=HashFunctions::Murmur<KEY_TYPE>,
-               int WARPSIZE=32,
+               class HashFunction=HashFunctions::Fibonacci<KEY_TYPE>,
+               int WARPSIZE=defaults::WARPSIZE,
                int elementsPerWarp>
       __global__ 
       void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src,
@@ -128,29 +128,35 @@ namespace Hashinator{
          const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
          const size_t wid = tid/VIRTUALWARP;
          const size_t w_tid=tid%VIRTUALWARP;
-         unsigned int subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
-         
          //Early quit if we have more warps than elements to insert
          if (wid>=len || *err==status::fail){
             return;
          }
 
-         auto getIntraWarpMask = [](unsigned int n ,unsigned int l ,unsigned int r)->unsigned int{
-            int num = ((1<<r)-1)^((1<<(l-1))-1);
-            return (n^num);
-         };
-
+         #ifdef __NVCC__
+         uint32_t subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
          uint32_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=getIntraWarpMask<uint32_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
+         #endif 
+         #ifdef __HIP_PLATFORM_HCC___
+         uint64_t     subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
+         uint64_t submask;
+         if constexpr(elementsPerWarp==1){
+            //TODO mind AMD 64 thread wavefronts
+            submask=SPLIT_VOTING_MASK;
+         }else{
+            submask=getIntraWarpMask<uint64_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+         }
+         #endif 
          hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[wid];
-         const int bitMask = (1 <<(sizePower )) - 1; 
+         const int  bitMask = (1 <<(sizePower )) - 1; 
          const auto hashIndex = HashFunction::_hash(candidate.first,sizePower);
-         const auto  optimalindex=(hashIndex) & bitMask;
+         const size_t optimalindex=(hashIndex) & bitMask;
 
 
          //No duplicates so we insert
@@ -162,12 +168,12 @@ namespace Hashinator{
 
             //vote for available emptybuckets in warp region
             //Note that this has to be done before voting for already existing elements (below)
-            uint32_t mask = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            auto mask = warpVote(buckets[probingindex].first==EMPTYBUCKET,SPLIT_VOTING_MASK)&submask;
 
             //Check if this elements already exists
-            uint32_t already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidate.first)&submask;
+            auto already_exists = warpVote(buckets[probingindex].first==candidate.first,SPLIT_VOTING_MASK)&submask;
             if (already_exists){
-               int winner =__ffs ( already_exists ) -1;
+               int winner =findFirstSig( already_exists ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
                   h_atomicExch(&buckets[probingindex].second,candidate.second);
@@ -176,7 +182,7 @@ namespace Hashinator{
             }
 
             while(mask){
-               int winner =__ffs ( mask ) -1;
+               int winner =findFirstSig( mask ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
                   KEY_TYPE old = h_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidate.first);
@@ -196,7 +202,7 @@ namespace Hashinator{
                      done=true;
                   }
                }
-               int warp_done=__any_sync(submask,done);
+               int warp_done=warpVoteAny(done,submask);
                if(warp_done>0){
                   return;
                }
@@ -228,8 +234,8 @@ namespace Hashinator{
       template<typename KEY_TYPE,
                typename VAL_TYPE,
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
-               class HashFunction=HashFunctions::Murmur<KEY_TYPE>,
-               int WARPSIZE=32,
+               class HashFunction=HashFunctions::Fibonacci<KEY_TYPE>,
+               int WARPSIZE=defaults::WARPSIZE,
                int elementsPerWarp>
       __global__ 
       void insert_kernel(KEY_TYPE* keys,
@@ -246,30 +252,37 @@ namespace Hashinator{
          const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
          const size_t wid = tid/VIRTUALWARP;
          const size_t w_tid=tid%VIRTUALWARP;
-         unsigned int subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
-         
          //Early quit if we have more warps than elements to insert
          if (wid>=len || *err==status::fail){
             return;
          }
 
-         auto getIntraWarpMask = [](unsigned int n ,unsigned int l ,unsigned int r)->unsigned int{
-            int num = ((1<<r)-1)^((1<<(l-1))-1);
-            return (n^num);
-         };
-
+         #ifdef __NVCC__
+         uint32_t subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
          uint32_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=getIntraWarpMask<uint32_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
+         #endif 
+         #ifdef __HIP_PLATFORM_HCC___
+         uint64_t     subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
+         uint64_t submask;
+         if constexpr(elementsPerWarp==1){
+            //TODO mind AMD 64 thread wavefronts
+            submask=SPLIT_VOTING_MASK;
+         }else{
+            submask=getIntraWarpMask<uint64_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+         }
+         #endif 
+
          KEY_TYPE& candidateKey=keys[wid];
          VAL_TYPE& candidateVal=vals[wid];
          const int bitMask = (1 <<(sizePower )) - 1; 
          const auto hashIndex = HashFunction::_hash(candidateKey,sizePower);
-         const auto optimalindex=(hashIndex) & bitMask;
+         const size_t optimalindex=(hashIndex) & bitMask;
 
          //No duplicates so we insert
          bool done=false;
@@ -280,12 +293,12 @@ namespace Hashinator{
 
             //vote for available emptybuckets in warp region
             //Note that this has to be done before voting for already existing elements (below)
-            uint32_t mask = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            auto mask = warpVote(buckets[probingindex].first==EMPTYBUCKET,SPLIT_VOTING_MASK)&submask;
 
             //Check if this elements already exists
-            uint32_t already_exists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidateKey)&submask;
+            auto already_exists =warpVote(buckets[probingindex].first==candidateKey,SPLIT_VOTING_MASK)&submask;
             if (already_exists){
-               int winner =__ffs ( already_exists ) -1;
+               int winner =findFirstSig( already_exists ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
                   h_atomicExch(&buckets[probingindex].second,candidateVal);
@@ -294,7 +307,7 @@ namespace Hashinator{
             }
 
             while(mask){
-               int winner =__ffs ( mask ) -1;
+               int winner =findFirstSig( mask ) -1;
                int sub_winner=winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
                   KEY_TYPE old = h_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
@@ -314,7 +327,7 @@ namespace Hashinator{
                      done=true;
                   }
                }
-               int warp_done=__any_sync(submask,done);
+               int warp_done=warpVoteAny(done,submask);
                if(warp_done>0){
                   return;
                }
@@ -331,8 +344,8 @@ namespace Hashinator{
       template<typename KEY_TYPE,
                typename VAL_TYPE,
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
-               class HashFunction=HashFunctions::Murmur<KEY_TYPE>,
-               int WARPSIZE=32,
+               class HashFunction=HashFunctions::Fibonacci<KEY_TYPE>,
+               int WARPSIZE=defaults::WARPSIZE,
                int elementsPerWarp>
       __global__ 
       void retrieve_kernel(KEY_TYPE* keys,
@@ -346,20 +359,26 @@ namespace Hashinator{
          const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
          const size_t wid = tid/VIRTUALWARP;
          const size_t w_tid=tid%VIRTUALWARP;
-         unsigned int subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
-         
-         auto getIntraWarpMask = [](unsigned int n ,unsigned int l ,unsigned int r)->unsigned int{
-            int num = ((1<<r)-1)^((1<<(l-1))-1);
-            return (n^num);
-         };
-
+         #ifdef __NVCC__
+         uint32_t subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
          uint32_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=getIntraWarpMask<uint32_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
+         #endif 
+         #ifdef __HIP_PLATFORM_HCC___
+         uint64_t     subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
+         uint64_t submask;
+         if constexpr(elementsPerWarp==1){
+            //TODO mind AMD 64 thread wavefronts
+            submask=SPLIT_VOTING_MASK;
+         }else{
+            submask=getIntraWarpMask<uint64_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+         }
+         #endif 
          KEY_TYPE& candidateKey=keys[wid];
          VAL_TYPE& candidateVal=vals[wid];
          const int bitMask = (1 <<(sizePower )) - 1; 
@@ -370,14 +389,14 @@ namespace Hashinator{
             
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
-            uint32_t maskExists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidateKey)&submask;
-            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            const auto  maskExists = warpVote(buckets[probingindex].first==candidateKey,SPLIT_VOTING_MASK)&submask;
+            const auto  emptyFound = warpVote(buckets[probingindex].first==EMPTYBUCKET,SPLIT_VOTING_MASK)&submask;
             //If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
             if (!maskExists && emptyFound){
                return;
             }
             if (maskExists){
-               int winner =__ffs ( maskExists ) -1;
+               int winner =findFirstSig( maskExists ) -1;
                winner-=(subwarp_relative_index)*VIRTUALWARP;
                if(w_tid==winner){
                   h_atomicExch(&candidateVal,buckets[probingindex].second);
@@ -398,8 +417,8 @@ namespace Hashinator{
                typename VAL_TYPE,
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
                KEY_TYPE TOMBSTONE=EMPTYBUCKET-1,
-               class HashFunction=HashFunctions::Murmur<KEY_TYPE>,
-               int WARPSIZE=32,
+               class HashFunction=HashFunctions::Fibonacci<KEY_TYPE>,
+               int WARPSIZE=defaults::WARPSIZE,
                int elementsPerWarp>
       __global__ 
       void delete_kernel(KEY_TYPE* keys,
@@ -414,25 +433,33 @@ namespace Hashinator{
          const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
          const size_t wid = tid/VIRTUALWARP;
          const size_t w_tid=tid%VIRTUALWARP;
-         unsigned int subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
-         
          //Early quit if we have more warps than elements to insert
          if (wid>=len){
             return;
          }
 
-         auto getIntraWarpMask = [](unsigned int n ,unsigned int l ,unsigned int r)->unsigned int{
-            int num = ((1<<r)-1)^((1<<(l-1))-1);
-            return (n^num);
-         };
-
+         #ifdef __NVCC__
+         uint32_t subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
          uint32_t submask;
          if constexpr(elementsPerWarp==1){
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=getIntraWarpMask<uint32_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
+         #endif 
+         #ifdef __HIP_PLATFORM_HCC___
+         uint64_t     subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
+         uint64_t submask;
+         if constexpr(elementsPerWarp==1){
+            //TODO mind AMD 64 thread wavefronts
+            submask=SPLIT_VOTING_MASK;
+         }else{
+            submask=getIntraWarpMask<uint64_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+         }
+         #endif 
+         
+
          KEY_TYPE& candidateKey=keys[wid];
          const int bitMask = (1 <<(sizePower )) - 1; 
          const auto  hashIndex = HashFunction::_hash(candidateKey,sizePower);
@@ -442,14 +469,14 @@ namespace Hashinator{
             
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
-            uint32_t maskExists = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==candidateKey)&submask;
-            uint32_t emptyFound = __ballot_sync(SPLIT_VOTING_MASK,buckets[probingindex].first==EMPTYBUCKET)&submask;
+            const auto  maskExists = warpVote(buckets[probingindex].first==candidateKey,SPLIT_VOTING_MASK)&submask;
+            const auto  emptyFound = warpVote(buckets[probingindex].first==EMPTYBUCKET,SPLIT_VOTING_MASK)&submask;
             //If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
             if (!maskExists && emptyFound){
                return;
             }
             if (maskExists){
-               int winner =__ffs ( maskExists ) -1;
+               int winner =findFirstSig( maskExists ) -1;
                winner-=(subwarp_relative_index)*VIRTUALWARP;
                if(w_tid==winner){
                   h_atomicExch(&buckets[probingindex].first, TOMBSTONE);

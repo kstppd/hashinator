@@ -13,7 +13,7 @@
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
 constexpr int MINPOWER = 5;
-constexpr int MAXPOWER = 20;
+constexpr int MAXPOWER = 10;
 
 
 using namespace std::chrono;

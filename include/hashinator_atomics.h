@@ -101,6 +101,84 @@ namespace Hashinator{
       }
    }
 
+
+
+   /*
+    * Returns the submask needed by each Virtual Warp during voting
+    */
+   template <typename T>
+   __device__  __forceinline__
+   T getIntraWarpMask(T n ,T l ,T r){
+      uint32_t num = ((T(1)<<r)-1)^((1<<(T(1)-1))-1);
+      return (n^num);
+   };
+   
+   /*
+    * Wraps over ballots for AMD and NVIDIA
+    */
+   template <typename T>
+   __device__  __forceinline__
+   T warpVote(bool predicate,T votingMask=T(-1)){
+      #ifdef __NVCC__
+      return __ballot_sync(votingMask,predicate);
+      #endif 
+
+      #ifdef __HIP_PLATFORM_HCC___
+      return __ballot(predicate);
+      #endif 
+   }
+
+   /*
+    * Wraps over __ffs for AMD and NVIDIA
+    */
+   template <typename T>
+   __device__  __forceinline__
+   int findFirstSig(T mask){
+      #ifdef __NVCC__
+      return __ffs ( mask);
+      #endif 
+
+      #ifdef __HIP_PLATFORM_HCC___
+      return __ffsll( mask);
+      #endif 
+   }
+
+   /*
+    * Wraps over __ffs for AMD and NVIDIA
+    */
+   template <typename T>
+   __device__  __forceinline__
+   int warpVoteAny(bool predicate,T votingMask=T(-1)){
+      #ifdef __NVCC__
+      return __any_sync(votingMask,predicate);
+      #endif 
+
+      #ifdef __HIP_PLATFORM_HCC___
+      return __any(predicate);
+      #endif 
+   }
+
+   /*
+    * Wraps over __popc for AMD and NVIDIA
+    */
+   template <typename T>
+   __device__  __forceinline__
+   uint32_t pop_count(T mask){
+      #ifdef __NVCC__
+         return __popc(mask);
+      #endif 
+      #ifdef __HIP_PLATFORM_HCC___
+      if constexpr(sizeof(T)==4){
+         return __popc(mask);
+      }else if constexpr(sizeof(mask)==8){
+         return __popcll(mask);
+      }else{
+         //Cannot be static_assert(false...);
+         static_assert(!sizeof(T*), "Not supported");
+      }
+      #endif 
+   }
+
 }
 
 
