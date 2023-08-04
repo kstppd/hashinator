@@ -290,6 +290,7 @@ namespace split{
             CheckErrors("Prefetch CPU");
          }
 
+         //Attach to a specific stream
          HOSTONLY void streamAttach(cudaStream_t s,uint32_t flags=cudaMemAttachSingle){
             cudaStreamAttachMemAsync( s,(void*)_size,     sizeof(size_t),flags );
             cudaStreamAttachMemAsync( s,(void*)_capacity, sizeof(size_t),flags );
@@ -298,11 +299,18 @@ namespace split{
             return;
          }
 
-         void copyMetadata(SplitInfo* dst,cudaStream_t s=0){
+         //Copy out metadata without prefetching to host first.
+         HOSTONLY void copyMetadata(SplitInfo* dst,cudaStream_t s=0){
             cudaMemcpyAsync(&dst->size,_size,sizeof(size_t),cudaMemcpyDeviceToHost,s);
             cudaMemcpyAsync(&dst->capacity,_capacity,sizeof(size_t),cudaMemcpyDeviceToHost,s);
          }
 
+         //Pass memAdvice direcitves to the data.
+         HOSTONLY void memAdvise(cudaMemoryAdvise advice,int device ){
+            cudaMemAdvise( _data, capacity()*sizeof(T), advice, device ) ;
+            cudaMemAdvise( _size, sizeof(size_t) , advice, device );
+            cudaMemAdvise( _capacity,sizeof(size_t) , advice, device ) ;
+         }
          #endif
 
 

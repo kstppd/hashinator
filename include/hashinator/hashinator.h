@@ -821,8 +821,12 @@ namespace Hashinator{
          }
       }
       
-
       #ifndef HASHINATOR_HOST_ONLY
+      //Pass memAdvice to hashinator and the underlying splitvector
+      HOSTONLY void memAdvise(cudaMemoryAdvise advice,int device ){
+         buckets.memAdvise(advice,device);
+         cudaMemAdvise( _mapInfo,sizeof(MapInfo) , advice, device ) ;
+      }
 
       /*
        * Fills the splitvector "elements" with **copies** of the keys that match the pattern
