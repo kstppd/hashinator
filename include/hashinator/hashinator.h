@@ -842,6 +842,13 @@ namespace Hashinator{
        * Then call this:
        *   hmap.extractPattern(elements,Rule<uint32_t,uint32_t>());
        * */
+
+      //Pass memAdvice to hashinator and the underlying splitvector
+      HOSTONLY void memAdvise(cudaMemoryAdvise advice,int device ){
+         buckets.memAdvise(advice,device);
+         cudaMemAdvise( _mapInfo,sizeof(MapInfo) , advice, device ) ;
+      }
+
       template <typename  Rule>
       HASHINATOR_HOSTONLY
       size_t extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements ,Rule rule, cudaStream_t s=0){
