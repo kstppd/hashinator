@@ -274,6 +274,7 @@ namespace split{
             //First make sure _capacity does not page-fault ie prefetch it to host
             //This is done because _capacity would page-fault otherwise as pointed by Markus
             cudaMemPrefetchAsync(_capacity,sizeof(size_t),cudaCpuDeviceId,stream);
+            cudaStreamSynchronize(stream);
 
             //Now prefetch everything to device
             cudaMemPrefetchAsync(_data ,capacity()*sizeof(T),device,stream);
@@ -286,6 +287,7 @@ namespace split{
          HOSTONLY void optimizeCPU(cudaStream_t stream = 0)noexcept{
             cudaMemPrefetchAsync(_capacity ,sizeof(size_t),cudaCpuDeviceId,stream);
             cudaMemPrefetchAsync(_size ,sizeof(size_t),cudaCpuDeviceId,stream);
+            cudaStreamSynchronize(stream);
             cudaMemPrefetchAsync(_data ,capacity()*sizeof(T),cudaCpuDeviceId,stream);
             CheckErrors("Prefetch CPU");
          }
@@ -307,14 +309,19 @@ namespace split{
 
          //Pass memAdvice direcitves to the data.
          HOSTONLY void memAdvise(cudaMemoryAdvise advice,int device ){
+            int device;
+            cudaGetDevice(&device);
+            cudaMemPrefetchAsync(_capacity,sizeof(size_t),cudaCpuDeviceId,stream);
+            cudaStreamSynchronize(stream);
             cudaMemAdvise( _data, capacity()*sizeof(T), advice, device ) ;
             cudaMemAdvise( _size, sizeof(size_t) , advice, device );
             cudaMemAdvise( _capacity,sizeof(size_t) , advice, device ) ;
+            cudaMemPrefetchAsync(_capacity ,sizeof(size_t),device,stream);
          }
          #endif
 
 
-         /* Custom swap mehtod.
+         /* Custom swap method.
           * Pointers outside of splitvector's source
           * are invalidated after swap is called.
           */
@@ -515,7 +522,7 @@ namespace split{
          }
 
          HOSTDEVICE
-         size_t capacity() const noexcept{
+         inline size_t capacity() const noexcept{
             return *_capacity;
          }
 
