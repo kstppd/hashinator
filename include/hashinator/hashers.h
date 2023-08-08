@@ -493,7 +493,7 @@ namespace Hashinator{
                class HashFunction,
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
                KEY_TYPE TOMBSTONE=EMPTYBUCKET=1,
-               int WARP=32,
+               int WARP=defaults::WARPSIZE,
                int elementsPerWarp=1>
       class Hasher{
       
