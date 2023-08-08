@@ -105,14 +105,21 @@ namespace Hashinator{
 
    /*
     * Returns the submask needed by each Virtual Warp during voting
+    * CUDA and AMD variants
     */
-   template <typename T>
    __device__  __forceinline__
-   T getIntraWarpMask(T n ,T l ,T r){
-      uint32_t num = ((T(1)<<r)-1)^((1<<(T(1)-1))-1);
+   uint32_t getIntraWarpMask_CUDA (uint32_t n ,uint32_t l ,uint32_t r){
+      uint32_t num = ((1<<r)-1)^((1<<(l-1))-1);
       return (n^num);
    };
    
+   __device__  __forceinline__
+   uint64_t getIntraWarpMask_AMD(uint64_t n ,uint64_t l ,uint64_t r){
+      uint64_t num = ((1ull<<r)-1)^((1ull<<(l-1))-1);
+      return (n^num);
+   };
+
+
    /*
     * Wraps over ballots for AMD and NVIDIA
     */

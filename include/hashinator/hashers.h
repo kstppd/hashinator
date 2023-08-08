@@ -140,7 +140,7 @@ namespace Hashinator{
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask<uint32_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
          #endif 
          #ifdef __HIP_PLATFORM_HCC___
@@ -150,14 +150,13 @@ namespace Hashinator{
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask<uint64_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=getIntraWarpMask_AMD(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
          #endif 
          hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[wid];
          const int  bitMask = (1 <<(sizePower )) - 1; 
          const auto hashIndex = HashFunction::_hash(candidate.first,sizePower);
          const size_t optimalindex=(hashIndex) & bitMask;
-
 
          //No duplicates so we insert
          bool done=false;
@@ -264,7 +263,7 @@ namespace Hashinator{
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask<uint32_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
          #endif 
          #ifdef __HIP_PLATFORM_HCC___
@@ -274,7 +273,7 @@ namespace Hashinator{
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask<uint64_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
          #endif 
 
@@ -366,7 +365,7 @@ namespace Hashinator{
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask<uint32_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
          #endif 
          #ifdef __HIP_PLATFORM_HCC___
@@ -376,7 +375,7 @@ namespace Hashinator{
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask<uint64_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
          #endif 
          KEY_TYPE& candidateKey=keys[wid];
@@ -445,7 +444,7 @@ namespace Hashinator{
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask<uint32_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
          #endif 
          #ifdef __HIP_PLATFORM_HCC___
@@ -455,7 +454,7 @@ namespace Hashinator{
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask<uint64_t>(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
          #endif 
          

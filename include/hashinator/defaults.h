@@ -24,8 +24,8 @@ namespace Hashinator{
    namespace defaults{
       constexpr int WARPSIZE = 32;
       constexpr int MAX_BLOCKSIZE = 1024;
-      constexpr int BUCKET_OVERFLOW = 16;
-      constexpr int elementsPerWarp =  2;
+      constexpr int BUCKET_OVERFLOW = 32;
+      constexpr int elementsPerWarp =  1;
       template <typename T >
       using  DefaultHashFunction=HashFunctions::Fibonacci<T>;
    } //namespace defaults;
