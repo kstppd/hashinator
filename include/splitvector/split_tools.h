@@ -31,10 +31,21 @@
  * */
 #pragma once 
 #include "split_allocators.h"
-#define SPLIT_VOTING_MASK 0xFFFFFFFF //32-bit wide for cuda warps not sure what we do on AMD HW
+#include "../hashinator_atomics.h"
 #define NUM_BANKS 32 //TODO depends on device
 #define LOG_NUM_BANKS 5
 #define CONFLICT_FREE_OFFSET(n) ((n) >> LOG_NUM_BANKS)
+#ifdef __NVCC__
+#define SPLIT_VOTING_MASK 0xFFFFFFFF //32-bit wide for NVIDIA HW
+#define WARPLENGTH 32
+#endif 
+#ifdef __HIP_PLATFORM_HCC___
+#define SPLIT_VOTING_MASK 0xFFFFFFFFFFFFFFFF //64-bit wide for AMD HW
+#define WARPLENGTH 64
+#endif
+
+
+
 
 namespace split{
    namespace tools{
@@ -144,7 +155,7 @@ namespace split{
       }
 
 
-      template <typename T,typename Rule,size_t BLOCKSIZE=1024, size_t WARP=32>
+      template <typename T,typename Rule,size_t BLOCKSIZE=1024, size_t WARP=WARPLENGTH>
       __global__
       void split_compact(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* input,
                          split::SplitVector<uint32_t,split::split_unified_allocator<uint32_t>,split::split_unified_allocator<size_t>>* counts,
@@ -163,9 +174,9 @@ namespace split{
          const unsigned int warps_in_block = blockDim.x/WARP;
          const bool tres=rule(input->at(tid));
 
-         unsigned int  mask= __ballot_sync(SPLIT_VOTING_MASK,tres);
-         unsigned int n_neighbors= mask & ((1 << w_tid) - 1);
-         unsigned int total_valid_in_warp	= __popc(mask);
+         auto mask = Hashinator::warpVote(tres,SPLIT_VOTING_MASK);
+         auto n_neighbors= mask & ((1 << w_tid) - 1);
+         auto total_valid_in_warp = Hashinator::pop_count(mask);
          if (w_tid==0 ){
             buffer[widb]=total_valid_in_warp;
          }
@@ -177,7 +188,7 @@ namespace split{
             }
          }
          __syncthreads();
-         const unsigned int neighbor_count= __popc(n_neighbors);
+         const unsigned int neighbor_count= Hashinator::pop_count(n_neighbors);
          const unsigned int private_index	= buffer[offset+widb] + offsets->at(wid/warps_in_block) + neighbor_count ;
          if (tres && widb!=warps_in_block){
             output->at(private_index) = input->at(tid);
@@ -190,7 +201,7 @@ namespace split{
       }
 
 
-      template <typename T,typename U,typename Rule,size_t BLOCKSIZE=1024, size_t WARP=32>
+      template <typename T,typename U,typename Rule,size_t BLOCKSIZE=1024, size_t WARP=WARPLENGTH>
       __global__
       void split_compact_keys(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* input,
                          split::SplitVector<uint32_t,split::split_unified_allocator<uint32_t>,split::split_unified_allocator<size_t>>* counts,
@@ -209,9 +220,9 @@ namespace split{
          const unsigned int warps_in_block = blockDim.x/WARP;
          const bool tres=rule(input->at(tid));
 
-         unsigned int  mask= __ballot_sync(SPLIT_VOTING_MASK,tres);
-         unsigned int n_neighbors= mask & ((1 << w_tid) - 1);
-         unsigned int total_valid_in_warp	= __popc(mask);
+         auto  mask= Hashinator::warpVote(tres,SPLIT_VOTING_MASK);
+         auto n_neighbors= mask & ((1 << w_tid) - 1);
+         auto total_valid_in_warp	= Hashinator::pop_count(mask);
          if (w_tid==0 ){
             buffer[widb]=total_valid_in_warp;
          }
@@ -223,7 +234,7 @@ namespace split{
             }
          }
          __syncthreads();
-         const unsigned int neighbor_count= __popc(n_neighbors);
+         const unsigned int neighbor_count= Hashinator::pop_count(n_neighbors);
          const unsigned int private_index	= buffer[offset+widb] + offsets->at(wid/warps_in_block) + neighbor_count ;
          if (tres && widb!=warps_in_block){
             output->at(private_index) = (input->at(tid)).first;
@@ -237,7 +248,7 @@ namespace split{
 
       }
 
-      template <typename T,typename U, typename Rule,size_t BLOCKSIZE=1024, size_t WARP=32>
+      template <typename T,typename U, typename Rule,size_t BLOCKSIZE=1024, size_t WARP=WARPLENGTH>
       __global__
       void split_compact_keys_raw(T* input, uint32_t* counts, uint32_t* offsets, U* output, Rule rule,const size_t size,size_t nBlocks,uint32_t* retval){
 
@@ -251,9 +262,9 @@ namespace split{
          const unsigned int warps_in_block = blockDim.x/WARP;
          const bool tres=rule(input[tid]);
 
-         unsigned int  mask= __ballot_sync(SPLIT_VOTING_MASK,tres);
-         unsigned int n_neighbors= mask & ((1 << w_tid) - 1);
-         unsigned int total_valid_in_warp	= __popc(mask);
+         auto  mask= Hashinator::warpVote(tres,SPLIT_VOTING_MASK);
+         auto n_neighbors= mask & ((1 << w_tid) - 1);
+         auto total_valid_in_warp	= Hashinator::pop_count(mask);
          if (w_tid==0 ){
             buffer[widb]=total_valid_in_warp;
          }
@@ -265,7 +276,7 @@ namespace split{
             }
          }
          __syncthreads();
-         const unsigned int neighbor_count= __popc(n_neighbors);
+         const unsigned int neighbor_count= Hashinator::pop_count(n_neighbors);
          const unsigned int private_index	= buffer[offset+widb] + offsets[(wid/warps_in_block)] + neighbor_count ;
          if (tres && widb!=warps_in_block){
             output[private_index] = input[tid].first;
@@ -277,7 +288,7 @@ namespace split{
       }
 
 
-      template <typename T, size_t BLOCKSIZE=1024,size_t WARP=32>
+      template <typename T, size_t BLOCKSIZE=1024,size_t WARP=WARPLENGTH>
       void split_prefix_scan(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
                              split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& output,
                              cudaStream_t s=0)
@@ -331,7 +342,7 @@ namespace split{
       }
 
       
-      template <typename T, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=32>
+      template <typename T, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=WARPLENGTH>
       void copy_if(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
                    split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& output,
                    Rule rule,
@@ -382,7 +393,7 @@ namespace split{
          cudaFreeAsync(d_offsets,s);
       }
 
-      template <typename T,typename U, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=32>
+      template <typename T,typename U, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=WARPLENGTH>
       size_t copy_keys_if(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
                    split::SplitVector<U,split::split_unified_allocator<U>,split::split_unified_allocator<size_t>>& output,
                    Rule rule,
@@ -437,7 +448,7 @@ namespace split{
       }
 
       
-      template <typename T,typename Rule,size_t BLOCKSIZE=1024, size_t WARP=32>
+      template <typename T,typename Rule,size_t BLOCKSIZE=1024, size_t WARP=WARPLENGTH>
       __global__
       void split_compact_raw(T* input, uint32_t* counts, uint32_t* offsets, T* output, Rule rule,const size_t size,size_t nBlocks,uint32_t* retval){
 
@@ -451,9 +462,9 @@ namespace split{
          const unsigned int warps_in_block = blockDim.x/WARP;
          const bool tres=rule(input[tid]);
 
-         unsigned int  mask= __ballot_sync(SPLIT_VOTING_MASK,tres);
-         unsigned int n_neighbors= mask & ((1 << w_tid) - 1);
-         unsigned int total_valid_in_warp	= __popc(mask);
+         auto   mask= Hashinator::warpVote(tres,SPLIT_VOTING_MASK);
+         auto  n_neighbors= mask & ((1 << w_tid) - 1);
+         auto  total_valid_in_warp	= Hashinator::pop_count(mask);
          if (w_tid==0 ){
             buffer[widb]=total_valid_in_warp;
          }
@@ -465,7 +476,7 @@ namespace split{
             }
          }
          __syncthreads();
-         const unsigned int neighbor_count= __popc(n_neighbors);
+         const unsigned int neighbor_count= Hashinator::pop_count(n_neighbors);
          const unsigned int private_index	= buffer[offset+widb] + offsets[(wid/warps_in_block)] + neighbor_count ;
          if (tres && widb!=warps_in_block){
             output[private_index] = input[tid];
@@ -533,7 +544,7 @@ namespace split{
       }
 
 
-      template <typename T, size_t BLOCKSIZE=1024,size_t WARP=32>
+      template <typename T, size_t BLOCKSIZE=1024,size_t WARP=WARPLENGTH>
       void split_prefix_scan_raw(T* input, T* output ,Cuda_mempool& mPool, const size_t input_size,cudaStream_t s=0){
 
          //Scan is performed in half Blocksizes
@@ -579,7 +590,7 @@ namespace split{
          }
       }
 
-      template <typename T, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=32>
+      template <typename T, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=WARPLENGTH>
       uint32_t copy_if_raw(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
                    T* output,
                    Rule rule,
@@ -626,7 +637,7 @@ namespace split{
       }
 
 
-      template <typename T,typename U, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=32>
+      template <typename T,typename U, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=WARPLENGTH>
       size_t copy_keys_if_raw(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
                    U* output,
                    Rule rule,

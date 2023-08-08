@@ -27,6 +27,6 @@ namespace Hashinator{
       constexpr int BUCKET_OVERFLOW = 32;
       constexpr int elementsPerWarp =  1;
       template <typename T >
-      using  DefaultHashFunction=HashFunctions::Murmur<T>;
+      using  DefaultHashFunction=HashFunctions::Fibonacci<T>;
    } //namespace defaults;
 } //namespace Hashinator

@@ -83,7 +83,7 @@ namespace Hashinator{
        // Wrapper over available hash functions 
       HASHINATOR_HOSTDEVICE
       uint32_t hash(KEY_TYPE in) const {
-          static_assert(std::is_arithmetic<KEY_TYPE>::value && sizeof(KEY_TYPE) <= sizeof(uint32_t));
+          static_assert(std::is_arithmetic<KEY_TYPE>::value);
           return HashFunction::_hash(in,_mapInfo->sizePower);
        }
       
@@ -1255,7 +1255,7 @@ namespace Hashinator{
          if (item==EMPTYBUCKET || item==TOMBSTONE){return ++keyPos;}
 
          //Let's simply add a tombstone here
-         atomicExch(&buckets[index].first,TOMBSTONE);
+         h_atomicExch(&buckets[index].first,TOMBSTONE);
          atomicSub((unsigned int*)(&_mapInfo->fill), 1);
          atomicAdd((unsigned int*)(&_mapInfo->tombstoneCounter), 1);
          ++keyPos;
@@ -1273,11 +1273,11 @@ namespace Hashinator{
          size_t i =0;
          while(i<buckets.size()){
             uint32_t vecindex=(hashIndex + i) & bitMask;
-            KEY_TYPE old = atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, key);
+            KEY_TYPE old = h_atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, key);
             //Key does not exist so we create it and incerement fill
             if (old == EMPTYBUCKET){
-               atomicExch(&buckets[vecindex].first,key);
-               atomicExch(&buckets[vecindex].second,value);
+               h_atomicExch(&buckets[vecindex].first,key);
+               h_atomicExch(&buckets[vecindex].second,value);
                atomicAdd((unsigned int*)(&_mapInfo->fill), 1);
                thread_overflowLookup = i+1;
                return;
@@ -1285,7 +1285,7 @@ namespace Hashinator{
 
             //Key exists so we overwrite it. Fill stays the same
             if (old == key){
-               atomicExch(&buckets[vecindex].second,value);
+               h_atomicExch(&buckets[vecindex].second,value);
                thread_overflowLookup = i+1;
                return;
             }
