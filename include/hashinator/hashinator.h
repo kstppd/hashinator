@@ -823,8 +823,8 @@ namespace Hashinator{
       
       #ifndef HASHINATOR_HOST_ONLY
       //Pass memAdvice to hashinator and the underlying splitvector
-      HOSTONLY void memAdvise(cudaMemoryAdvise advice,int device ){
-         buckets.memAdvise(advice,device);
+      HOSTONLY void memAdvise(cudaMemoryAdvise advice,int device,cudaStream_t stream=0){
+         buckets.memAdvise(advice,device,stream);
          cudaMemAdvise( _mapInfo,sizeof(MapInfo) , advice, device ) ;
       }
 

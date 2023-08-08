@@ -308,9 +308,10 @@ namespace split{
          }
 
          //Pass memAdvice direcitves to the data.
-         HOSTONLY void memAdvise(cudaMemoryAdvise advice,int device ){
-            int device;
-            cudaGetDevice(&device);
+         HOSTONLY void memAdvise(cudaMemoryAdvise advice,int device=-1,cudaStream_t stream=0){
+            if (device==-1) {
+               cudaGetDevice(&device);
+            }
             cudaMemPrefetchAsync(_capacity,sizeof(size_t),cudaCpuDeviceId,stream);
             cudaStreamSynchronize(stream);
             cudaMemAdvise( _data, capacity()*sizeof(T), advice, device ) ;
