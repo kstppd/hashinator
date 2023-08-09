@@ -184,5 +184,20 @@ namespace Hashinator{
       }
       #endif 
    }
+
+   /*
+    * Wraps over down register shuffles for AMD and NVIDIA
+    */
+   template <typename T>
+   __device__  __forceinline__
+   T h_shuffle_down(T variable,unsigned int delta, unsigned int mask=0)noexcept{
+      static_assert(std::is_integral<T>::value && "Only integers supported");
+      #ifdef __NVCC__
+      return __shfl_down_sync(mask, variable, delta);
+      #endif
+      #ifdef __HIP_PLATFORM_HCC___
+      return __shfl_down(variable, delta);
+      #endif
+   }
 } //ns Hashinator
 #endif

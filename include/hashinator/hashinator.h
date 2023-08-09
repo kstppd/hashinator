@@ -1346,7 +1346,6 @@ namespace Hashinator{
             }
          }
           assert(false && "Key does not exist");
-          return ; //to get the compiler not to yell
       }
 
       

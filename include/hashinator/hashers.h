@@ -206,7 +206,7 @@ namespace Hashinator{
                if(warp_done>0){
                    //Reduce localcount from virtual warps
                   for (int i=WARPSIZE/2; i>0; i=i/2){
-                     localCount += __shfl_down_sync(SPLIT_VOTING_MASK, localCount, i);
+                     localCount += h_shuffle_down(localCount, i,SPLIT_VOTING_MASK);
                   }
                   if (proper_w_tid==0){
                      h_atomicAdd(d_fill,localCount);
@@ -339,7 +339,7 @@ namespace Hashinator{
                if(warp_done>0){
                   //Reduce localcount from virtual warps
                   for (int i=WARPSIZE/2; i>0; i=i/2){
-                     localCount += __shfl_down_sync(SPLIT_VOTING_MASK, localCount, i);
+                     localCount += h_shuffle_down(localCount, i,SPLIT_VOTING_MASK);
                   }
                   if (proper_w_tid==0){
                      h_atomicAdd(d_fill,localCount);
