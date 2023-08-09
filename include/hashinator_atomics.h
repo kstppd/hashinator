@@ -27,15 +27,12 @@
 #include <cuda_runtime_api.h>
 #include <cuda.h>
 
-
 namespace Hashinator{
-
-
 
    template <typename T>
    HASHINATOR_DEVICEONLY
    __forceinline__
-   T h_atomicExch(T* address, T val){
+   T h_atomicExch(T* address, T val)noexcept{
       static_assert(std::is_integral<T>::value && "Only integers supported");
       if constexpr(sizeof(T)==4){
          return atomicExch((unsigned int*)address,(unsigned int)val);
@@ -51,7 +48,7 @@ namespace Hashinator{
    template <typename T>
    HASHINATOR_DEVICEONLY
    __forceinline__
-   T h_atomicCAS(T* address,T compare, T val){
+   T h_atomicCAS(T* address,T compare, T val)noexcept{
       static_assert(std::is_integral<T>::value && "Only integers supported");
       if constexpr(sizeof(T)==4){
          return atomicCAS((unsigned int*)address,(unsigned int)compare,(unsigned int)val);
@@ -67,7 +64,7 @@ namespace Hashinator{
    template <typename T,typename U>
    HASHINATOR_DEVICEONLY
    __forceinline__
-   T h_atomicAdd(T* address, U val){
+   T h_atomicAdd(T* address, U val)noexcept{
       static_assert(std::is_integral<T>::value && "Only integers supported");
       if constexpr(sizeof(T)==4){
          if constexpr(std::is_signed<T>::value){
@@ -87,7 +84,7 @@ namespace Hashinator{
    template <typename T,typename U>
    HASHINATOR_DEVICEONLY
    __forceinline__
-   T h_atomicSub(T* address, U val){
+   T h_atomicSub(T* address, U val)noexcept{
       static_assert(std::is_integral<T>::value && "Only integers supported");
       if constexpr(sizeof(T)==4){
          if constexpr(std::is_signed<T>::value){
@@ -107,14 +104,16 @@ namespace Hashinator{
     * Returns the submask needed by each Virtual Warp during voting
     * CUDA and AMD variants
     */
+   [[nodiscard]]
    __device__  __forceinline__
-   uint32_t getIntraWarpMask_CUDA (uint32_t n ,uint32_t l ,uint32_t r){
+   uint32_t getIntraWarpMask_CUDA (uint32_t n ,uint32_t l ,uint32_t r)noexcept{
       uint32_t num = ((1<<r)-1)^((1<<(l-1))-1);
       return (n^num);
    };
    
+   [[nodiscard]]
    __device__  __forceinline__
-   uint64_t getIntraWarpMask_AMD(uint64_t n ,uint64_t l ,uint64_t r){
+   uint64_t getIntraWarpMask_AMD(uint64_t n ,uint64_t l ,uint64_t r)noexcept{
       uint64_t num = ((1ull<<r)-1)^((1ull<<(l-1))-1);
       return (n^num);
    };
@@ -125,7 +124,7 @@ namespace Hashinator{
     */
    template <typename T>
    __device__  __forceinline__
-   T warpVote(bool predicate,T votingMask=T(-1)){
+   T warpVote(bool predicate,T votingMask=T(-1))noexcept{
       #ifdef __NVCC__
       return __ballot_sync(votingMask,predicate);
       #endif 
@@ -140,7 +139,7 @@ namespace Hashinator{
     */
    template <typename T>
    __device__  __forceinline__
-   int findFirstSig(T mask){
+   int findFirstSig(T mask)noexcept{
       #ifdef __NVCC__
       return __ffs ( mask);
       #endif 
@@ -151,11 +150,11 @@ namespace Hashinator{
    }
 
    /*
-    * Wraps over __ffs for AMD and NVIDIA
+    * Wraps over any for AMD and NVIDIA
     */
    template <typename T>
    __device__  __forceinline__
-   int warpVoteAny(bool predicate,T votingMask=T(-1)){
+   int warpVoteAny(bool predicate,T votingMask=T(-1))noexcept{
       #ifdef __NVCC__
       return __any_sync(votingMask,predicate);
       #endif 
@@ -170,7 +169,7 @@ namespace Hashinator{
     */
    template <typename T>
    __device__  __forceinline__
-   uint32_t pop_count(T mask){
+   uint32_t pop_count(T mask)noexcept{
       #ifdef __NVCC__
          return __popc(mask);
       #endif 
@@ -185,8 +184,5 @@ namespace Hashinator{
       }
       #endif 
    }
-
-}
-
-
+} //ns Hashinator
 #endif
