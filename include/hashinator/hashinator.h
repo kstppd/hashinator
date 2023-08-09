@@ -305,6 +305,7 @@ namespace Hashinator{
          //Insert valid elements to now larger buckets
          insert(validElements,nValidElements,1,s);
          set_status((priorFill==_mapInfo->fill)?status::success:status::fail);
+         cudaFreeAsync(validElements,s);
       }
       #endif
 
@@ -445,7 +446,7 @@ namespace Hashinator{
       }
       #else
       HASHINATOR_HOSTONLY
-      void clear(targets t=targets::host, cudaStream_t s=0) {
+      void clear(targets t=targets::host, cudaStream_t s=0, bool prefetches=true) {
          size_t blocksNeeded;
          switch(t)
          {
@@ -455,7 +456,9 @@ namespace Hashinator{
                break;
 
             case targets::device :
-               buckets.optimizeGPU(s);
+               if (prefetches) {
+                  buckets.optimizeGPU(s);
+               }
                blocksNeeded=buckets.size()/defaults::MAX_BLOCKSIZE;
                blocksNeeded=blocksNeeded+(blocksNeeded==0);
                Hashers::reset_all_to_empty<KEY_TYPE,VAL_TYPE,EMPTYBUCKET>
@@ -589,9 +592,9 @@ namespace Hashinator{
       HASHINATOR_HOSTONLY
       void performCleanupTasks(cudaStream_t s=0){
          while (_mapInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW){
-            rehash(_mapInfo->sizePower+1);
+            device_rehash(_mapInfo->sizePower+1);
          }
-         if (tombstone_ratio()>0.25){
+         if (tombstone_ratio()>0.025){
             clean_tombstones(s);
          }
       }
@@ -819,8 +822,12 @@ namespace Hashinator{
          }
       }
       
-
       #ifndef HASHINATOR_HOST_ONLY
+      //Pass memAdvice to hashinator and the underlying splitvector
+      HOSTONLY void memAdvise(cudaMemoryAdvise advice,int device,cudaStream_t stream=0){
+         buckets.memAdvise(advice,device,stream);
+         cudaMemAdvise( _mapInfo,sizeof(MapInfo) , advice, device ) ;
+      }
 
       /*
        * Fills the splitvector "elements" with **copies** of the keys that match the pattern
@@ -844,9 +851,11 @@ namespace Hashinator{
        * */
       template <typename  Rule>
       HASHINATOR_HOSTONLY
-      size_t extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements ,Rule rule, cudaStream_t s=0){
-         elements.resize(1<<_mapInfo->sizePower);
-         elements.optimizeGPU(s);
+      size_t extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements ,Rule rule, cudaStream_t s=0, bool prefetches=true){
+         elements.resize(_mapInfo->fill+1,true);
+         if (prefetches) {
+            elements.optimizeGPU(s);
+         }
          //Extract elements matching the Pattern Rule(element)==true;
          size_t retval = split::tools::copy_if_raw<hash_pair
                          <KEY_TYPE, VAL_TYPE>,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
@@ -859,9 +868,11 @@ namespace Hashinator{
 
       template <typename  Rule>
       HASHINATOR_HOSTONLY
-      size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements ,Rule rule, cudaStream_t s=0){
-         elements.resize(1<<_mapInfo->sizePower);
-         elements.optimizeGPU(s);
+      size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements ,Rule rule, cudaStream_t s=0, bool prefetches=true){
+         elements.resize(_mapInfo->fill+1,true);
+         if (prefetches) {
+            elements.optimizeGPU(s);
+         }
          //Extract element **keys** matching the Pattern Rule(element)==true;
          size_t retval=split::tools::copy_keys_if_raw
                        <hash_pair<KEY_TYPE, VAL_TYPE>,KEY_TYPE,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
@@ -872,15 +883,15 @@ namespace Hashinator{
       }
 
       HASHINATOR_HOSTONLY
-      size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, cudaStream_t s=0){
+      size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, cudaStream_t s=0,bool prefetches=true){
          //Extract all keys
          auto rule=[] __host__ __device__ (const hash_pair<KEY_TYPE, VAL_TYPE>& kval)->bool{
             return kval.first!=EMPTYBUCKET && kval.first != TOMBSTONE;
          };
-         return extractKeysByPattern(elements,rule,s);
+         return extractKeysByPattern(elements,rule,s,prefetches);
       }
 
-      void clean_tombstones(cudaStream_t s=0){
+      void clean_tombstones(cudaStream_t s=0,bool prefetches=false){
    
          if (_mapInfo->tombstoneCounter == 0){
             return ;
@@ -893,7 +904,9 @@ namespace Hashinator{
          hash_pair<KEY_TYPE, VAL_TYPE>* overflownElements; 
          cudaMallocAsync((void**)&overflownElements, (1<<_mapInfo->sizePower) * sizeof(hash_pair<KEY_TYPE, VAL_TYPE>),s);
 
-         optimizeGPU(s);
+         if (prefetches) {
+            optimizeGPU(s);
+         }
          cudaStreamSynchronize(s);
          uint32_t nOverflownElements=split::tools::copy_if_raw
             <hash_pair<KEY_TYPE, VAL_TYPE>,Overflown_Predicate<KEY_TYPE,VAL_TYPE>,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
@@ -933,13 +946,15 @@ namespace Hashinator{
 
       //Uses Hasher's insert_kernel to insert all elements
       HASHINATOR_HOSTONLY
-      void insert(KEY_TYPE* keys,VAL_TYPE* vals,size_t len,float targetLF=0.5,cudaStream_t s=0){
+      void insert(KEY_TYPE* keys,VAL_TYPE* vals,size_t len,float targetLF=0.5,cudaStream_t s=0, bool prefetches=true){
          //Here we do some calculations to estimate how much if any we need to grow our buckets
          size_t neededPowerSize=std::ceil(std::log2((_mapInfo->fill+len)*(1.0/targetLF)));
          if (neededPowerSize>_mapInfo->sizePower){
             resize(neededPowerSize,targets::device,s);
          }
-         buckets.optimizeGPU(s);
+         if (prefetches) {
+            buckets.optimizeGPU(s);
+         }
          _mapInfo->currentMaxBucketOverflow=_mapInfo->currentMaxBucketOverflow;
          DeviceHasher::insert(keys,vals,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,&_mapInfo->currentMaxBucketOverflow,&_mapInfo->fill,len,&_mapInfo->err,s);
          return;
@@ -1043,7 +1058,7 @@ namespace Hashinator{
          }else{
             if(tombstone_count()>0){
                std::cout<<"Cleaning Tombstones"<<std::endl;
-               clean_tombstones();
+               clean_tombstones(stream);
             }
          }
       }
@@ -1307,7 +1322,7 @@ namespace Hashinator{
 
       HASHINATOR_DEVICEONLY
       void set_element(const KEY_TYPE& key,VAL_TYPE val){
-         size_t thread_overflowLookup;
+         size_t thread_overflowLookup=0;
          insert_element(key,val,thread_overflowLookup);
          atomicMax((unsigned long long*)&(_mapInfo->currentMaxBucketOverflow),nextPow2(thread_overflowLookup));
       }
