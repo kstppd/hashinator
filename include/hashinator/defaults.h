@@ -22,10 +22,15 @@
 
 namespace Hashinator{
    namespace defaults{
+      #ifdef  __NVCC__
       constexpr int WARPSIZE = 32;
-      constexpr int MAX_BLOCKSIZE = 1024;
       constexpr int BUCKET_OVERFLOW = 32;
+      #else
+      constexpr int WARPSIZE = 64;
+      constexpr int BUCKET_OVERFLOW = 64;
+      #endif
       constexpr int elementsPerWarp =  1;
+      constexpr int MAX_BLOCKSIZE = 1024;
       template <typename T >
       using  DefaultHashFunction=HashFunctions::Fibonacci<T>;
    } //namespace defaults;

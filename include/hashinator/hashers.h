@@ -128,6 +128,7 @@ namespace Hashinator{
          const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
          const size_t wid = tid/VIRTUALWARP;
          const size_t w_tid=tid%VIRTUALWARP;
+         const size_t proper_w_tid=tid%WARPSIZE;
          //Early quit if we have more warps than elements to insert
          if (wid>=len || *err==status::fail){
             return;
@@ -158,8 +159,8 @@ namespace Hashinator{
          const auto hashIndex = HashFunction::_hash(candidate.first,sizePower);
          const size_t optimalindex=(hashIndex) & bitMask;
 
-         //No duplicates so we insert
          bool done=false;
+         int localCount=0; //warp accumulator
          for(size_t i=0; i<(1<<sizePower); i+=VIRTUALWARP){
 
             //Get the position we should be looking into
@@ -192,7 +193,7 @@ namespace Hashinator{
                      if (overflow>*d_overflow){
                         h_atomicExch(( unsigned long long*)d_overflow,(unsigned long long)nextPow2(overflow));
                      }
-                     h_atomicAdd(d_fill, 1);
+                     localCount++;
                      done=true;
                   }
                   //Parallel stuff are fun. Major edge case!
@@ -203,6 +204,13 @@ namespace Hashinator{
                }
                int warp_done=warpVoteAny(done,submask);
                if(warp_done>0){
+                   //Reduce localcount from virtual warps
+                  for (int i=WARPSIZE/2; i>0; i=i/2){
+                     localCount += __shfl_down_sync(SPLIT_VOTING_MASK, localCount, i);
+                  }
+                  if (proper_w_tid==0){
+                     h_atomicAdd(d_fill,localCount);
+                  }
                   return;
                }
                mask ^= (1UL << winner);
@@ -251,6 +259,7 @@ namespace Hashinator{
          const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
          const size_t wid = tid/VIRTUALWARP;
          const size_t w_tid=tid%VIRTUALWARP;
+         const size_t proper_w_tid=tid%WARPSIZE;
          //Early quit if we have more warps than elements to insert
          if (wid>=len || *err==status::fail){
             return;
@@ -283,7 +292,7 @@ namespace Hashinator{
          const auto hashIndex = HashFunction::_hash(candidateKey,sizePower);
          const size_t optimalindex=(hashIndex) & bitMask;
 
-         //No duplicates so we insert
+         int localCount=0; //warp accumulator
          bool done=false;
          for(size_t i=0; i<(1<<sizePower); i+=VIRTUALWARP){
 
@@ -317,7 +326,7 @@ namespace Hashinator{
                      if (overflow>*d_overflow){
                         h_atomicExch(( unsigned long long*)d_overflow,(unsigned long long)nextPow2(overflow));
                      }
-                     h_atomicAdd(d_fill, 1);
+                     localCount+=1;
                      done=true;
                   }
                   //Parallel stuff are fun. Major edge case!
@@ -328,6 +337,13 @@ namespace Hashinator{
                }
                int warp_done=warpVoteAny(done,submask);
                if(warp_done>0){
+                  //Reduce localcount from virtual warps
+                  for (int i=WARPSIZE/2; i>0; i=i/2){
+                     localCount += __shfl_down_sync(SPLIT_VOTING_MASK, localCount, i);
+                  }
+                  if (proper_w_tid==0){
+                     h_atomicAdd(d_fill,localCount);
+                  }
                   return;
                }
                mask ^= (1UL << winner);
@@ -432,7 +448,8 @@ namespace Hashinator{
          const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
          const size_t wid = tid/VIRTUALWARP;
          const size_t w_tid=tid%VIRTUALWARP;
-         //Early quit if we have more warps than elements to insert
+         
+         //Early quit if we have more warps than elements to handle
          if (wid>=len){
             return;
          }
@@ -463,7 +480,6 @@ namespace Hashinator{
          const int bitMask = (1 <<(sizePower )) - 1; 
          const auto  hashIndex = HashFunction::_hash(candidateKey,sizePower);
 
-         //Check for duplicates
          for(size_t i=0; i<maxoverflow; i+=VIRTUALWARP){
             
             //Get the position we should be looking into
