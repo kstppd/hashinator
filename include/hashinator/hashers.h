@@ -89,25 +89,56 @@ namespace Hashinator{
          return;
       }
 
-      
-         /*Warp Synchronous hashing kernel for hashinator's internal use:
-       * This method uses 32-thread Warps to hash an element from src.
-       * Threads in a given warp simultaneously try to hash an element
-       * in the buckets by using warp voting to communicate available 
-       * positions in the probing  sequence. The position of least overflow
-       * is selected by using __ffs to decide on the winner. If no positios
-       * are available in the probing sequence the warp shifts by a warp size
-       * and ties to overflow(up to maxoverflow).
-       * No tombstones allowed!
-       * Parameters:
-       *    src          -> pointer to device data with pairs to be inserted
-       *    buckets      -> current hashinator buckets
-       *    sizePower    -> current hashinator sizepower
-       *    maxoverflow  -> maximum allowed overflow
-       *    d_overflow   -> stores the overflow after inserting the elements
-       *    d_fill       -> stores the device fill after inserting the elements
-       *    len          -> number of elements to read from src
-       * */
+
+
+      /*
+      This requires thread synchronization so it is not supported on AMD.
+      Now the issue here is that with Virtual Warps enabled some threads of some 
+      warp may or may not be inactive. Thus thread synchronization here is dangerous!
+      So on to the solution:
+      +Case 1: 
+         activemask == SPLIT_VOTING_MASK
+         here we can perform a full warp reduction
+      +Case 2: 
+         activemask != SPLIT_VOTING_MASK
+         here part of the warp is inactive and the reduction is more complex
+      */
+      template< int WARPSIZE>
+      HASHINATOR_DEVICEONLY
+      __forceinline__
+      void reduceFast(int localCount,size_t proper_w_tid,size_t *totalCount){
+
+         auto isPow2=[](const int val )->bool{
+            return (val &(val-1))==0;
+         };
+                                                 
+         auto mask=__activemask();
+         //case 1: full warp active
+         if (mask==SPLIT_VOTING_MASK){
+            for (int i=WARPSIZE/2; i>0; i=i/2){
+               localCount += h_shuffle_down(localCount, i,SPLIT_VOTING_MASK);
+            }
+            if (proper_w_tid==0){
+               h_atomicAdd(totalCount,localCount);
+            }
+         }else{ //case 2: part of warp active
+            //Get the number of participating threads
+            int n=pop_count(mask);
+            if (isPow2(n)){
+               for (int i=n/2; i>0; i=i/2){
+                  localCount += h_shuffle_down(localCount, i,mask);
+               }
+               if (proper_w_tid==0){
+                  h_atomicAdd(totalCount,localCount);
+               }
+            }else{
+               if (localCount>0){
+                  h_atomicAdd(totalCount,localCount);
+               }
+            }
+         }
+      }
+
       template<typename KEY_TYPE, 
                typename VAL_TYPE,
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
@@ -123,12 +154,13 @@ namespace Hashinator{
                          size_t* d_fill,
                          size_t len,status* err)
       {
-         
+
          const int VIRTUALWARP=WARPSIZE/elementsPerWarp;
          const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
          const size_t wid = tid/VIRTUALWARP;
          const size_t w_tid=tid%VIRTUALWARP;
-         const size_t proper_w_tid=tid%WARPSIZE;
+         const size_t proper_w_tid=tid%WARPSIZE; //the proper WID as if we had no Virtual warps
+                                                 //
          //Early quit if we have more warps than elements to insert
          if (wid>=len || *err==status::fail){
             return;
@@ -154,34 +186,44 @@ namespace Hashinator{
             submask=getIntraWarpMask_AMD(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
          #endif 
+
          hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[wid];
          const int  bitMask = (1 <<(sizePower )) - 1; 
          const auto hashIndex = HashFunction::_hash(candidate.first,sizePower);
          const size_t optimalindex=(hashIndex) & bitMask;
 
-         bool done=false;
+         int vWarpDone=0;  // state of virtual warp
          int localCount=0; //warp accumulator
          for(size_t i=0; i<(1<<sizePower); i+=VIRTUALWARP){
+
+            //Check if this virtual warp is done. 
+            if (vWarpDone){
+               break;
+            }
 
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
 
             //vote for available emptybuckets in warp region
             //Note that this has to be done before voting for already existing elements (below)
-            auto mask = warpVote(buckets[probingindex].first==EMPTYBUCKET,SPLIT_VOTING_MASK)&submask;
+            auto mask = warpVote(buckets[probingindex].first==EMPTYBUCKET,submask);
 
             //Check if this elements already exists
-            auto already_exists = warpVote(buckets[probingindex].first==candidate.first,SPLIT_VOTING_MASK)&submask;
+            auto already_exists = warpVote(buckets[probingindex].first==candidate.first,submask);
             if (already_exists){
                int winner =findFirstSig( already_exists ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
                   h_atomicExch(&buckets[probingindex].second,candidate.second);
+                  //This virtual warp is now done.
+                  vWarpDone = 1; 
                }
-               return;
             }
 
-            while(mask){
+            //If any duplicate was there now is the time for the whole Virtual warp to find out!
+            vWarpDone=warpVoteAny(vWarpDone,submask);
+
+            while(mask && !vWarpDone){
                int winner =findFirstSig( mask ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
@@ -194,31 +236,33 @@ namespace Hashinator{
                         h_atomicExch(( unsigned long long*)d_overflow,(unsigned long long)nextPow2(overflow));
                      }
                      localCount++;
-                     done=true;
+                     vWarpDone=1;
                   }
                   //Parallel stuff are fun. Major edge case!
                   if (old==candidate.first){
                      h_atomicExch(&buckets[probingindex].second,candidate.second);
-                     done=true;
+                     vWarpDone=1;
                   }
                }
-               int warp_done=warpVoteAny(done,submask);
-               if(warp_done>0){
-                   //Reduce localcount from virtual warps
-                  for (int i=WARPSIZE/2; i>0; i=i/2){
-                     localCount += h_shuffle_down(localCount, i,SPLIT_VOTING_MASK);
-                  }
-                  if (proper_w_tid==0){
-                     h_atomicAdd(d_fill,localCount);
-                  }
-                  return;
-               }
+               //If any of the virtual warp threads are done the the whole 
+               //Virtual warp is done
+               vWarpDone=warpVoteAny(vWarpDone,submask);
                mask ^= (1UL << winner);
             }
          }
-         h_atomicExch((uint32_t*)err,(uint32_t)status::fail);
-      }
 
+         //We sync the ative warp and reduce the local count from all virtual warps.
+         __syncwarp(__activemask());
+         if (vWarpDone){
+            reduceFast<WARPSIZE>(localCount,proper_w_tid,d_fill);
+            return;
+         }
+
+         //If we get here the virtual warp has failed 
+         h_atomicExch((uint32_t*)err,(uint32_t)status::fail);
+         return;
+      }
+      
 
       /*Warp Synchronous hashing kernel for hashinator's internal use:
        * This method uses 32-thread Warps to hash an element from src.
@@ -259,7 +303,8 @@ namespace Hashinator{
          const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
          const size_t wid = tid/VIRTUALWARP;
          const size_t w_tid=tid%VIRTUALWARP;
-         const size_t proper_w_tid=tid%WARPSIZE;
+         const size_t proper_w_tid=tid%WARPSIZE; //the proper WID as if we had no Virtual warps
+                                                 
          //Early quit if we have more warps than elements to insert
          if (wid>=len || *err==status::fail){
             return;
@@ -282,7 +327,7 @@ namespace Hashinator{
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=getIntraWarpMask_AMD(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
          #endif 
 
@@ -292,10 +337,14 @@ namespace Hashinator{
          const auto hashIndex = HashFunction::_hash(candidateKey,sizePower);
          const size_t optimalindex=(hashIndex) & bitMask;
 
+         int vWarpDone=0;  // state of virtual warp
          int localCount=0; //warp accumulator
-         bool done=false;
          for(size_t i=0; i<(1<<sizePower); i+=VIRTUALWARP){
 
+            //Check if this virtual warp is done. 
+            if (vWarpDone){
+               break;
+            }
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
 
@@ -310,11 +359,15 @@ namespace Hashinator{
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
                   h_atomicExch(&buckets[probingindex].second,candidateVal);
+                  //This virtual warp is now done.
+                  vWarpDone = 1; 
                }
-               return;
             }
 
-            while(mask){
+            //If any duplicate was there now is the time for the whole Virtual warp to find out!
+            vWarpDone=warpVoteAny(vWarpDone,submask);
+
+            while(mask && !vWarpDone){
                int winner =findFirstSig( mask ) -1;
                int sub_winner=winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
@@ -326,30 +379,32 @@ namespace Hashinator{
                      if (overflow>*d_overflow){
                         h_atomicExch(( unsigned long long*)d_overflow,(unsigned long long)nextPow2(overflow));
                      }
-                     localCount+=1;
-                     done=true;
+                     localCount++;
+                     vWarpDone=1;
                   }
                   //Parallel stuff are fun. Major edge case!
                   if (old==candidateKey){
                      h_atomicExch(&buckets[probingindex].second,candidateVal);
-                     done=true;
+                     vWarpDone=1;
                   }
                }
-               int warp_done=warpVoteAny(done,submask);
-               if(warp_done>0){
-                  //Reduce localcount from virtual warps
-                  for (int i=WARPSIZE/2; i>0; i=i/2){
-                     localCount += h_shuffle_down(localCount, i,SPLIT_VOTING_MASK);
-                  }
-                  if (proper_w_tid==0){
-                     h_atomicAdd(d_fill,localCount);
-                  }
-                  return;
-               }
+
+               //If any of the virtual warp threads are done the the whole 
+               //Virtual warp is done
+               vWarpDone=warpVoteAny(vWarpDone,submask);
                mask ^= (1UL << winner);
             }
          }
+         //We sync the ative warp and reduce the local count from all virtual warps.
+         __syncwarp(__activemask());
+         if (vWarpDone){
+            reduceFast<WARPSIZE>(localCount,proper_w_tid,d_fill);
+            return;
+         }
+
+         //If we get here the virtual warp has failed 
          h_atomicExch((uint32_t*)err,(uint32_t)status::fail);
+         return;
       }
 
       /*
