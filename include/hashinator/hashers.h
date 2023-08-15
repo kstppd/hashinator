@@ -192,11 +192,15 @@ namespace Hashinator{
          const size_t blockWid=proper_wid%WARPSIZE;
  
             
-         //Zero out shared count;
-         if (proper_w_tid==0){
-            addMask[(blockWid)]=0;
-         }
          
+         //Zero out shared count;
+         if (proper_w_tid==0 && blockWid==0 ){
+            for (int i =0 ; i< WARPSIZE/4; i+=4){
+               addMask[i] = 0;
+               warpOverflow[i] = 0;
+            }
+         }
+
          #ifdef __NVCC__
          uint32_t subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
          uint32_t submask;
@@ -366,10 +370,13 @@ namespace Hashinator{
  
             
          //Zero out shared count;
-         if (proper_w_tid==0){
-            addMask[(blockWid)]=0;
+         if (proper_w_tid==0 && blockWid==0 ){
+            for (int i =0 ; i< WARPSIZE/4; i+=4){
+               addMask[i] = 0;
+               warpOverflow[i] = 0;
+            }
          }
-         
+
          #ifdef __NVCC__
          uint32_t subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
          uint32_t submask;
