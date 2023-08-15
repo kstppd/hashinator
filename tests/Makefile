@@ -30,7 +30,7 @@ gtest_hashmap.o: hashmap_unit_test/main.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o gtest_hashmap hashmap_unit_test/main.cu
 
 benchmark.o: benchmark/main.cu
-	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o benchmark_hashinator benchmark/main.cu
+	${CC} --ptxas-options=-v ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o benchmark_hashinator benchmark/main.cu
 
 gtest_vec_host.o: gtest_vec_host/vec_test.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o gtestvechost gtest_vec_host/vec_test.cu
