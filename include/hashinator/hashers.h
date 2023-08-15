@@ -89,77 +89,22 @@ namespace Hashinator{
          return;
       }
 
-      /*
-      This requires thread synchronization so it is not supported on AMD.
-      Now the issue here is that with Virtual Warps enabled some threads of some 
-      warp may or may not be inactive. Thus thread synchronization here is dangerous!
-      So on to the solution:
-      +Case 1: 
-         activemask == SPLIT_VOTING_MASK
-         here we can perform a full warp reduction
-      +Case 2: 
-         activemask != SPLIT_VOTING_MASK
-         here part of the warp is inactive and the reduction is more complex
-      */
       template< int WARPSIZE>
       HASHINATOR_DEVICEONLY
       __forceinline__
       int warpReduce(int localCount){
-
-         auto isPow2=[](const int val )->bool{
-            return (val &(val-1))==0;
-         };
-                                                 
-         auto mask=__activemask();
-         //case 1: full warp active
-         if (mask==SPLIT_VOTING_MASK){
-            for (int i=WARPSIZE/2; i>0; i=i/2){
-               localCount += h_shuffle_down(localCount, i,SPLIT_VOTING_MASK);
-            }
-         }else{ //case 2: part of warp active
-            //Get the number of participating threads
-            int n=pop_count(mask);
-            if (isPow2(n)){
-               for (int i=n/2; i>0; i=i/2){
-                  localCount += h_shuffle_down(localCount, i,mask);
-               }
-            }else{
-               int totalCount=0;
-               if (localCount>0){
-                  h_atomicAdd(&totalCount,localCount);
-               }
-               return totalCount;
-            }
+         for (int i=WARPSIZE/2; i>0; i=i/2){
+            localCount += h_shuffle_down(localCount, i,SPLIT_VOTING_MASK);
          }
          return localCount;
       }
-
 
       template< int WARPSIZE>
       HASHINATOR_DEVICEONLY
       __forceinline__
       uint64_t warpReduceMax(uint64_t entry){
-         auto isPow2=[](const int val )->bool{
-            return (val &(val-1))==0;
-         };
-         auto mask=__activemask();
-         //case 1: full warp active
-         if (mask==SPLIT_VOTING_MASK){
-            for (int i=WARPSIZE/2; i>0; i=i/2){
-               entry= std::max( entry ,  h_shuffle_down(entry, i,SPLIT_VOTING_MASK));
-            }
-         }else{
-            //Get the number of participating threads
-            int n=pop_count(mask);
-            if (isPow2(n)){
-               for (int i=n/2; i>0; i=i/2){
-                  entry =std::max( entry ,  h_shuffle_down(entry, i,mask));
-               }
-            }else{
-               uint64_t retval = 0;
-               atomicMax((unsigned long long*)retval,entry);
-               return retval;
-            }
+         for (int i=WARPSIZE/2; i>0; i=i/2){
+            entry= std::max( entry ,  h_shuffle_down(entry, i,SPLIT_VOTING_MASK));
          }
          return entry;
       }
@@ -192,6 +137,11 @@ namespace Hashinator{
          const size_t blockWid=proper_wid%WARPSIZE;
  
             
+         //Early quit if we have more warps than elements to insert
+         if (wid>=len || *err==status::fail){
+            return;
+         }
+            
          
          //Zero out shared count;
          if (proper_w_tid==0 && blockWid==0 ){
@@ -200,6 +150,9 @@ namespace Hashinator{
                warpOverflow[i] = 0;
             }
          }
+         __syncthreads();
+
+         
 
          #ifdef __NVCC__
          uint32_t subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
@@ -290,10 +243,12 @@ namespace Hashinator{
             Step 1--> First thread per warp reduces the total elements added (per Warp)
             Step 2--> Reduce the blockTotal from the warpTotals but do it in registers using the first warp in the block
          */
-         __syncwarp();
+         
          //Per warp reduction
+         __syncwarp();
          int warpTotals= warpReduce<WARPSIZE>(localCount);
          uint64_t perWarpOverflow=warpReduceMax<WARPSIZE>(threadOverflow);
+         __syncwarp();
 
          //Store to shmem minding Bank Conflicts
          if (proper_w_tid==0){
