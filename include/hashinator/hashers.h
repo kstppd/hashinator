@@ -195,7 +195,7 @@ namespace Hashinator{
          
          //Zero out shared count;
          if (proper_w_tid==0 && blockWid==0 ){
-            for (int i =0 ; i< WARPSIZE/4; i+=4){
+            for (int i =0 ; i< WARPSIZE; i++){
                addMask[i] = 0;
                warpOverflow[i] = 0;
             }
@@ -371,7 +371,7 @@ namespace Hashinator{
             
          //Zero out shared count;
          if (proper_w_tid==0 && blockWid==0 ){
-            for (int i =0 ; i< WARPSIZE/4; i+=4){
+            for (int i =0 ; i< WARPSIZE; i++){
                addMask[i] = 0;
                warpOverflow[i] = 0;
             }
