@@ -33,6 +33,9 @@
 #include "../common.h"
 #include "../hashinator_atomics.h"
 
+#define NUM_BANKS 32 //TODO depends on device
+#define LOG_NUM_BANKS 5
+#define CF(n) ((n) >> LOG_NUM_BANKS)
 namespace Hashinator{
 
    namespace Hashers{
@@ -139,6 +142,66 @@ namespace Hashinator{
          }
       }
 
+      /*
+      This requires thread synchronization so it is not supported on AMD.
+      Now the issue here is that with Virtual Warps enabled some threads of some 
+      warp may or may not be inactive. Thus thread synchronization here is dangerous!
+      So on to the solution:
+      +Case 1: 
+         activemask == SPLIT_VOTING_MASK
+         here we can perform a full warp reduction
+      +Case 2: 
+         activemask != SPLIT_VOTING_MASK
+         here part of the warp is inactive and the reduction is more complex
+      */
+      template< int WARPSIZE>
+      HASHINATOR_DEVICEONLY
+      __forceinline__
+      int reduceFast2(int localCount,size_t proper_w_tid){
+
+         auto isPow2=[](const int val )->bool{
+            return (val &(val-1))==0;
+         };
+                                                 
+         auto mask=__activemask();
+         //case 1: full warp active
+         if (mask==SPLIT_VOTING_MASK){
+            for (int i=WARPSIZE/2; i>0; i=i/2){
+               localCount += h_shuffle_down(localCount, i,SPLIT_VOTING_MASK);
+            }
+         }else{ //case 2: part of warp active
+            //Get the number of participating threads
+            int n=pop_count(mask);
+            if (isPow2(n)){
+               for (int i=n/2; i>0; i=i/2){
+                  localCount += h_shuffle_down(localCount, i,mask);
+               }
+            }else{
+               int totalCount=0;
+               printf("Localcount = %d\n",localCount);
+               if (localCount>0){
+                  h_atomicAdd(&totalCount,localCount);
+               }
+               printf("totalcount = %d\n",totalCount);
+               return totalCount;
+            }
+         }
+         return localCount;
+      }
+
+
+      template< typename T>
+      HASHINATOR_DEVICEONLY
+      __forceinline__ 
+      T warpReduceMax(T maxVal) {
+         maxVal = std::max((unsigned long long)maxVal,__shfl_xor_sync(SPLIT_VOTING_MASK,(unsigned long long)maxVal, 16));
+         maxVal = std::max((unsigned long long)maxVal,__shfl_xor_sync(SPLIT_VOTING_MASK,(unsigned long long)maxVal, 8));
+         maxVal = std::max((unsigned long long)maxVal,__shfl_xor_sync(SPLIT_VOTING_MASK,(unsigned long long)maxVal, 4));
+         maxVal = std::max((unsigned long long)maxVal,__shfl_xor_sync(SPLIT_VOTING_MASK,(unsigned long long)maxVal, 2));
+         maxVal = std::max((unsigned long long)maxVal,__shfl_xor_sync(SPLIT_VOTING_MASK,(unsigned long long)maxVal, 1));
+         return maxVal;
+      }
+
       template<typename KEY_TYPE, 
                typename VAL_TYPE,
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
@@ -155,17 +218,23 @@ namespace Hashinator{
                          size_t len,status* err)
       {
 
+         __shared__ uint32_t addMask[2*WARPSIZE];
+         __shared__ uint64_t warpOverflow[2*WARPSIZE];
+
          const int VIRTUALWARP=WARPSIZE/elementsPerWarp;
          const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
          const size_t wid = tid/VIRTUALWARP;
          const size_t w_tid=tid%VIRTUALWARP;
          const size_t proper_w_tid=tid%WARPSIZE; //the proper WID as if we had no Virtual warps
-                                                 //
-         //Early quit if we have more warps than elements to insert
-         if (wid>=len || *err==status::fail){
-            return;
+         const size_t proper_wid=tid/WARPSIZE; 
+         const size_t blockWid=proper_wid%WARPSIZE;
+ 
+            
+         //Zero out shared count;
+         if (proper_w_tid==0){
+            addMask[CF(blockWid)]=0;
          }
-
+         
          #ifdef __NVCC__
          uint32_t subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
          uint32_t submask;
@@ -187,13 +256,14 @@ namespace Hashinator{
          }
          #endif 
 
-         hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[wid];
+         hash_pair<KEY_TYPE,VAL_TYPE> candidate=src[wid];
          const int  bitMask = (1 <<(sizePower )) - 1; 
          const auto hashIndex = HashFunction::_hash(candidate.first,sizePower);
          const size_t optimalindex=(hashIndex) & bitMask;
 
-         int vWarpDone=0;  // state of virtual warp
-         int localCount=0; //warp accumulator
+         uint32_t vWarpDone=0;  // state of virtual warp
+         uint64_t threadOverflow=0;
+         int localCount=0;
          for(size_t i=0; i<(1<<sizePower); i+=VIRTUALWARP){
 
             //Check if this virtual warp is done. 
@@ -203,13 +273,14 @@ namespace Hashinator{
 
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
+            auto target=buckets[probingindex];
 
             //vote for available emptybuckets in warp region
             //Note that this has to be done before voting for already existing elements (below)
-            auto mask = warpVote(buckets[probingindex].first==EMPTYBUCKET,submask);
+            auto mask = warpVote(target.first==EMPTYBUCKET,submask);
 
             //Check if this elements already exists
-            auto already_exists = warpVote(buckets[probingindex].first==candidate.first,submask);
+            auto already_exists = warpVote(target.first==candidate.first,submask);
             if (already_exists){
                int winner =findFirstSig( already_exists ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
@@ -229,17 +300,13 @@ namespace Hashinator{
                if (w_tid==sub_winner){
                   KEY_TYPE old = h_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidate.first);
                   if (old == EMPTYBUCKET){
-                     size_t  overflow = (probingindex<optimalindex)?(1<<sizePower):(probingindex-optimalindex);
+                     threadOverflow = (probingindex<optimalindex)?(1<<sizePower):(probingindex-optimalindex);
                      h_atomicExch(&buckets[probingindex].second,candidate.second);
-                     //For some reason this is faster than callign atomicMax without the if
-                     if (overflow>*d_overflow){
-                        h_atomicExch(( unsigned long long*)d_overflow,(unsigned long long)nextPow2(overflow));
-                     }
-                     localCount++;
                      vWarpDone=1;
-                  }
-                  //Parallel stuff are fun. Major edge case!
-                  if (old==candidate.first){
+                     //Flip the bit which corresponds to the thread that added an element
+                     localCount++;
+                  }else if (old==candidate.first){
+                     //Parallel stuff are fun. Major edge case!
                      h_atomicExch(&buckets[probingindex].second,candidate.second);
                      vWarpDone=1;
                   }
@@ -251,15 +318,38 @@ namespace Hashinator{
             }
          }
 
-         //We sync the ative warp and reduce the local count from all virtual warps.
-         __syncwarp(__activemask());
-         if (vWarpDone){
-            reduceFast<WARPSIZE>(localCount,proper_w_tid,d_fill);
-            return;
+         
+         //Update fill and overflow in 2 steps:
+         //Step 1--> First thread per warp reduces the total elements added (per Warp)
+         int warpTotals= reduceFast2<WARPSIZE>(localCount,proper_w_tid);
+         __syncwarp();
+         if (proper_w_tid==0){
+            //Write the count to the same place 
+            addMask[CF(blockWid)]=warpTotals;
          }
 
-         //If we get here the virtual warp has failed 
-         h_atomicExch((uint32_t*)err,(uint32_t)status::fail);
+         //Step 2--> Reduce the blockTotal from the warpTotals but do it in registers using the first warp in the block
+         __syncthreads();
+         //Good time to piggyback the syncthreads call and also reduce the threadOverflow
+         warpOverflow[CF( blockWid )]=warpReduceMax(threadOverflow);
+         if (blockWid==0){
+            uint64_t blockOverflow=reduceFast2<WARPSIZE>(warpOverflow[CF( proper_w_tid )],proper_w_tid);
+            int blockTotal = reduceFast2<WARPSIZE>(addMask[CF(proper_w_tid)],proper_w_tid);
+            if (proper_w_tid==0){
+               h_atomicAdd(d_fill,blockTotal);;
+               //Also update the overflow if needed
+               if (blockOverflow>*d_overflow){
+                  h_atomicExch(( unsigned long long*)d_overflow,(unsigned long long)nextPow2(blockOverflow));
+               }
+            }
+         }
+
+
+         //Make sure everyone actually made it.
+         if (warpVote(vWarpDone,SPLIT_VOTING_MASK)!=__activemask()){
+            h_atomicExch((uint32_t*)err,(uint32_t)status::fail);
+         }
+
          return;
       }
       
@@ -381,9 +471,8 @@ namespace Hashinator{
                      }
                      localCount++;
                      vWarpDone=1;
-                  }
+                  }else if (old==candidateKey){
                   //Parallel stuff are fun. Major edge case!
-                  if (old==candidateKey){
                      h_atomicExch(&buckets[probingindex].second,candidateVal);
                      vWarpDone=1;
                   }
