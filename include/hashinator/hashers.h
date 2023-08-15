@@ -138,10 +138,9 @@ namespace Hashinator{
  
             
          //Early quit if we have more warps than elements to insert
-         if (wid>=len || *err==status::fail){
+         if (wid>=len){
             return;
          }
-            
          
          //Zero out shared count;
          if (proper_w_tid==0 && blockWid==0 ){
@@ -323,6 +322,11 @@ namespace Hashinator{
          const size_t proper_wid=tid/WARPSIZE; 
          const size_t blockWid=proper_wid%WARPSIZE;
  
+         //Early quit if we have more warps than elements to insert
+         if (wid>=len){
+            return;
+         }
+         
             
          //Zero out shared count;
          if (proper_w_tid==0 && blockWid==0 ){
