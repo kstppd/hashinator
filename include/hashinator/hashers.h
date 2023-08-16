@@ -335,6 +335,7 @@ namespace Hashinator{
                warpOverflow[i] = 0;
             }
          }
+         __syncthreads();
 
          #ifdef __NVCC__
          uint32_t subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
