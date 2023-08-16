@@ -1,7 +1,7 @@
 /* File:    hashers.h
  * Authors: Kostis Papadakis, Urs Ganse and Markus Battarbee (2023)
- * Description: Defines parallel hashers that insert elements
- *              to Hahsinator on device
+ * Description: Defines parallel hashers that insert,retrieve and 
+ *               delete elements to/from Hahsinator on device
  *
  * This file defines the following:
  *    --Hashinator::Hashers::reset_to_empty()
@@ -11,7 +11,10 @@
  *    --Hashinator::Hashers::delete_kernel()
  *    --Hashinator::Hashers::insert()
  *    --Hashinator::Hashers::retrieve()
- *    --Hashinator::Hashers::remove()
+ *    --Hashinator::Hashers::erase()
+ *    --Hashinator::Hashers::launchParams()
+ *    --Hashinator::Hashers::warpReduce()
+ *    --Hashinator::Hashers::warpReduceMax()
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
