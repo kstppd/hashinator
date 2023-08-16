@@ -530,6 +530,73 @@ namespace Hashinator{
 
       }
 
+      /*
+       * Similarly to the insert_kernel we examine elements in keys and return their value in vals,
+       * if the do exist in the hashmap. If the elements is not found and invalid key is returned;
+       * */
+      template<typename KEY_TYPE,
+               typename VAL_TYPE,
+               KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
+               class HashFunction=HashFunctions::Fibonacci<KEY_TYPE>,
+               int WARPSIZE=defaults::WARPSIZE,
+               int elementsPerWarp>
+      __global__ 
+      void retrieve_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src,
+                           hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                           int sizePower,
+                           size_t maxoverflow)
+      {
+
+         const int VIRTUALWARP=WARPSIZE/elementsPerWarp;
+         const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
+         const size_t wid = tid/VIRTUALWARP;
+         const size_t w_tid=tid%VIRTUALWARP;
+         #ifdef __NVCC__
+         uint32_t subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
+         uint32_t submask;
+         if constexpr(elementsPerWarp==1){
+            //TODO mind AMD 64 thread wavefronts
+            submask=SPLIT_VOTING_MASK;
+         }else{
+            submask=getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+         }
+         #endif 
+         #ifdef __HIP_PLATFORM_HCC___
+         uint64_t     subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
+         uint64_t submask;
+         if constexpr(elementsPerWarp==1){
+            //TODO mind AMD 64 thread wavefronts
+            submask=SPLIT_VOTING_MASK;
+         }else{
+            submask=getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+         }
+         #endif 
+         hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[wid];
+         const int bitMask = (1 <<(sizePower )) - 1; 
+         const auto hashIndex = HashFunction::_hash(candidate.first,sizePower);
+
+         //Check for duplicates
+         for(size_t i=0; i<maxoverflow; i+=VIRTUALWARP){
+            
+            //Get the position we should be looking into
+            size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
+            const auto  maskExists = warpVote(buckets[probingindex].first==candidate.first,SPLIT_VOTING_MASK)&submask;
+            const auto  emptyFound = warpVote(buckets[probingindex].first==EMPTYBUCKET,SPLIT_VOTING_MASK)&submask;
+            //If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
+            if (!maskExists && emptyFound){
+               return;
+            }
+            if (maskExists){
+               int winner =findFirstSig( maskExists ) -1;
+               winner-=(subwarp_relative_index)*VIRTUALWARP;
+               if(w_tid==winner){
+                  h_atomicExch(&candidate.second,buckets[probingindex].second);
+               }
+               return;
+             }
+         }
+
+      }
 
       /*
        * In a similar way to the insert and retrieve kernels we 
@@ -701,6 +768,22 @@ namespace Hashinator{
 
          }
 
+         static void retrieve(hash_pair<KEY_TYPE, VAL_TYPE>* src,
+                              hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                              int sizePower,
+                              size_t maxoverflow,
+                              size_t len,
+                              cudaStream_t s=0)
+         {
+
+            size_t blocks,blockSize;
+            launchParams(len,blocks,blockSize);
+            retrieve_kernel<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,HashFunction,defaults::WARPSIZE,elementsPerWarp>
+                     <<<blocks,blockSize,0,s>>>
+                     (src,buckets,sizePower,maxoverflow);
+            cudaStreamSynchronize(s);
+
+         }
          //Delete wrapper
          static void erase(KEY_TYPE* keys,
                            hash_pair<KEY_TYPE, VAL_TYPE>* buckets,

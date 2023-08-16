@@ -112,34 +112,6 @@ namespace Hashinator{
       }
 
    public:
-      template <typename T, typename U>
-      struct Overflown_Predicate{
-
-      hash_pair<KEY_TYPE, VAL_TYPE> *bck_ptr;
-      int currentSizePower;
-   
-      explicit Overflown_Predicate(hash_pair<KEY_TYPE, VAL_TYPE>*ptr,int s):bck_ptr(ptr),currentSizePower(s){}
-      Overflown_Predicate()=delete;
-         HASHINATOR_HOSTDEVICE
-         inline bool operator()( hash_pair<T,U>& element)const{
-            if (element.first==TOMBSTONE){element.first=EMPTYBUCKET;return false;}
-            if (element.first==EMPTYBUCKET){return false;}
-            const size_t hashIndex = HashFunction::_hash(element.first,currentSizePower);
-            const int bitMask = (1 <<(currentSizePower )) - 1; 
-            bool isOverflown=(bck_ptr[hashIndex&bitMask].first!=element.first);
-            return isOverflown;
-         }
-      };
-
-      template <typename T, typename U>
-      struct Valid_Predicate{
-      Valid_Predicate(){}
-         HASHINATOR_HOSTDEVICE
-         inline bool operator()( hash_pair<T,U>& element)const{
-            if (element.first!=TOMBSTONE && element.first!=EMPTYBUCKET  ){return true;}
-            return false;
-         }
-      };
 
       HASHINATOR_HOSTONLY
       Hashmap(){
@@ -289,11 +261,11 @@ namespace Hashinator{
          optimizeGPU(s);
          cudaStreamSynchronize(s);
 
-
-         uint32_t nValidElements = split::tools::copy_if_raw
-                  <hash_pair<KEY_TYPE, VAL_TYPE>,Valid_Predicate<KEY_TYPE,VAL_TYPE>,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
-                  (buckets,validElements,Valid_Predicate<KEY_TYPE,VAL_TYPE>(),s);
-
+         auto isValidKey=[] __host__ __device__(hash_pair<KEY_TYPE,VAL_TYPE>& element){
+            if (element.first!=TOMBSTONE && element.first!=EMPTYBUCKET  ){return true;}
+            return false;
+         }; 
+         uint32_t nValidElements=extractPattern(validElements,isValidKey,s);
 
          cudaStreamSynchronize(s);
          assert(nValidElements==_mapInfo->fill && "Something really bad happened during rehashing! Ask Kostis!");
@@ -868,6 +840,16 @@ namespace Hashinator{
 
       template <typename  Rule>
       HASHINATOR_HOSTONLY
+      size_t extractPattern(hash_pair<KEY_TYPE, VAL_TYPE>* elements ,Rule rule, cudaStream_t s=0){
+         //Extract elements matching the Pattern Rule(element)==true;
+         size_t retval = split::tools::copy_if_raw<hash_pair
+                         <KEY_TYPE, VAL_TYPE>,Rule,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
+                         (buckets,elements,rule,s);
+         return retval;
+      }
+
+      template <typename  Rule>
+      HASHINATOR_HOSTONLY
       size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements ,Rule rule, cudaStream_t s=0, bool prefetches=true){
          elements.resize(_mapInfo->fill+1,true);
          if (prefetches) {
@@ -908,13 +890,20 @@ namespace Hashinator{
             optimizeGPU(s);
          }
          cudaStreamSynchronize(s);
-         uint32_t nOverflownElements=split::tools::copy_if_raw
-            <hash_pair<KEY_TYPE, VAL_TYPE>,Overflown_Predicate<KEY_TYPE,VAL_TYPE>,defaults::MAX_BLOCKSIZE,defaults::WARPSIZE>
-            (buckets,
-             overflownElements,
-             Overflown_Predicate<KEY_TYPE,VAL_TYPE>(buckets.data(),_mapInfo->sizePower),
-             s);
          
+         int currentSizePower=_mapInfo->sizePower;
+         hash_pair<KEY_TYPE, VAL_TYPE>* bck_ptr=buckets.data();
+
+         auto isOverflown=[=] __host__ __device__(hash_pair<KEY_TYPE,VAL_TYPE>& element){
+            if (element.first==TOMBSTONE){element.first=EMPTYBUCKET;return false;}
+            if (element.first==EMPTYBUCKET){return false;}
+            const size_t hashIndex = HashFunction::_hash(element.first,currentSizePower);
+            const int bitMask = (1 <<(currentSizePower )) - 1; 
+            bool isOverflown=(bck_ptr[hashIndex&bitMask].first!=element.first);
+            return isOverflown;
+         }; 
+
+         uint32_t nOverflownElements=extractPattern(overflownElements,isOverflown,s);
 
          if (nOverflownElements ==0 ){
             cudaFreeAsync(overflownElements,s);
