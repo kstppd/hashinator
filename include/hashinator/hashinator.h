@@ -894,7 +894,7 @@ namespace Hashinator{
          int currentSizePower=_mapInfo->sizePower;
          hash_pair<KEY_TYPE, VAL_TYPE>* bck_ptr=buckets.data();
 
-         auto isOverflown=[=] __host__ __device__(hash_pair<KEY_TYPE,VAL_TYPE>& element){
+         auto isOverflown=[bck_ptr,currentSizePower] __host__ __device__(hash_pair<KEY_TYPE,VAL_TYPE>& element){
             if (element.first==TOMBSTONE){element.first=EMPTYBUCKET;return false;}
             if (element.first==EMPTYBUCKET){return false;}
             const size_t hashIndex = HashFunction::_hash(element.first,currentSizePower);
