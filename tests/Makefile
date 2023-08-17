@@ -25,6 +25,7 @@ allclean:
 	rm hybrid_gpu &
 	rm pointertest &
 	rm benchmark_hashinator &
+	rm benchmark_hashinator_lf &
 	rm insertion
 
 gtest_hashmap.o: hashmap_unit_test/main.cu
