@@ -974,6 +974,14 @@ namespace Hashinator{
          DeviceHasher::retrieve(keys,vals,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,len,s);
          return;
       }
+      
+      //Uses Hasher's retrieve_kernel to read all elements
+      HASHINATOR_HOSTONLY
+      void retrieve(hash_pair<KEY_TYPE,VAL_TYPE>* src,size_t len,cudaStream_t s=0){
+         buckets.optimizeGPU(s);
+         DeviceHasher::retrieve(src,buckets.data(),_mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,len,s);
+         return;
+      }
 
       //Uses Hasher's erase_kernel to delete all elements
       HASHINATOR_HOSTONLY
@@ -987,6 +995,7 @@ namespace Hashinator{
          _mapInfo->fill-=tombstonesAdded;
          return;
       }
+
 
       /**
        * Host function  that returns a device pointer that can be passed to CUDA kernels
