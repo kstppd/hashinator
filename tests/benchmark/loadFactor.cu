@@ -13,16 +13,16 @@ typedef split::SplitVector<hash_pair<key_type,val_type>,split::split_unified_all
 using hashmap= Hashmap<key_type,val_type>;
 
 
-void create_input(hash_pair<key_type,val_type>* src, int sz){
-   for (size_t i=0; i<(1<<sz); ++i){
+void create_input(hash_pair<key_type,val_type>* src, size_t N){
+   for (size_t i=0; i<N; ++i){
       src[i].first=i;
       src[i].second=i;
    }
 }
 
-void benchInsert(hashmap& hmap,hash_pair<key_type,val_type>* src,vector& buffer ,int sz){
-   hmap.insert(src,1<<sz);
-   hmap.retrieve(buffer.data(),1<<sz);
+void benchInsert(hashmap& hmap,hash_pair<key_type,val_type>* src,vector& buffer ,size_t N){
+   hmap.insert(src,N,1);
+   hmap.retrieve(buffer.data(),N);
    assert(hmap.peek_status()==status::success);
    hmap.stats();
    hmap.clear();
@@ -35,19 +35,22 @@ int main(int argc, char* argv[]){
       std::cerr<<"Please provide input!"<<std::endl;
       return 1;
    }
-   const int sz=atoi(argv[1]);
+   const int sz=24;
+   const float targetLF=atof(argv[1]);
+   const size_t N = (1<<(sz+1))*targetLF;
+   std::cout<<targetLF<< " "<<N<<std::endl;
    hashmap hmap(sz+1);
    hmap.optimizeGPU();
-   vector cpu_src(1<<sz);
-   create_input(cpu_src.data(),sz);
+   vector cpu_src(N);
+   create_input(cpu_src.data(),N);
    hash_pair<key_type,val_type>* src;
-   cudaMalloc((void **) &src, (1<<sz)*sizeof(hash_pair<key_type,val_type>));
+   cudaMalloc((void **) &src, N*sizeof(hash_pair<key_type,val_type>));
    cudaMemcpy(src,cpu_src.data(),cpu_src.size()*sizeof(hash_pair<key_type,val_type>),cudaMemcpyHostToDevice);
 
    for (int i =0; i<R; i++){
       hmap.optimizeGPU();
       cpu_src.optimizeGPU();
-      benchInsert(hmap,src,cpu_src,sz);
+      benchInsert(hmap,src,cpu_src,N);
    }
 
    cudaFree(src);

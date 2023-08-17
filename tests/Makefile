@@ -6,7 +6,8 @@ EXTRA= -g3  --std=c++17
 EXTRA+= -gencode arch=compute_60,code=sm_60  -L /usr/lib/x86_64-linux-gnu
 EXTRA+=  -DHASHMAPDEBUG --expt-relaxed-constexpr  --expt-extended-lambda
 GTEST=-lgtest -lgtest_main -lpthread
-OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o delete_mechanism.o insertion_mechanism.o hybrid_cpu.o hybrid_gpu.o pointer_test.o benchmark.o
+OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o delete_mechanism.o insertion_mechanism.o hybrid_cpu.o hybrid_gpu.o pointer_test.o benchmark.o benchmarkLF.o
+
 
 default: tests
 tests: ${OBJ}
@@ -31,6 +32,9 @@ gtest_hashmap.o: hashmap_unit_test/main.cu
 
 benchmark.o: benchmark/main.cu
 	${CC} --ptxas-options=-v ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o benchmark_hashinator benchmark/main.cu
+
+benchmarkLF.o: benchmark/loadFactor.cu
+	${CC} --ptxas-options=-v ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o benchmark_hashinator_lf benchmark/loadFactor.cu
 
 gtest_vec_host.o: gtest_vec_host/vec_test.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o gtestvechost gtest_vec_host/vec_test.cu
