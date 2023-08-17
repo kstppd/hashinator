@@ -638,13 +638,11 @@ TEST(HashmapUnitTets ,Test_Copy_Metadata){
    bool cpuOK=recover_all_elements(hmap,src);
    expect_true(cpuOK);
    expect_true(hmap.peek_status()==status::success);
-   Info* info;
-   cudaMallocHost((void **) &info, sizeof(Info));
-   hmap.copyMetadata(info);
+   Info info;
+   hmap.copyMetadata(&info);
    cudaDeviceSynchronize();
-   expect_true(1<<info->sizePower==hmap.bucket_count());
-   expect_true(info->tombstoneCounter==hmap.tombstone_count());
-   cudaFree(info);
+   expect_true(1<<info.sizePower==hmap.bucket_count());
+   expect_true(info.tombstoneCounter==hmap.tombstone_count());
 
 }
 

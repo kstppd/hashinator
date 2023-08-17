@@ -50,6 +50,7 @@ namespace Hashinator{
    #endif
 
    typedef struct Info {
+      Info(){};
       Info(int sz)
          :sizePower(sz),fill(0),currentMaxBucketOverflow(defaults::BUCKET_OVERFLOW),tombstoneCounter(0),err(status::invalid){}
       int sizePower;
