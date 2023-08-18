@@ -45,20 +45,18 @@ void basic_device_usage()
 {
    std::cout<<"\nDevice Usage\n"<<std::endl;
    vector src(64);
-   Hashmap<val_type,val_type> hmap;
-   hmap.resize(7);
+   Hashmap<val_type,val_type>* hmap=new Hashmap<val_type,val_type>;
+   hmap->resize(7);
    //Create Input
    for (uint32_t i=0 ; i<64; ++i){
       src[i]=hash_pair<val_type,val_type>{i,(val_type)rand()%10000};
    }
 
-   auto d_hmap=hmap.upload();
-   gpu_write<<<1,64>>>(d_hmap, src.data(), src.size());
+   gpu_write<<<1,64>>>(hmap, src.data(), src.size());
    cudaDeviceSynchronize();
-   hmap.download();
 
    //Read
-   for (const auto& i:hmap){
+   for (const auto& i:*hmap){
       std::cout<<"["<<i.first<<" "<<i.second<<"] ";
    }
    std::cout<<std::endl;
