@@ -31,11 +31,10 @@ void benchInsert(hashmap& hmap,hash_pair<key_type,val_type>* src,vector& buffer 
 
 int main(int argc, char* argv[]){
 
-   if (argc<2){
-      std::cerr<<"Please provide input!"<<std::endl;
-      return 1;
+   int sz= 24;
+   if (argc>2){
+      sz=atoi(argv[1]);
    }
-   const int sz=atoi(argv[1]);
    hashmap hmap(sz+1);
    hmap.optimizeGPU();
    vector cpu_src(1<<sz);

@@ -112,6 +112,7 @@ namespace Hashinator{
          return entry;
       }
 
+#ifdef __NVCC__
       template<typename KEY_TYPE, 
                typename VAL_TYPE,
                KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
@@ -156,7 +157,6 @@ namespace Hashinator{
 
          
 
-         #ifdef __NVCC__
          uint32_t subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
          uint32_t submask;
          if constexpr(elementsPerWarp==1){
@@ -165,17 +165,6 @@ namespace Hashinator{
          }else{
             submask=getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
-         #endif 
-         #ifdef __HIP_PLATFORM_HCC___
-         uint64_t     subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
-         uint64_t submask;
-         if constexpr(elementsPerWarp==1){
-            //TODO mind AMD 64 thread wavefronts
-            submask=SPLIT_VOTING_MASK;
-         }else{
-            submask=getIntraWarpMask_AMD(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
-         }
-         #endif 
 
          hash_pair<KEY_TYPE,VAL_TYPE> candidate=src[wid];
          const int  bitMask = (1 <<(sizePower )) - 1; 
@@ -340,7 +329,6 @@ namespace Hashinator{
          }
          __syncthreads();
 
-         #ifdef __NVCC__
          uint32_t subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
          uint32_t submask;
          if constexpr(elementsPerWarp==1){
@@ -349,17 +337,6 @@ namespace Hashinator{
          }else{
             submask=getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
-         #endif 
-         #ifdef __HIP_PLATFORM_HCC___
-         uint64_t     subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
-         uint64_t submask;
-         if constexpr(elementsPerWarp==1){
-            //TODO mind AMD 64 thread wavefronts
-            submask=SPLIT_VOTING_MASK;
-         }else{
-            submask=getIntraWarpMask_AMD(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
-         }
-         #endif 
 
          KEY_TYPE candidateKey=keys[wid];
          VAL_TYPE candidateVal=vals[wid];
@@ -382,10 +359,10 @@ namespace Hashinator{
 
             //vote for available emptybuckets in warp region
             //Note that this has to be done before voting for already existing elements (below)
-            auto mask = warpVote(target.first==EMPTYBUCKET,SPLIT_VOTING_MASK)&submask;
+            auto mask = warpVote(target.first==EMPTYBUCKET,submask);
 
             //Check if this elements already exists
-            auto already_exists =warpVote(target.first==candidateKey,SPLIT_VOTING_MASK)&submask;
+            auto already_exists =warpVote(target.first==candidateKey,submask);
             if (already_exists){
                int winner =findFirstSig( already_exists ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
@@ -460,6 +437,253 @@ namespace Hashinator{
 
       }
 
+#endif
+#ifdef __HIP_PLATFORM_HCC___
+      template<typename KEY_TYPE, 
+               typename VAL_TYPE,
+               KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
+               class HashFunction=HashFunctions::Fibonacci<KEY_TYPE>,
+               int WARPSIZE=defaults::WARPSIZE,
+               int elementsPerWarp>
+      __global__ 
+      void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src,
+                         hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                         int sizePower,
+                         size_t maxoverflow,
+                         size_t* d_overflow,
+                         size_t* d_fill,
+                         size_t len,status* err)
+      {
+
+
+         const int VIRTUALWARP=WARPSIZE/elementsPerWarp;
+         const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
+         const size_t wid = tid/VIRTUALWARP;
+         const size_t w_tid=tid%VIRTUALWARP;
+         const size_t proper_w_tid=tid%WARPSIZE; //the proper WID as if we had no Virtual warps
+         const size_t proper_wid=tid/WARPSIZE; 
+         const size_t blockWid=proper_wid%WARPSIZE;
+ 
+            
+         //Early quit if we have more warps than elements to insert
+         if (wid>=len){
+            return;
+         }
+         
+         
+
+         uint64_t subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
+         uint64_t submask;
+         if constexpr(elementsPerWarp==1){
+            //TODO mind AMD 64 thread wavefronts
+            submask=SPLIT_VOTING_MASK;
+         }else{
+            submask=getIntraWarpMask_AMD(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+         }
+
+         hash_pair<KEY_TYPE,VAL_TYPE> candidate=src[wid];
+         const int  bitMask = (1 <<(sizePower )) - 1; 
+         const auto hashIndex = HashFunction::_hash(candidate.first,sizePower);
+         const size_t optimalindex=(hashIndex) & bitMask;
+         uint32_t localCount=0;
+         uint64_t threadOverflow=1;
+         uint64_t vWarpDone=0;  // state of virtual warp
+
+         for(size_t i=0; i<(1<<sizePower); i+=VIRTUALWARP){
+
+            //Check if this virtual warp is done. 
+            if (vWarpDone){
+               break;
+            }
+
+            //Get the position we should be looking into
+            size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
+            auto target=buckets[probingindex];
+
+            //vote for available emptybuckets in warp region
+            //Note that this has to be done before voting for already existing elements (below)
+            auto mask = warpVote(target.first==EMPTYBUCKET,submask)&submask;
+
+            //Check if this elements already exists
+            auto already_exists = warpVote(target.first==candidate.first,submask)&submask;
+            if (already_exists){
+               int winner =findFirstSig( already_exists ) -1;
+               int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
+               if (w_tid==sub_winner){
+                  h_atomicExch(&buckets[probingindex].second,candidate.second);
+                  //This virtual warp is now done.
+                  vWarpDone = 1; 
+               }
+            }
+
+            //If any duplicate was there now is the time for the whole Virtual warp to find out!
+            vWarpDone=warpVote(vWarpDone>0,submask)&submask;
+
+            while(mask && !vWarpDone){
+               int winner =findFirstSig( mask ) -1;
+               int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
+               if (w_tid==sub_winner){
+                  KEY_TYPE old = h_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidate.first);
+                  if (old == EMPTYBUCKET){
+                     threadOverflow = (probingindex<optimalindex)?(1<<sizePower):(probingindex-optimalindex);
+                     h_atomicExch(&buckets[probingindex].second,candidate.second);
+                     vWarpDone=1;
+                     //Flip the bit which corresponds to the thread that added an element
+                     localCount++;
+                  }else if (old==candidate.first){
+                     //Parallel stuff are fun. Major edge case!
+                     h_atomicExch(&buckets[probingindex].second,candidate.second);
+                     vWarpDone=1;
+                  }
+               }
+               //If any of the virtual warp threads are done the the whole 
+               //Virtual warp is done
+               vWarpDone=warpVote(vWarpDone>0,submask)&submask;
+               mask ^= (1UL << winner);
+            }
+         }
+
+        
+         /*
+            Update fill and overflow
+            First thread per warp reduces the total elements added (per Warp)
+         */
+         //Per warp reduction
+         int warpTotals= warpReduce<WARPSIZE>(localCount);
+         uint64_t perWarpOverflow=warpReduceMax<WARPSIZE>(threadOverflow);
+
+         //Update fill and overlfow
+         if (proper_w_tid==0){
+            h_atomicAdd(d_fill,warpTotals);;
+            if (perWarpOverflow>*d_overflow){
+               h_atomicExch(d_overflow,nextPow2(perWarpOverflow));
+            }
+         }
+         return;
+      }
+      
+
+      template<typename KEY_TYPE,
+               typename VAL_TYPE,
+               KEY_TYPE EMPTYBUCKET=std::numeric_limits<KEY_TYPE>::max(),
+               class HashFunction=HashFunctions::Fibonacci<KEY_TYPE>,
+               int WARPSIZE=defaults::WARPSIZE,
+               int elementsPerWarp>
+      __global__ 
+      void insert_kernel(KEY_TYPE* keys,
+                         VAL_TYPE* vals,
+                         hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                         int sizePower,
+                         size_t maxoverflow,
+                         size_t* d_overflow,
+                         size_t* d_fill,
+                         size_t len,status* err)
+      {
+         
+
+         const int VIRTUALWARP=WARPSIZE/elementsPerWarp;
+         const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
+         const size_t wid = tid/VIRTUALWARP;
+         const size_t w_tid=tid%VIRTUALWARP;
+         const size_t proper_w_tid=tid%WARPSIZE; //the proper WID as if we had no Virtual warps
+         const size_t proper_wid=tid/WARPSIZE; 
+         const size_t blockWid=proper_wid%WARPSIZE;
+ 
+         //Early quit if we have more warps than elements to insert
+         if (wid>=len){
+            return;
+         }
+         
+         uint64_t subwarp_relative_index=(wid)%(WARPSIZE/VIRTUALWARP);
+         uint64_t submask;
+         if constexpr(elementsPerWarp==1){
+            //TODO mind AMD 64 thread wavefronts
+            submask=SPLIT_VOTING_MASK;
+         }else{
+            submask=getIntraWarpMask_AMD(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+         }
+
+         KEY_TYPE candidateKey=keys[wid];
+         VAL_TYPE candidateVal=vals[wid];
+         const int  bitMask = (1 <<(sizePower )) - 1; 
+         const auto hashIndex = HashFunction::_hash(candidateKey,sizePower);
+         const size_t optimalindex=(hashIndex) & bitMask;
+         uint32_t localCount=0;
+         uint64_t vWarpDone=0;  // state of virtual warp
+         uint64_t threadOverflow=1;
+
+         for(size_t i=0; i<(1<<sizePower); i+=VIRTUALWARP){
+
+            //Check if this virtual warp is done. 
+            if (vWarpDone){
+               break;
+            }
+            //Get the position we should be looking into
+            size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
+            auto target=buckets[probingindex];
+
+            //vote for available emptybuckets in warp region
+            //Note that this has to be done before voting for already existing elements (below)
+            auto mask = warpVote(target.first==EMPTYBUCKET,submask)&submask;
+
+            //Check if this elements already exists
+            auto already_exists =warpVote(target.first==candidateKey,submask)&submask;
+            if (already_exists){
+               int winner =findFirstSig( already_exists ) -1;
+               int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
+               if (w_tid==sub_winner){
+                  h_atomicExch(&target.second,candidateVal);
+                  //This virtual warp is now done.
+                  vWarpDone = 1; 
+               }
+            }
+
+            //If any duplicate was there now is the time for the whole Virtual warp to find out!
+            vWarpDone=warpVote(vWarpDone>0,submask)&submask;
+
+            while(mask && !vWarpDone){
+               int winner =findFirstSig( mask ) -1;
+               int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
+               if (w_tid==sub_winner){
+                  KEY_TYPE old = h_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
+                  if (old == EMPTYBUCKET){
+                     threadOverflow = (probingindex<optimalindex)?(1<<sizePower):(probingindex-optimalindex);
+                     h_atomicExch(&buckets[probingindex].second,candidateVal);
+                     vWarpDone=1;
+                     //Flip the bit which corresponds to the thread that added an element
+                     localCount++;
+                  }else if (old==candidateKey){
+                     //Parallel stuff are fun. Major edge case!
+                     h_atomicExch(&buckets[probingindex].second,candidateVal);
+                     vWarpDone=1;
+                  }
+               }
+               //If any of the virtual warp threads are done the the whole 
+               //Virtual warp is done
+               vWarpDone=warpVote(vWarpDone>0,submask)&submask;
+               mask ^= (1UL << winner);
+            }
+         }
+
+         /*
+            Update fill and overflow 
+            First thread per warp reduces the total elements added (per Warp)
+         */
+         //Per warp reduction
+         int warpTotals= warpReduce<WARPSIZE>(localCount);
+         uint64_t perWarpOverflow=warpReduceMax<WARPSIZE>(threadOverflow);
+
+         //Update fill and overlfow
+         if (proper_w_tid==0){
+            h_atomicAdd(d_fill,warpTotals);;
+            if (perWarpOverflow>*d_overflow){
+               h_atomicExch(d_overflow,nextPow2(perWarpOverflow));
+            }
+         }
+         return;
+      }
+
+#endif
       /*
        * Similarly to the insert_kernel we examine elements in keys and return their value in vals,
        * if the do exist in the hashmap. If the elements is not found and invalid key is returned;

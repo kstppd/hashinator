@@ -145,7 +145,7 @@ namespace Hashinator{
       #endif 
 
       #ifdef __HIP_PLATFORM_HCC___
-      return __ffsll( mask);
+      return __ffsll( (unsigned long long )mask);
       #endif 
    }
 

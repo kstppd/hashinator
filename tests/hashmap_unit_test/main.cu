@@ -12,7 +12,7 @@
 #define expect_true EXPECT_TRUE
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
-constexpr int MINPOWER = 5;
+constexpr int MINPOWER = 6;
 constexpr int MAXPOWER = 10;
 
 

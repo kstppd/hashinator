@@ -31,12 +31,11 @@ void benchInsert(hashmap& hmap,hash_pair<key_type,val_type>* src,vector& buffer 
 
 int main(int argc, char* argv[]){
 
-   if (argc<2){
-      std::cerr<<"Please provide input!"<<std::endl;
-      return 1;
-   }
    const int sz=24;
-   const float targetLF=atof(argv[1]);
+   float targetLF=0.5;
+   if (argc>2){
+      targetLF=atof(argv[1]);
+   }
    const size_t N = (1<<(sz+1))*targetLF;
    std::cout<<targetLF<< " "<<N<<std::endl;
    hashmap hmap(sz+1);
