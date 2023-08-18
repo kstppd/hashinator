@@ -17,7 +17,7 @@ static inline std::ostream& operator<<(std::ostream& os, vector& vec ){
 __global__
 void push_back_kernel(vector* a){
    int index = blockIdx.x * blockDim.x + threadIdx.x;
-   a->push_back(index);
+   a->device_push_back(index);
 }
 
 void basic_host_usage()

@@ -18,9 +18,9 @@ void gpu_write(Hashmap<val_type,val_type>* hmap, hash_pair<val_type,val_type>*sr
 __global__ 
 void gpu_read_and_delete(Hashmap<val_type,val_type>* hmap){
    val_type index = blockIdx.x * blockDim.x + threadIdx.x;
-   auto kval= hmap->find(index);
-   if (kval!=hmap->end()){
-      hmap->erase(kval);
+   auto kval= hmap->device_find(index);
+   if (kval!=hmap->device_end()){
+      hmap->device_erase(kval);
    }
 }
 
