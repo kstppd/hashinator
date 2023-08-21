@@ -1029,7 +1029,6 @@ namespace Hashinator{
       void streamAttach(cudaStream_t s, uint32_t  flags=cudaMemAttachSingle){
          buckets.streamAttach(s,flags);
          cudaStreamAttachMemAsync( s,(void*)_mapInfo, sizeof(MapInfo),flags );
-         CheckErrors("Stream Attach");
          return;
       }
 

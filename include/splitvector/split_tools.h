@@ -513,7 +513,6 @@ namespace split{
             explicit Cuda_mempool(size_t bytes,cudaStream_t str){
                s=str;
                cudaMallocAsync(&_data, bytes,s);
-               CheckErrors("Cuda Memory Allocation");
                total_bytes=bytes;
                bytes_used=0;
             }
