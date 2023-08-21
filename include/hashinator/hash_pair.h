@@ -20,42 +20,34 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  * */
-#pragma once 
-#include<stdlib.h>
+#pragma once
+#include <stdlib.h>
 #include <type_traits>
 
-namespace Hashinator{
-   template<typename T, typename U>
-   struct hash_pair{
-      // members
-      T first;
-      U second;
-      
-      //Constructors
-      HASHINATOR_HOSTDEVICE
-      hash_pair():first(T()),second(U()){}
-      
-      HASHINATOR_HOSTDEVICE
-      hash_pair(const T& f,const U& s):first(f),second(s){}
-      
-      HASHINATOR_HOSTDEVICE
-      inline bool operator==(const hash_pair& y)const{
-         return first == y.first && second == y.second;
-      }
+namespace Hashinator {
+template <typename T, typename U>
+struct hash_pair {
+   // members
+   T first;
+   U second;
 
-      HASHINATOR_HOSTDEVICE
-      inline bool operator!=(const hash_pair& y)const{
-         return !(*this==y);
-      }
-   };
-
-   template<class T, class U>
+   // Constructors
    HASHINATOR_HOSTDEVICE
-   inline hash_pair<T,U> make_pair(T x, U y){
-      return hash_pair<T, U>(x, y); 
-   }
+   hash_pair() : first(T()), second(U()) {}
 
+   HASHINATOR_HOSTDEVICE
+   hash_pair(const T& f, const U& s) : first(f), second(s) {}
 
+   HASHINATOR_HOSTDEVICE
+   inline bool operator==(const hash_pair& y) const { return first == y.first && second == y.second; }
 
-}//namespace Hashinator
+   HASHINATOR_HOSTDEVICE
+   inline bool operator!=(const hash_pair& y) const { return !(*this == y); }
+};
 
+template <class T, class U>
+HASHINATOR_HOSTDEVICE inline hash_pair<T, U> make_pair(T x, U y) {
+   return hash_pair<T, U>(x, y);
+}
+
+} // namespace Hashinator

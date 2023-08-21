@@ -1,7 +1,7 @@
 /* File:    hashfunctions.h
  * Authors: Kostis Papadakis, Urs Ganse and Markus Battarbee (2023)
  * Description: Defines hashfunctions used by Hashinator
- *              
+ *
  *
  * This file defines the following classes:
  *    --Hashinator::HashFunctions::Murmur;
@@ -23,34 +23,25 @@
  * */
 #pragma once
 #include "../common.h"
-namespace Hashinator{
+namespace Hashinator {
 
-   namespace HashFunctions{
+namespace HashFunctions {
 
-      template<typename T>
-      struct Fibonacci{
-         [[nodiscard]]
-         HOSTDEVICE
-         inline static uint32_t fibhash(uint32_t key,const int sizePower){
-            key ^= key >> (32 - sizePower);
-            uint32_t retval = (uint64_t)(key * 2654435769ul) >> (32 - sizePower);
-            return retval;
-         }
+template <typename T>
+struct Fibonacci {
+   [[nodiscard]] HOSTDEVICE inline static uint32_t fibhash(uint32_t key, const int sizePower) {
+      key ^= key >> (32 - sizePower);
+      uint32_t retval = (uint64_t)(key * 2654435769ul) >> (32 - sizePower);
+      return retval;
+   }
 
-         [[nodiscard]]
-         HOSTDEVICE
-         inline static uint64_t fibhash(uint64_t key, int sizePower) {
-             key ^= key >> (64 - sizePower);
-             uint64_t retval = (key * 11400714819323198485ull) >> (64 - sizePower);
-             return retval;
-         }
+   [[nodiscard]] HOSTDEVICE inline static uint64_t fibhash(uint64_t key, int sizePower) {
+      key ^= key >> (64 - sizePower);
+      uint64_t retval = (key * 11400714819323198485ull) >> (64 - sizePower);
+      return retval;
+   }
 
-         [[nodiscard]]
-         HOSTDEVICE
-         inline static T _hash(T key,const int sizePower) {
-            return fibhash(key,sizePower);
-         }
-
-      };
-   }//namespace HashFunctions
-}//namespace Hashinator
+   [[nodiscard]] HOSTDEVICE inline static T _hash(T key, const int sizePower) { return fibhash(key, sizePower); }
+};
+} // namespace HashFunctions
+} // namespace Hashinator
