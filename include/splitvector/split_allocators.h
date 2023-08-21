@@ -1,6 +1,6 @@
 /* File:    split_allocators.h
  * Authors: Kostis Papadakis (2023)
- * Description: Custom allocators for splitvectors 
+ * Description: Custom allocators for splitvector
  *
  * This file defines the following classes:
  *    --split::split_unified_allocator;
@@ -25,7 +25,6 @@
 namespace split{
 
 #ifndef SPLIT_HOST_ONLY
-#include <cuda_runtime.h> 
    template <class T>
    class split_unified_allocator{
       public:

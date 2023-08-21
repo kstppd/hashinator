@@ -34,7 +34,7 @@
 #include "hashfunctions.h"
 #include "defaults.h"
 #include "../common.h"
-#include "../hashinator_atomics.h"
+#include "../splitvector/gpu_wrappers.h"
 
 namespace Hashinator{
 
@@ -64,7 +64,7 @@ namespace Hashinator{
 
          for(size_t i =0; i< (1<<sizePower);++i){
             uint32_t probing_index=(hashIndex+i)&bitMask;
-            KEY_TYPE old = h_atomicCAS(&dst[probing_index].first,candidate.first,EMPTYBUCKET);
+            KEY_TYPE old = split::s_atomicCAS(&dst[probing_index].first,candidate.first,EMPTYBUCKET);
             if (old==candidate.first){
                return ;
             }
@@ -87,7 +87,7 @@ namespace Hashinator{
          if(dst[tid].first!=EMPTYBUCKET){
             dst[tid].first=EMPTYBUCKET;
             dst[tid].second=VAL_TYPE();
-            h_atomicSub((unsigned int*)fill,1);
+            split::s_atomicSub((unsigned int*)fill,1);
          }
          return;
       }
@@ -97,7 +97,7 @@ namespace Hashinator{
       __forceinline__
       int warpReduce(int localCount){
          for (int i=WARPSIZE/2; i>0; i=i/2){
-            localCount += h_shuffle_down(localCount, i,SPLIT_VOTING_MASK);
+            localCount += split::s_shuffle_down(localCount, i,SPLIT_VOTING_MASK);
          }
          return localCount;
       }
@@ -107,7 +107,7 @@ namespace Hashinator{
       __forceinline__
       uint64_t warpReduceMax(uint64_t entry){
          for (int i=WARPSIZE/2; i>0; i=i/2){
-            entry= std::max( entry ,  h_shuffle_down(entry, i,SPLIT_VOTING_MASK));
+            entry= std::max( entry ,  split::s_shuffle_down(entry, i,SPLIT_VOTING_MASK));
          }
          return entry;
       }
@@ -163,7 +163,7 @@ namespace Hashinator{
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=split::getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
 
          hash_pair<KEY_TYPE,VAL_TYPE> candidate=src[wid];
@@ -187,43 +187,43 @@ namespace Hashinator{
 
             //vote for available emptybuckets in warp region
             //Note that this has to be done before voting for already existing elements (below)
-            auto mask = warpVote(target.first==EMPTYBUCKET,submask);
+            auto mask = split::s_warpVote(target.first==EMPTYBUCKET,submask);
 
             //Check if this elements already exists
-            auto already_exists = warpVote(target.first==candidate.first,submask);
+            auto already_exists = split::s_warpVote(target.first==candidate.first,submask);
             if (already_exists){
-               int winner =findFirstSig( already_exists ) -1;
+               int winner =split::s_findFirstSig( already_exists ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
-                  h_atomicExch(&buckets[probingindex].second,candidate.second);
+                  split::s_atomicExch(&buckets[probingindex].second,candidate.second);
                   //This virtual warp is now done.
                   vWarpDone = 1; 
                }
             }
 
             //If any duplicate was there now is the time for the whole Virtual warp to find out!
-            vWarpDone=warpVoteAny(vWarpDone,submask);
+            vWarpDone=split::s_warpVoteAny(vWarpDone,submask);
 
             while(mask && !vWarpDone){
-               int winner =findFirstSig( mask ) -1;
+               int winner =split::s_findFirstSig( mask ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
-                  KEY_TYPE old = h_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidate.first);
+                  KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidate.first);
                   if (old == EMPTYBUCKET){
                      threadOverflow = (probingindex<optimalindex)?(1<<sizePower):(probingindex-optimalindex);
-                     h_atomicExch(&buckets[probingindex].second,candidate.second);
+                     split::s_atomicExch(&buckets[probingindex].second,candidate.second);
                      vWarpDone=1;
                      //Flip the bit which corresponds to the thread that added an element
                      localCount++;
                   }else if (old==candidate.first){
                      //Parallel stuff are fun. Major edge case!
-                     h_atomicExch(&buckets[probingindex].second,candidate.second);
+                     split::s_atomicExch(&buckets[probingindex].second,candidate.second);
                      vWarpDone=1;
                   }
                }
                //If any of the virtual warp threads are done the the whole 
                //Virtual warp is done
-               vWarpDone=warpVoteAny(vWarpDone,submask);
+               vWarpDone=split::s_warpVoteAny(vWarpDone,submask);
                mask ^= (1UL << winner);
             }
          }
@@ -256,13 +256,13 @@ namespace Hashinator{
             //First thread updates fill and overlfow (1 update per block)
             if (proper_w_tid==0){
                atomicMax(( unsigned long long*)d_overflow,(unsigned long long)nextPow2(blockOverflow));
-               h_atomicAdd(d_fill,blockTotal);;
+               split::s_atomicAdd(d_fill,blockTotal);;
             }
          }
 
          //Make sure everyone actually made it otherwise raise the error flag.
-         if (warpVote(vWarpDone,SPLIT_VOTING_MASK)!=__activemask()){
-            h_atomicExch((uint32_t*)err,(uint32_t)status::fail);
+         if (split::s_warpVote(vWarpDone,SPLIT_VOTING_MASK)!=__activemask()){
+            split::s_atomicExch((uint32_t*)err,(uint32_t)status::fail);
          }
          return;
       }
@@ -335,7 +335,7 @@ namespace Hashinator{
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=split::getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
 
          KEY_TYPE candidateKey=keys[wid];
@@ -359,43 +359,43 @@ namespace Hashinator{
 
             //vote for available emptybuckets in warp region
             //Note that this has to be done before voting for already existing elements (below)
-            auto mask = warpVote(target.first==EMPTYBUCKET,submask);
+            auto mask = split::s_warpVote(target.first==EMPTYBUCKET,submask);
 
             //Check if this elements already exists
-            auto already_exists =warpVote(target.first==candidateKey,submask);
+            auto already_exists =split::s_warpVote(target.first==candidateKey,submask);
             if (already_exists){
-               int winner =findFirstSig( already_exists ) -1;
+               int winner =split::s_findFirstSig( already_exists ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
-                  h_atomicExch(&target.second,candidateVal);
+                  split::s_atomicExch(&target.second,candidateVal);
                   //This virtual warp is now done.
                   vWarpDone = 1; 
                }
             }
 
             //If any duplicate was there now is the time for the whole Virtual warp to find out!
-            vWarpDone=warpVoteAny(vWarpDone,submask);
+            vWarpDone=split::s_warpVoteAny(vWarpDone,submask);
 
             while(mask && !vWarpDone){
-               int winner =findFirstSig( mask ) -1;
+               int winner =split::s_findFirstSig( mask ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
-                  KEY_TYPE old = h_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
+                  KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
                   if (old == EMPTYBUCKET){
                      threadOverflow = (probingindex<optimalindex)?(1<<sizePower):(probingindex-optimalindex);
-                     h_atomicExch(&buckets[probingindex].second,candidateVal);
+                     split::s_atomicExch(&buckets[probingindex].second,candidateVal);
                      vWarpDone=1;
                      //Flip the bit which corresponds to the thread that added an element
                      localCount++;
                   }else if (old==candidateKey){
                      //Parallel stuff are fun. Major edge case!
-                     h_atomicExch(&buckets[probingindex].second,candidateVal);
+                     split::s_atomicExch(&buckets[probingindex].second,candidateVal);
                      vWarpDone=1;
                   }
                }
                //If any of the virtual warp threads are done the the whole 
                //Virtual warp is done
-               vWarpDone=warpVoteAny(vWarpDone,submask);
+               vWarpDone=split::s_warpVoteAny(vWarpDone,submask);
                mask ^= (1UL << winner);
             }
          }
@@ -425,13 +425,13 @@ namespace Hashinator{
             //First thread updates fill and overlfow (1 update per block)
             if (proper_w_tid==0){
                atomicMax(( unsigned long long*)d_overflow,(unsigned long long)nextPow2(blockOverflow));
-               h_atomicAdd(d_fill,blockTotal);;
+               split::s_atomicAdd(d_fill,blockTotal);;
             }
          }
 
          //Make sure everyone actually made it otherwise raise the error flag.
-         if (warpVote(vWarpDone,SPLIT_VOTING_MASK)!=__activemask()){
-            h_atomicExch((uint32_t*)err,(uint32_t)status::fail);
+         if (split::s_warpVote(vWarpDone,SPLIT_VOTING_MASK)!=__activemask()){
+            split::s_atomicExch((uint32_t*)err,(uint32_t)status::fail);
          }
          return;
 
@@ -478,7 +478,7 @@ namespace Hashinator{
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask_AMD(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=split::getIntraWarpMask_AMD(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
 
          hash_pair<KEY_TYPE,VAL_TYPE> candidate=src[wid];
@@ -502,43 +502,43 @@ namespace Hashinator{
 
             //vote for available emptybuckets in warp region
             //Note that this has to be done before voting for already existing elements (below)
-            auto mask = warpVote(target.first==EMPTYBUCKET,submask)&submask;
+            auto mask = split::s_warpVote(target.first==EMPTYBUCKET,submask)&submask;
 
             //Check if this elements already exists
-            auto already_exists = warpVote(target.first==candidate.first,submask)&submask;
+            auto already_exists = split::s_warpVote(target.first==candidate.first,submask)&submask;
             if (already_exists){
-               int winner =findFirstSig( already_exists ) -1;
+               int winner =split::s_findFirstSig( already_exists ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
-                  h_atomicExch(&buckets[probingindex].second,candidate.second);
+                  split::s_atomicExch(&buckets[probingindex].second,candidate.second);
                   //This virtual warp is now done.
                   vWarpDone = 1; 
                }
             }
 
             //If any duplicate was there now is the time for the whole Virtual warp to find out!
-            vWarpDone=warpVote(vWarpDone>0,submask)&submask;
+            vWarpDone=split::s_warpVote(vWarpDone>0,submask)&submask;
 
             while(mask && !vWarpDone){
-               int winner =findFirstSig( mask ) -1;
+               int winner =split::s_findFirstSig( mask ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
-                  KEY_TYPE old = h_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidate.first);
+                  KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidate.first);
                   if (old == EMPTYBUCKET){
                      threadOverflow = (probingindex<optimalindex)?(1<<sizePower):(probingindex-optimalindex);
-                     h_atomicExch(&buckets[probingindex].second,candidate.second);
+                     split::s_atomicExch(&buckets[probingindex].second,candidate.second);
                      vWarpDone=1;
                      //Flip the bit which corresponds to the thread that added an element
                      localCount++;
                   }else if (old==candidate.first){
                      //Parallel stuff are fun. Major edge case!
-                     h_atomicExch(&buckets[probingindex].second,candidate.second);
+                     split::s_atomicExch(&buckets[probingindex].second,candidate.second);
                      vWarpDone=1;
                   }
                }
                //If any of the virtual warp threads are done the the whole 
                //Virtual warp is done
-               vWarpDone=warpVote(vWarpDone>0,submask)&submask;
+               vWarpDone=split::s_warpVote(vWarpDone>0,submask)&submask;
                mask ^= (1UL << winner);
             }
          }
@@ -554,9 +554,9 @@ namespace Hashinator{
 
          //Update fill and overlfow
          if (proper_w_tid==0){
-            h_atomicAdd(d_fill,warpTotals);;
+            split::s_atomicAdd(d_fill,warpTotals);;
             if (perWarpOverflow>*d_overflow){
-               h_atomicExch(d_overflow,nextPow2(perWarpOverflow));
+               split::s_atomicExch(d_overflow,nextPow2(perWarpOverflow));
             }
          }
          return;
@@ -600,7 +600,7 @@ namespace Hashinator{
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask_AMD(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=split::getIntraWarpMask_AMD(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
 
          KEY_TYPE candidateKey=keys[wid];
@@ -624,43 +624,43 @@ namespace Hashinator{
 
             //vote for available emptybuckets in warp region
             //Note that this has to be done before voting for already existing elements (below)
-            auto mask = warpVote(target.first==EMPTYBUCKET,submask)&submask;
+            auto mask = split::s_warpVote(target.first==EMPTYBUCKET,submask)&submask;
 
             //Check if this elements already exists
-            auto already_exists =warpVote(target.first==candidateKey,submask)&submask;
+            auto already_exists =split::s_warpVote(target.first==candidateKey,submask)&submask;
             if (already_exists){
-               int winner =findFirstSig( already_exists ) -1;
+               int winner =split::s_findFirstSig( already_exists ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
-                  h_atomicExch(&target.second,candidateVal);
+                  split::s_atomicExch(&target.second,candidateVal);
                   //This virtual warp is now done.
                   vWarpDone = 1; 
                }
             }
 
             //If any duplicate was there now is the time for the whole Virtual warp to find out!
-            vWarpDone=warpVote(vWarpDone>0,submask)&submask;
+            vWarpDone=split::s_warpVote(vWarpDone>0,submask)&submask;
 
             while(mask && !vWarpDone){
-               int winner =findFirstSig( mask ) -1;
+               int winner =split::s_findFirstSig( mask ) -1;
                int sub_winner =winner-(subwarp_relative_index)*VIRTUALWARP;
                if (w_tid==sub_winner){
-                  KEY_TYPE old = h_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
+                  KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
                   if (old == EMPTYBUCKET){
                      threadOverflow = (probingindex<optimalindex)?(1<<sizePower):(probingindex-optimalindex);
-                     h_atomicExch(&buckets[probingindex].second,candidateVal);
+                     split::s_atomicExch(&buckets[probingindex].second,candidateVal);
                      vWarpDone=1;
                      //Flip the bit which corresponds to the thread that added an element
                      localCount++;
                   }else if (old==candidateKey){
                      //Parallel stuff are fun. Major edge case!
-                     h_atomicExch(&buckets[probingindex].second,candidateVal);
+                     split::s_atomicExch(&buckets[probingindex].second,candidateVal);
                      vWarpDone=1;
                   }
                }
                //If any of the virtual warp threads are done the the whole 
                //Virtual warp is done
-               vWarpDone=warpVote(vWarpDone>0,submask)&submask;
+               vWarpDone=split::s_warpVote(vWarpDone>0,submask)&submask;
                mask ^= (1UL << winner);
             }
          }
@@ -675,9 +675,9 @@ namespace Hashinator{
 
          //Update fill and overlfow
          if (proper_w_tid==0){
-            h_atomicAdd(d_fill,warpTotals);;
+            split::s_atomicAdd(d_fill,warpTotals);;
             if (perWarpOverflow>*d_overflow){
-               h_atomicExch(d_overflow,nextPow2(perWarpOverflow));
+               split::s_atomicExch(d_overflow,nextPow2(perWarpOverflow));
             }
          }
          return;
@@ -713,7 +713,7 @@ namespace Hashinator{
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=split::getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
          #endif 
          #ifdef __HIP_PLATFORM_HCC___
@@ -723,7 +723,7 @@ namespace Hashinator{
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=split::getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
          #endif 
          KEY_TYPE& candidateKey=keys[wid];
@@ -736,17 +736,17 @@ namespace Hashinator{
             
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
-            const auto  maskExists = warpVote(buckets[probingindex].first==candidateKey,SPLIT_VOTING_MASK)&submask;
-            const auto  emptyFound = warpVote(buckets[probingindex].first==EMPTYBUCKET,SPLIT_VOTING_MASK)&submask;
+            const auto  maskExists = split::s_warpVote(buckets[probingindex].first==candidateKey,SPLIT_VOTING_MASK)&submask;
+            const auto  emptyFound = split::s_warpVote(buckets[probingindex].first==EMPTYBUCKET,SPLIT_VOTING_MASK)&submask;
             //If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
             if (!maskExists && emptyFound){
                return;
             }
             if (maskExists){
-               int winner =findFirstSig( maskExists ) -1;
+               int winner =split::s_findFirstSig( maskExists ) -1;
                winner-=(subwarp_relative_index)*VIRTUALWARP;
                if(w_tid==winner){
-                  h_atomicExch(&candidateVal,buckets[probingindex].second);
+                  split::s_atomicExch(&candidateVal,buckets[probingindex].second);
                }
                return;
              }
@@ -782,7 +782,7 @@ namespace Hashinator{
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=split::getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
          #endif 
          #ifdef __HIP_PLATFORM_HCC___
@@ -792,7 +792,7 @@ namespace Hashinator{
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=split::getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
          #endif 
          hash_pair<KEY_TYPE,VAL_TYPE>&candidate=src[wid];
@@ -804,17 +804,17 @@ namespace Hashinator{
             
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
-            const auto  maskExists = warpVote(buckets[probingindex].first==candidate.first,SPLIT_VOTING_MASK)&submask;
-            const auto  emptyFound = warpVote(buckets[probingindex].first==EMPTYBUCKET,SPLIT_VOTING_MASK)&submask;
+            const auto  maskExists = split::s_warpVote(buckets[probingindex].first==candidate.first,SPLIT_VOTING_MASK)&submask;
+            const auto  emptyFound = split::s_warpVote(buckets[probingindex].first==EMPTYBUCKET,SPLIT_VOTING_MASK)&submask;
             //If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
             if (!maskExists && emptyFound){
                return;
             }
             if (maskExists){
-               int winner =findFirstSig( maskExists ) -1;
+               int winner =split::s_findFirstSig( maskExists ) -1;
                winner-=(subwarp_relative_index)*VIRTUALWARP;
                if(w_tid==winner){
-                  h_atomicExch(&candidate.second,buckets[probingindex].second);
+                  split::s_atomicExch(&candidate.second,buckets[probingindex].second);
                }
                return;
              }
@@ -860,7 +860,7 @@ namespace Hashinator{
             //TODO mind AMD 64 thread wavefronts
             submask=SPLIT_VOTING_MASK;
          }else{
-            submask=getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
+            submask=split::getIntraWarpMask_CUDA(0,VIRTUALWARP*subwarp_relative_index+1,VIRTUALWARP*subwarp_relative_index+VIRTUALWARP);
          }
          #endif 
          #ifdef __HIP_PLATFORM_HCC___
@@ -883,18 +883,18 @@ namespace Hashinator{
             
             //Get the position we should be looking into
             size_t probingindex=((hashIndex+i+w_tid) & bitMask ) ;
-            const auto  maskExists = warpVote(buckets[probingindex].first==candidateKey,SPLIT_VOTING_MASK)&submask;
-            const auto  emptyFound = warpVote(buckets[probingindex].first==EMPTYBUCKET,SPLIT_VOTING_MASK)&submask;
+            const auto  maskExists = split::s_warpVote(buckets[probingindex].first==candidateKey,SPLIT_VOTING_MASK)&submask;
+            const auto  emptyFound = split::s_warpVote(buckets[probingindex].first==EMPTYBUCKET,SPLIT_VOTING_MASK)&submask;
             //If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
             if (!maskExists && emptyFound){
                return;
             }
             if (maskExists){
-               int winner =findFirstSig( maskExists ) -1;
+               int winner =split::s_findFirstSig( maskExists ) -1;
                winner-=(subwarp_relative_index)*VIRTUALWARP;
                if(w_tid==winner){
-                  h_atomicExch(&buckets[probingindex].first, TOMBSTONE);
-                  h_atomicAdd(d_tombstoneCounter, 1);
+                  split::s_atomicExch(&buckets[probingindex].first, TOMBSTONE);
+                  split::s_atomicAdd(d_tombstoneCounter, 1);
                }
                return;
              }

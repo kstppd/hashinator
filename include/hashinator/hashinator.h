@@ -26,27 +26,27 @@
 #include <cassert>
 #include <limits>
 #include "../common.h"
-#include "../hashinator_atomics.h"
+#include "../splitvector/gpu_wrappers.h"
 #include "../splitvector/splitvec.h"
 #include "../splitvector/split_allocators.h"
 #include "hashfunctions.h"
 #include "defaults.h"
 #include "hash_pair.h"
 #ifndef HASHINATOR_HOST_ONLY
-#include "../splitvector/split_tools.h"
-#include "hashers.h"
+   #include "../splitvector/split_tools.h"
+   #include "hashers.h"
 #endif
 
 namespace Hashinator{
 
    #ifndef HASHINATOR_HOST_ONLY
-   template <typename T>
-   using DefaultMetaAllocator = split::split_unified_allocator<T>;
-   #define DefaultHasher Hashers::Hasher<KEY_TYPE,VAL_TYPE,HashFunction,EMPTYBUCKET,TOMBSTONE,defaults::WARPSIZE,defaults::elementsPerWarp>
+      template <typename T>
+      using DefaultMetaAllocator = split::split_unified_allocator<T>;
+      #define DefaultHasher Hashers::Hasher<KEY_TYPE,VAL_TYPE,HashFunction,EMPTYBUCKET,TOMBSTONE,defaults::WARPSIZE,defaults::elementsPerWarp>
    #else
-   template <typename T>
-   using DefaultMetaAllocator = split::split_host_allocator<T>;
-   #define DefaultHasher void
+      template <typename T>
+      using DefaultMetaAllocator = split::split_host_allocator<T>;
+      #define DefaultHasher void
    #endif
 
    typedef struct Info {
@@ -1268,9 +1268,9 @@ namespace Hashinator{
          if (item==EMPTYBUCKET || item==TOMBSTONE){return ++keyPos;}
 
          //Let's simply add a tombstone here
-         h_atomicExch(&buckets[index].first,TOMBSTONE);
-         h_atomicSub((unsigned int*)(&_mapInfo->fill), 1);
-         h_atomicAdd((unsigned int*)(&_mapInfo->tombstoneCounter), 1);
+         split::s_atomicExch(&buckets[index].first,TOMBSTONE);
+         split::s_atomicSub((unsigned int*)(&_mapInfo->fill), 1);
+         split::s_atomicAdd((unsigned int*)(&_mapInfo->tombstoneCounter), 1);
          ++keyPos;
          return keyPos;
       }
@@ -1286,19 +1286,19 @@ namespace Hashinator{
          size_t i =0;
          while(i<buckets.size()){
             uint32_t vecindex=(hashIndex + i) & bitMask;
-            KEY_TYPE old = h_atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, key);
+            KEY_TYPE old = split::s_atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, key);
             //Key does not exist so we create it and incerement fill
             if (old == EMPTYBUCKET){
-               h_atomicExch(&buckets[vecindex].first,key);
-               h_atomicExch(&buckets[vecindex].second,value);
-               h_atomicAdd((unsigned int*)(&_mapInfo->fill), 1);
+               split::s_atomicExch(&buckets[vecindex].first,key);
+               split::s_atomicExch(&buckets[vecindex].second,value);
+               split::s_atomicAdd((unsigned int*)(&_mapInfo->fill), 1);
                thread_overflowLookup = i+1;
                return;
             }
 
             //Key exists so we overwrite it. Fill stays the same
             if (old == key){
-               h_atomicExch(&buckets[vecindex].second,value);
+               split::s_atomicExch(&buckets[vecindex].second,value);
                thread_overflowLookup = i+1;
                return;
             }

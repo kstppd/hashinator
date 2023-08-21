@@ -32,26 +32,23 @@
 
 
 #ifndef SPLIT_HOST_ONLY
-#include <cuda_runtime_api.h>
-#include <cuda.h>
-#define HOSTONLY __host__
-#define DEVICEONLY __device__
-#define HOSTDEVICE __host__ __device__
-template <typename T>
-using DefaultAllocator = split::split_unified_allocator<T>;
-template <typename T>
-using DefaultMetaAllocator = split::split_unified_allocator<size_t>;
-
+   #include <cuda_runtime_api.h>
+   #include <cuda.h>
+   #define HOSTONLY __host__
+   #define DEVICEONLY __device__
+   #define HOSTDEVICE __host__ __device__
+   template <typename T>
+   using DefaultAllocator = split::split_unified_allocator<T>;
+   template <typename T>
+   using DefaultMetaAllocator = split::split_unified_allocator<size_t>;
 #else
-
-#define HOSTONLY
-#define DEVICEONLY
-#define HOSTDEVICE
-template <typename T>
-using DefaultAllocator = split::split_host_allocator<T>;
-template <typename T>
-using DefaultMetaAllocator = split::split_host_allocator<size_t>;
-
+   #define HOSTONLY
+   #define DEVICEONLY
+   #define HOSTDEVICE
+   template <typename T>
+   using DefaultAllocator = split::split_host_allocator<T>;
+   template <typename T>
+   using DefaultMetaAllocator = split::split_host_allocator<size_t>;
 #endif
 
 namespace split{

@@ -1,6 +1,6 @@
 /* File:    split::tools.h
  * Authors: Kostis Papadakis (2023)
- * Description: Set of tools used by SplitVectors
+ * Description: Set of tools used by SplitVector
  *
  * This file defines the following classes or functions:
  *    --split::tools::Cuda_mempool
@@ -30,8 +30,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  * */
 #pragma once 
-#include "split_allocators.h"
-#include "../hashinator_atomics.h"
+#include "gpu_wrappers.h"
 #define NUM_BANKS 32 //TODO depends on device
 #define LOG_NUM_BANKS 5
 #define CONFLICT_FREE_OFFSET(n) ((n) >> LOG_NUM_BANKS)
@@ -48,7 +47,7 @@
 namespace split{
    namespace tools{
     
-      inline bool isPow2(const size_t val ) {
+      constexpr inline bool isPow2(const size_t val ) {
          return (val &(val-1))==0;
       }
 
@@ -172,13 +171,13 @@ namespace split{
          const unsigned int warps_in_block = blockDim.x/WARP;
          const bool tres=rule(input->at(tid));
 
-         auto mask= Hashinator::warpVote(tres,SPLIT_VOTING_MASK);
+         auto mask= split::s_warpVote(tres,SPLIT_VOTING_MASK);
          #ifdef __NVCC__
          uint32_t n_neighbors= mask & ((1 << w_tid) - 1);
          #else
          uint64_t n_neighbors= mask & ((1ul << w_tid) - 1);
          #endif 
-         auto total_valid_in_warp	= Hashinator::pop_count(mask);
+         auto total_valid_in_warp	= split::s_pop_count(mask);
          if (w_tid==0 ){
             buffer[widb]=total_valid_in_warp;
          }
@@ -190,7 +189,7 @@ namespace split{
             }
          }
          __syncthreads();
-         const unsigned int neighbor_count= Hashinator::pop_count(n_neighbors);
+         const unsigned int neighbor_count= split::s_pop_count(n_neighbors);
          const unsigned int private_index	= buffer[offset+widb] + offsets->at(wid/warps_in_block) + neighbor_count ;
          if (tres && widb!=warps_in_block){
             output->at(private_index) = input->at(tid);
@@ -222,13 +221,13 @@ namespace split{
          const unsigned int warps_in_block = blockDim.x/WARP;
          const bool tres=rule(input->at(tid));
 
-         auto mask= Hashinator::warpVote(tres,SPLIT_VOTING_MASK);
+         auto mask= split::s_warpVote(tres,SPLIT_VOTING_MASK);
          #ifdef __NVCC__
          uint32_t n_neighbors= mask & ((1 << w_tid) - 1);
          #else
          uint64_t n_neighbors= mask & ((1ul << w_tid) - 1);
          #endif 
-         auto total_valid_in_warp	= Hashinator::pop_count(mask);
+         auto total_valid_in_warp	= split::s_pop_count(mask);
          if (w_tid==0 ){
             buffer[widb]=total_valid_in_warp;
          }
@@ -240,7 +239,7 @@ namespace split{
             }
          }
          __syncthreads();
-         const unsigned int neighbor_count= Hashinator::pop_count(n_neighbors);
+         const unsigned int neighbor_count= split::s_pop_count(n_neighbors);
          const unsigned int private_index	= buffer[offset+widb] + offsets->at(wid/warps_in_block) + neighbor_count ;
          if (tres && widb!=warps_in_block){
             output->at(private_index) = (input->at(tid)).first;
@@ -268,13 +267,13 @@ namespace split{
          const unsigned int warps_in_block = blockDim.x/WARP;
          const bool tres=rule(input[tid]);
 
-         auto mask= Hashinator::warpVote(tres,SPLIT_VOTING_MASK);
+         auto mask= split::s_warpVote(tres,SPLIT_VOTING_MASK);
          #ifdef __NVCC__
          uint32_t n_neighbors= mask & ((1 << w_tid) - 1);
          #else
          uint64_t n_neighbors= mask & ((1ul << w_tid) - 1);
          #endif 
-         auto total_valid_in_warp	= Hashinator::pop_count(mask);
+         auto total_valid_in_warp	= split::s_pop_count(mask);
          if (w_tid==0 ){
             buffer[widb]=total_valid_in_warp;
          }
@@ -286,7 +285,7 @@ namespace split{
             }
          }
          __syncthreads();
-         const unsigned int neighbor_count= Hashinator::pop_count(n_neighbors);
+         const unsigned int neighbor_count= split::s_pop_count(n_neighbors);
          const unsigned int private_index	= buffer[offset+widb] + offsets[(wid/warps_in_block)] + neighbor_count ;
          if (tres && widb!=warps_in_block){
             output[private_index] = input[tid].first;
@@ -472,13 +471,13 @@ namespace split{
          const unsigned int warps_in_block = blockDim.x/WARP;
          const bool tres=rule(input[tid]);
 
-         auto mask= Hashinator::warpVote(tres,SPLIT_VOTING_MASK);
+         auto mask= split::s_warpVote(tres,SPLIT_VOTING_MASK);
          #ifdef __NVCC__
          uint32_t n_neighbors= mask & ((1 << w_tid) - 1);
          #else
          uint64_t n_neighbors= mask & ((1ul << w_tid) - 1);
          #endif 
-         auto total_valid_in_warp	= Hashinator::pop_count(mask);
+         auto total_valid_in_warp	= split::s_pop_count(mask);
          if (w_tid==0 ){
             buffer[widb]=total_valid_in_warp;
          }
@@ -490,7 +489,7 @@ namespace split{
             }
          }
          __syncthreads();
-         const unsigned int neighbor_count= Hashinator::pop_count(n_neighbors);
+         const unsigned int neighbor_count= split::s_pop_count(n_neighbors);
          const unsigned int private_index	= buffer[offset+widb] + offsets[(wid/warps_in_block)] + neighbor_count ;
          if (tres && widb!=warps_in_block){
             output[private_index] = input[tid];
