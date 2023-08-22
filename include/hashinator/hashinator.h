@@ -21,6 +21,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  * */
 #pragma once
+#ifdef HASHINATOR_HOST_ONLY 
+#define SPLIT_HOST_ONLY
+#endif
 #include "../common.h"
 #include "../splitvector/gpu_wrappers.h"
 #include "../splitvector/split_allocators.h"

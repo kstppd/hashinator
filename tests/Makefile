@@ -32,10 +32,10 @@ gtest_hashmap.o: hashmap_unit_test/main.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o gtest_hashmap hashmap_unit_test/main.cu
 
 benchmark.o: benchmark/main.cu
-	${CC} --ptxas-options=-v ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o benchmark_hashinator benchmark/main.cu
+	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o benchmark_hashinator benchmark/main.cu
 
 benchmarkLF.o: benchmark/loadFactor.cu
-	${CC} --ptxas-options=-v ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o benchmark_hashinator_lf benchmark/loadFactor.cu
+	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o benchmark_hashinator_lf benchmark/loadFactor.cu
 
 gtest_vec_host.o: gtest_vec_host/vec_test.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o gtestvechost gtest_vec_host/vec_test.cu
@@ -59,4 +59,4 @@ hybrid_gpu.o: hybrid/main.cpp
 	${CC} -x cu  ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o hybrid_gpu hybrid/main.cpp
 
 hybrid_cpu.o: hybrid/main.cpp
-	g++ -fsanitize=address -fno-omit-frame-pointer ${CXXFLAGS} -O3  -std=c++17 -DSPLIT_HOST_ONLY -DHASHINATOR_HOST_ONLY  -o hybrid_cpu hybrid/main.cpp -I/usr/local/cuda/include/ -L/usr/local/cuda/lib64 -lcudart -lcuda  -lgtest -lgtest_main -lpthread  -Wall  -Wpedantic -Werror -static-libasan
+	g++ -fsanitize=address -fno-omit-frame-pointer ${CXXFLAGS} -O3  -std=c++17 -DHASHINATOR_HOST_ONLY  -o hybrid_cpu hybrid/main.cpp -I/usr/local/cuda/include/ -L/usr/local/cuda/lib64 -lcudart -lcuda  -lgtest -lgtest_main -lpthread  -Wall  -Wpedantic -Werror -static-libasan
