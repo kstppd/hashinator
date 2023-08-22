@@ -30,8 +30,11 @@
 #include <stdlib.h>
 
 #ifndef SPLIT_HOST_ONLY
-#include <cuda.h>
+#ifdef __NVCC__
 #include <cuda_runtime_api.h>
+#else
+#include <hip_runtime_api.h>
+#endif
 #define HOSTONLY __host__
 #define DEVICEONLY __device__
 #define HOSTDEVICE __host__ __device__

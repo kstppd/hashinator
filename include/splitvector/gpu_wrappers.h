@@ -20,9 +20,6 @@
  * */
 #pragma once
 #ifndef SPLIT_HOST_ONLY
-#include <cuda.h>
-#include <cuda_runtime.h>
-#include <cuda_runtime_api.h>
 
 namespace split {
 
