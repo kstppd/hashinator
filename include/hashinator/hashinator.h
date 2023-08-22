@@ -88,7 +88,6 @@ private:
 
    // Used by the constructors. Preallocates the device pointer and bookeepping info for later use on device.
    // This helps in reducing the number of calls to split_gpuMalloc
-   HASHINATOR_HOSTONLY
    void preallocate_device_handles() {
 #ifndef HASHINATOR_HOST_ONLY
       SPLIT_CHECK_ERR(split_gpuMalloc((void**)&device_map, sizeof(Hashmap)));
@@ -96,7 +95,6 @@ private:
    }
 
    // Deallocates the bookeepping info and the device pointer
-   HASHINATOR_HOSTONLY
    void deallocate_device_handles() {
 #ifndef HASHINATOR_HOST_ONLY
       SPLIT_CHECK_ERR(split_gpuFree(device_map));
@@ -108,7 +106,6 @@ private:
    inline void set_status(status code) noexcept { _mapInfo->err = code; }
 
 public:
-   HASHINATOR_HOSTONLY
    Hashmap() {
       preallocate_device_handles();
       _mapInfo = _metaAllocator.allocate(1);
@@ -117,7 +114,6 @@ public:
           1 << _mapInfo->sizePower, hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE()));
    };
 
-   HASHINATOR_HOSTONLY
    Hashmap(int sizepower) {
       preallocate_device_handles();
       _mapInfo = _metaAllocator.allocate(1);
@@ -126,7 +122,6 @@ public:
           1 << _mapInfo->sizePower, hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE()));
    };
 
-   HASHINATOR_HOSTONLY
    Hashmap(const Hashmap<KEY_TYPE, VAL_TYPE>& other) {
       preallocate_device_handles();
       _mapInfo = _metaAllocator.allocate(1);
@@ -134,53 +129,43 @@ public:
       buckets = other.buckets;
    };
 
-   HASHINATOR_HOSTONLY
    ~Hashmap() {
       deallocate_device_handles();
       _metaAllocator.deallocate(_mapInfo, 1);
    };
 
 #ifdef HASHINATOR_HOST_ONLY
-   HASHINATOR_HOSTONLY
    void* operator new(size_t len) {
       void* ptr = (void*)malloc(len);
       return ptr;
    }
 
-   HASHINATOR_HOSTONLY
    void operator delete(void* ptr) { free(ptr); }
 
-   HASHINATOR_HOSTONLY
    void* operator new[](size_t len) {
       void* ptr = (void*)malloc(len);
       return ptr;
    }
 
-   HASHINATOR_HOSTONLY
    void operator delete[](void* ptr) { free(ptr); }
 
 #else
-   HASHINATOR_HOSTONLY
    void* operator new(size_t len) {
       void* ptr;
       SPLIT_CHECK_ERR(split_gpuMallocManaged(&ptr, len));
       return ptr;
    }
 
-   HASHINATOR_HOSTONLY
    void operator delete(void* ptr) { SPLIT_CHECK_ERR(split_gpuFree(ptr)); }
 
-   HASHINATOR_HOSTONLY
    void* operator new[](size_t len) {
       void* ptr;
       SPLIT_CHECK_ERR(split_gpuMallocManaged(&ptr, len));
       return ptr;
    }
 
-   HASHINATOR_HOSTONLY
    void operator delete[](void* ptr) { split_gpuFree(ptr); }
 
-   HASHINATOR_HOSTONLY
    void copyMetadata(MapInfo* dst, split_gpuStream_t s = 0) {
       SPLIT_CHECK_ERR(split_gpuMemcpyAsync(dst, _mapInfo, sizeof(MapInfo), split_gpuMemcpyDeviceToHost, s));
    }
@@ -189,7 +174,6 @@ public:
 
    // Resize the table to fit more things. This is automatically invoked once
    // maxBucketOverflow has triggered. This can only be done on host (so far)
-   HASHINATOR_HOSTONLY
    void rehash(int newSizePower) {
       if (newSizePower > 32) {
          throw std::out_of_range("Hashmap ran into rehashing catastrophe and exceeded 32bit buckets.");
@@ -235,7 +219,6 @@ public:
 #ifndef HASHINATOR_HOST_ONLY
    // Resize the table to fit more things. This is automatically invoked once
    // maxBucketOverflow has triggered. This can only be done on host (so far)
-   HASHINATOR_HOSTONLY
    void device_rehash(int newSizePower, split_gpuStream_t s = 0) {
       if (newSizePower > 32) {
          throw std::out_of_range("Hashmap ran into rehashing catastrophe and exceeded 32bit buckets.");
@@ -273,7 +256,6 @@ public:
 #endif
 
    // Element access (by reference). Nonexistent elements get created.
-   HASHINATOR_HOSTONLY
    VAL_TYPE& _at(const KEY_TYPE& key) {
       int bitMask = (1 << _mapInfo->sizePower) - 1; // For efficient modulo of the array size
       auto hashIndex = hash(key);
@@ -337,7 +319,6 @@ public:
       return at(key); // Recursive tail call to try again with larger table.
    }
 
-   HASHINATOR_HOSTONLY
    const VAL_TYPE& _at(const KEY_TYPE& key) const {
       int bitMask = (1 << _mapInfo->sizePower) - 1; // For efficient modulo of the array size
       auto hashIndex = hash(key);
@@ -383,10 +364,8 @@ public:
    HASHINATOR_HOSTDEVICE
    size_t bucket_count() const { return buckets.size(); }
 
-   HASHINATOR_HOSTONLY
    float load_factor() const { return (float)size() / bucket_count(); }
 
-   HASHINATOR_HOSTONLY
    size_t count(const KEY_TYPE& key) const {
       if (find(key) != end()) {
          return 1;
@@ -396,14 +375,12 @@ public:
    }
 
 #ifdef HASHINATOR_HOST_ONLY
-   HASHINATOR_HOSTONLY
    void clear() {
       buckets = split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>(1 << _mapInfo->sizePower, {EMPTYBUCKET, VAL_TYPE()});
       *_mapInfo = MapInfo(_mapInfo->sizePower);
       return;
    }
 #else
-   HASHINATOR_HOSTONLY
    void clear(targets t = targets::host, split_gpuStream_t s = 0, bool prefetches = true) {
       size_t blocksNeeded;
       switch (t) {
@@ -434,7 +411,6 @@ public:
 #endif
 
    // Try to grow our buckets until we achieve a targetLF load factor
-   HASHINATOR_HOSTONLY
    void resize_to_lf(float targetLF = 0.5) {
       while (load_factor() > targetLF) {
          rehash(_mapInfo->sizePower + 1);
@@ -442,10 +418,8 @@ public:
    }
 
 #ifdef HASHINATOR_HOST_ONLY
-   HASHINATOR_HOSTONLY
    void resize(int newSizePower) { rehash(newSizePower); }
 #else
-   HASHINATOR_HOSTONLY
    void resize(int newSizePower, targets t = targets::host, split_gpuStream_t s = 0) {
       switch (t) {
       case targets::host:
@@ -463,7 +437,6 @@ public:
    }
 #endif
 
-   HASHINATOR_HOSTONLY
    void print_pair(const hash_pair<KEY_TYPE, VAL_TYPE>& i) const {
       size_t currentSizePower = _mapInfo->sizePower;
       const size_t hashIndex = HashFunction::_hash(i.first, currentSizePower);
@@ -484,7 +457,6 @@ public:
       }
    }
 
-   HASHINATOR_HOSTONLY
    void dump_buckets() const {
       printf("Hashinator Stats \n");
       printf("Fill= %zu, LoadFactor=%f \n", _mapInfo->fill, load_factor());
@@ -495,7 +467,6 @@ public:
       std::cout << std::endl;
    }
 
-   HASHINATOR_HOSTONLY
    void stats() const {
       printf("Hashinator Stats \n");
       printf("Bucket size= %zu\n", buckets.size());
@@ -504,10 +475,8 @@ public:
       printf("Overflow= %zu\n", _mapInfo->currentMaxBucketOverflow);
    }
 
-   HASHINATOR_HOSTONLY
    size_t tombstone_count() const { return _mapInfo->tombstoneCounter; }
 
-   HASHINATOR_HOSTONLY
    float tombstone_ratio() const {
       if (tombstone_count() == 0) {
          return 0.0;
@@ -516,7 +485,6 @@ public:
       return (float)_mapInfo->tombstoneCounter / (float)buckets.size();
    }
 
-   HASHINATOR_HOSTONLY
    void swap(Hashmap<KEY_TYPE, VAL_TYPE>& other) noexcept {
       buckets.swap(other.buckets);
       std::swap(_mapInfo, other._mapInfo);
@@ -525,7 +493,6 @@ public:
 
 #ifdef HASHINATOR_HOST_ONLY
    // Try to get the overflow back to the original one
-   HASHINATOR_HOSTONLY
    void performCleanupTasks() {
       while (_mapInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW) {
          rehash(_mapInfo->sizePower + 1);
@@ -537,7 +504,6 @@ public:
    }
 #else
    // Try to get the overflow back to the original one
-   HASHINATOR_HOSTONLY
    void performCleanupTasks(split_gpuStream_t s = 0) {
       while (_mapInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW) {
          device_rehash(_mapInfo->sizePower + 1);
@@ -550,21 +516,18 @@ public:
 #endif
 
    // Read only  access to reference.
-   HASHINATOR_HOSTONLY
    const VAL_TYPE& at(const KEY_TYPE& key) const {
       performCleanupTasks();
       return _at(key);
    }
 
    // See _at(key)
-   HASHINATOR_HOSTONLY
    VAL_TYPE& at(const KEY_TYPE& key) {
       performCleanupTasks();
       return _at(key);
    }
 
    // Typical array-like access with [] operator
-   HASHINATOR_HOSTONLY
    VAL_TYPE& operator[](const KEY_TYPE& key) {
       performCleanupTasks();
       return at(key);
@@ -576,10 +539,8 @@ public:
       size_t index;
 
    public:
-      HASHINATOR_HOSTONLY
       iterator(Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index) : hashtable(&hashtable), index(index) {}
 
-      HASHINATOR_HOSTONLY
       iterator& operator++() {
          index++;
          while (index < hashtable->buckets.size()) {
@@ -591,25 +552,19 @@ public:
          return *this;
       }
 
-      HASHINATOR_HOSTONLY
       iterator operator++(int) { // Postfix version
          iterator temp = *this;
          ++(*this);
          return temp;
       }
-      HASHINATOR_HOSTONLY
       bool operator==(iterator other) const {
          return &hashtable->buckets[index] == &other.hashtable->buckets[other.index];
       }
-      HASHINATOR_HOSTONLY
       bool operator!=(iterator other) const {
          return &hashtable->buckets[index] != &other.hashtable->buckets[other.index];
       }
-      HASHINATOR_HOSTONLY
       hash_pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
-      HASHINATOR_HOSTONLY
       hash_pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
-      HASHINATOR_HOSTONLY
       size_t getIndex() { return index; }
    };
 
@@ -619,10 +574,8 @@ public:
       size_t index;
 
    public:
-      HASHINATOR_HOSTONLY
       explicit const_iterator(const Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index)
           : hashtable(&hashtable), index(index) {}
-      HASHINATOR_HOSTONLY
       const_iterator& operator++() {
          index++;
          while (index < hashtable->buckets.size()) {
@@ -633,30 +586,23 @@ public:
          }
          return *this;
       }
-      HASHINATOR_HOSTONLY
       const_iterator operator++(int) { // Postfix version
          const_iterator temp = *this;
          ++(*this);
          return temp;
       }
-      HASHINATOR_HOSTONLY
       bool operator==(const_iterator other) const {
          return &hashtable->buckets[index] == &other.hashtable->buckets[other.index];
       }
-      HASHINATOR_HOSTONLY
       bool operator!=(const_iterator other) const {
          return &hashtable->buckets[index] != &other.hashtable->buckets[other.index];
       }
-      HASHINATOR_HOSTONLY
       const hash_pair<KEY_TYPE, VAL_TYPE>& operator*() const { return hashtable->buckets[index]; }
-      HASHINATOR_HOSTONLY
       const hash_pair<KEY_TYPE, VAL_TYPE>* operator->() const { return &hashtable->buckets[index]; }
-      HASHINATOR_HOSTONLY
       size_t getIndex() { return index; }
    };
 
    // Element access by iterator
-   HASHINATOR_HOSTONLY
    const const_iterator find(KEY_TYPE key) const {
       int bitMask = (1 << _mapInfo->sizePower) - 1; // For efficient modulo of the array size
       auto hashIndex = hash(key);
@@ -684,7 +630,6 @@ public:
       return end();
    }
 
-   HASHINATOR_HOSTONLY
    iterator find(KEY_TYPE key) {
       performCleanupTasks();
       int bitMask = (1 << _mapInfo->sizePower) - 1; // For efficient modulo of the array size
@@ -713,7 +658,6 @@ public:
       return end();
    }
 
-   HASHINATOR_HOSTONLY
    iterator begin() {
       for (size_t i = 0; i < buckets.size(); i++) {
          if (buckets[i].first != EMPTYBUCKET && buckets[i].first != TOMBSTONE) {
@@ -723,7 +667,6 @@ public:
       return end();
    }
 
-   HASHINATOR_HOSTONLY
    const_iterator begin() const {
       for (size_t i = 0; i < buckets.size(); i++) {
          if (buckets[i].first != EMPTYBUCKET && buckets[i].first != TOMBSTONE) {
@@ -733,14 +676,11 @@ public:
       return end();
    }
 
-   HASHINATOR_HOSTONLY
    iterator end() { return iterator(*this, buckets.size()); }
 
-   HASHINATOR_HOSTONLY
    const_iterator end() const { return const_iterator(*this, buckets.size()); }
 
    // Remove one element from the hash table.
-   HASHINATOR_HOSTONLY
    iterator erase(iterator keyPos) {
       size_t index = keyPos.getIndex();
       if (buckets[index].first != EMPTYBUCKET && buckets[index].first != TOMBSTONE) {
@@ -753,7 +693,6 @@ public:
       return keyPos;
    }
 
-   HASHINATOR_HOSTONLY
    hash_pair<iterator, bool> insert(hash_pair<KEY_TYPE, VAL_TYPE> newEntry) {
       bool found = find(newEntry.first) != end();
       if (!found) {
@@ -762,7 +701,6 @@ public:
       return hash_pair<iterator, bool>(find(newEntry.first), !found);
    }
 
-   HASHINATOR_HOSTONLY
    size_t erase(const KEY_TYPE& key) {
       iterator element = find(key);
       if (element == end()) {
@@ -801,7 +739,7 @@ public:
     *   hmap.extractPattern(elements,Rule<uint32_t,uint32_t>());
     * */
    template <typename Rule>
-   HASHINATOR_HOSTONLY size_t extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements, Rule rule,
+   size_t extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements, Rule rule,
                                              split_gpuStream_t s = 0, bool prefetches = true) {
       elements.resize(_mapInfo->fill + 1, true);
       if (prefetches) {
@@ -818,7 +756,7 @@ public:
    }
 
    template <typename Rule>
-   HASHINATOR_HOSTONLY size_t extractPattern(hash_pair<KEY_TYPE, VAL_TYPE>* elements, Rule rule,
+   size_t extractPattern(hash_pair<KEY_TYPE, VAL_TYPE>* elements, Rule rule,
                                              split_gpuStream_t s = 0) {
       // Extract elements matching the Pattern Rule(element)==true;
       size_t retval =
@@ -828,7 +766,7 @@ public:
    }
 
    template <typename Rule>
-   HASHINATOR_HOSTONLY size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements, Rule rule,
+   size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements, Rule rule,
                                                    split_gpuStream_t s = 0, bool prefetches = true) {
       elements.resize(_mapInfo->fill + 1, true);
       if (prefetches) {
@@ -843,7 +781,6 @@ public:
       return retval;
    }
 
-   HASHINATOR_HOSTONLY
    size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, split_gpuStream_t s = 0, bool prefetches = true) {
       // Extract all keys
       auto rule = [] __host__ __device__(const hash_pair<KEY_TYPE, VAL_TYPE>& kval) -> bool {
@@ -912,7 +849,6 @@ public:
    }
 
    // Uses Hasher's insert_kernel to insert all elements
-   HASHINATOR_HOSTONLY
    void insert(KEY_TYPE* keys, VAL_TYPE* vals, size_t len, float targetLF = 0.5, split_gpuStream_t s = 0,
                bool prefetches = true) {
       // Here we do some calculations to estimate how much if any we need to grow our buckets
@@ -930,7 +866,6 @@ public:
    }
 
    // Uses Hasher's insert_kernel to insert all elements
-   HASHINATOR_HOSTONLY
    void insert(hash_pair<KEY_TYPE, VAL_TYPE>* src, size_t len, float targetLF = 0.5, split_gpuStream_t s = 0) {
       if (len == 0) {
          set_status(status::success);
@@ -948,7 +883,6 @@ public:
    }
 
    // Uses Hasher's retrieve_kernel to read all elements
-   HASHINATOR_HOSTONLY
    void retrieve(KEY_TYPE* keys, VAL_TYPE* vals, size_t len, split_gpuStream_t s = 0) {
       buckets.optimizeGPU(s);
       DeviceHasher::retrieve(keys, vals, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow, len,
@@ -957,7 +891,6 @@ public:
    }
 
    // Uses Hasher's retrieve_kernel to read all elements
-   HASHINATOR_HOSTONLY
    void retrieve(hash_pair<KEY_TYPE, VAL_TYPE>* src, size_t len, split_gpuStream_t s = 0) {
       buckets.optimizeGPU(s);
       DeviceHasher::retrieve(src, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow, len, s);
@@ -965,7 +898,6 @@ public:
    }
 
    // Uses Hasher's erase_kernel to delete all elements
-   HASHINATOR_HOSTONLY
    void erase(KEY_TYPE* keys, size_t len, split_gpuStream_t s = 0) {
       buckets.optimizeGPU(s);
       // Remember the last numeber of tombstones
@@ -983,14 +915,12 @@ public:
     * The pointer is internally cleaned up by the destructors, however the user **must**
     * call download() after usage on device.
     */
-   HASHINATOR_HOSTONLY
    Hashmap* upload(split_gpuStream_t stream = 0) {
       optimizeGPU(stream);
       SPLIT_CHECK_ERR(split_gpuMemcpyAsync(device_map, this, sizeof(Hashmap), split_gpuMemcpyHostToDevice, stream));
       return device_map;
    }
 
-   HASHINATOR_HOSTONLY
    void optimizeGPU(split_gpuStream_t stream = 0) noexcept {
       int device;
       SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
@@ -999,13 +929,11 @@ public:
    }
 
    /*Manually prefetch data on Host*/
-   HASHINATOR_HOSTONLY
    void optimizeCPU(split_gpuStream_t stream = 0) noexcept {
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_mapInfo, sizeof(MapInfo), split_gpuCpuDeviceId, stream));
       buckets.optimizeCPU(stream);
    }
 
-   HASHINATOR_HOSTONLY
    void streamAttach(split_gpuStream_t s, uint32_t flags = split_gpuMemAttachSingle) {
       buckets.streamAttach(s, flags);
       SPLIT_CHECK_ERR(split_gpuStreamAttachMemAsync(s, (void*)_mapInfo, sizeof(MapInfo), flags));
@@ -1014,7 +942,6 @@ public:
 
    // Just return the device pointer. Upload should be called fist
    // othewise map bookeepping info will not be updated on device.
-   HASHINATOR_HOSTONLY
    Hashmap* get_device_pointer() { return device_map; }
 
    /**
@@ -1024,7 +951,6 @@ public:
     *  • If the hashmap has overflown on device it will try
     *  • If there are Tombstones then those are removed
     * */
-   HASHINATOR_HOSTONLY
    void download(split_gpuStream_t stream = 0) {
       // Copy over fill as it might have changed
       optimizeCPU(stream);
@@ -1332,7 +1258,6 @@ public:
 #else
 
    // Uses Hasher's insert_kernel to insert all elements
-   HASHINATOR_HOSTONLY
    void insert(KEY_TYPE* keys, VAL_TYPE* vals, size_t len, float targetLF = 0.5) {
       for (size_t i = 0; i < len; ++i) {
          _at(keys[i]) = vals[i];
@@ -1340,7 +1265,6 @@ public:
    }
 
    // Uses Hasher's insert_kernel to insert all elements
-   HASHINATOR_HOSTONLY
    void insert(hash_pair<KEY_TYPE, VAL_TYPE>* src, size_t len, float targetLF = 0.5) {
       for (size_t i = 0; i < len; ++i) {
          _at(src[i].first) = src[i].second;
@@ -1348,7 +1272,6 @@ public:
    }
 
    // Uses Hasher's retrieve_kernel to read all elements
-   HASHINATOR_HOSTONLY
    void retrieve(KEY_TYPE* keys, VAL_TYPE* vals, size_t len) {
       for (size_t i = 0; i < len; ++i) {
          vals[i] = at(keys[i]);
@@ -1356,7 +1279,6 @@ public:
    }
 
    // Uses Hasher's erase_kernel to delete all elements
-   HASHINATOR_HOSTONLY
    void erase(KEY_TYPE* keys, VAL_TYPE* vals, size_t len) {
       for (size_t i = 0; i < len; ++i) {
          erase(keys[i].first);
