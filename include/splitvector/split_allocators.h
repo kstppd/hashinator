@@ -25,6 +25,28 @@
 namespace split {
 
 #ifndef SPLIT_HOST_ONLY
+
+#ifdef __NVCC__
+/* Define the CUDA error checking macro */
+#define SPLIT_CHECK_ERR(err) (split::cuda_error(err, __FILE__, __LINE__))
+void cuda_error(cudaError_t err, const char* file, int line) {
+   if (err != cudaSuccess) {
+      printf("\n\n%s in %s at line %d\n", cudaGetErrorString(err), file, line);
+      exit(1);
+   }
+}
+#endif
+#ifdef __HIP_PLATFORM_HCC___
+/* Define the HIP error checking macro */
+#define SPLIT_CHECK_ERR(err) (split::hip_error(err, __FILE__, __LINE__))
+void hip_error(hipError_t err, const char* file, int line) {
+   if (err != hipSuccess) {
+      printf("\n\n%s in %s at line %d\n", hipGetErrorString(err), file, line);
+      exit(1);
+   }
+}
+#endif
+
 template <class T>
 class split_unified_allocator {
 public:
@@ -48,7 +70,7 @@ public:
 
    pointer allocate(size_type n, const void* /*hint*/ = 0) {
       T* ret;
-      cudaMallocManaged((void**)&ret, n * sizeof(value_type));
+      SPLIT_CHECK_ERR(cudaMallocManaged((void**)&ret, n * sizeof(value_type)));
       if (ret == nullptr) {
          throw std::bad_alloc();
       }
@@ -57,16 +79,16 @@ public:
 
    static void* allocate_raw(size_type n, const void* /*hint*/ = 0) {
       void* ret;
-      cudaMallocManaged((void**)&ret, n);
+      SPLIT_CHECK_ERR(cudaMallocManaged((void**)&ret, n));
       if (ret == nullptr) {
          throw std::bad_alloc();
       }
       return ret;
    }
 
-   void deallocate(pointer p, size_type) { cudaFree(p); }
+   void deallocate(pointer p, size_type) { SPLIT_CHECK_ERR(cudaFree(p)); }
 
-   static void deallocate(void* p, size_type) { cudaFree(p); }
+   static void deallocate(void* p, size_type) { SPLIT_CHECK_ERR(cudaFree(p)); }
 
    size_type max_size() const throw() {
       size_type max = static_cast<size_type>(-1) / sizeof(value_type);

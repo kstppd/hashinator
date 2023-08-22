@@ -250,60 +250,60 @@ public:
    SplitVector<T, Allocator, Meta_Allocator>* upload(cudaStream_t stream = 0) {
       SplitVector* d_vec;
       optimizeGPU(stream);
-      cudaMallocAsync((void**)&d_vec, sizeof(SplitVector), stream);
-      cudaMemcpyAsync(d_vec, this, sizeof(SplitVector), cudaMemcpyHostToDevice, stream);
+      SPLIT_CHECK_ERR(cudaMallocAsync((void**)&d_vec, sizeof(SplitVector), stream));
+      SPLIT_CHECK_ERR(cudaMemcpyAsync(d_vec, this, sizeof(SplitVector), cudaMemcpyHostToDevice, stream));
       return d_vec;
    }
 
    /*Manually prefetch data on Device*/
    HOSTONLY void optimizeGPU(cudaStream_t stream = 0) noexcept {
       int device;
-      cudaGetDevice(&device);
+      SPLIT_CHECK_ERR(cudaGetDevice(&device));
 
       // First make sure _capacity does not page-fault ie prefetch it to host
       // This is done because _capacity would page-fault otherwise as pointed by Markus
-      cudaMemPrefetchAsync(_capacity, sizeof(size_t), cudaCpuDeviceId, stream);
-      cudaStreamSynchronize(stream);
+      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_capacity, sizeof(size_t), cudaCpuDeviceId, stream));
+      SPLIT_CHECK_ERR(cudaStreamSynchronize(stream));
 
       // Now prefetch everything to device
-      cudaMemPrefetchAsync(_data, capacity() * sizeof(T), device, stream);
-      cudaMemPrefetchAsync(_size, sizeof(size_t), device, stream);
-      cudaMemPrefetchAsync(_capacity, sizeof(size_t), device, stream);
+      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_data, capacity() * sizeof(T), device, stream));
+      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_size, sizeof(size_t), device, stream));
+      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_capacity, sizeof(size_t), device, stream));
    }
 
    /*Manually prefetch data on Host*/
    HOSTONLY void optimizeCPU(cudaStream_t stream = 0) noexcept {
-      cudaMemPrefetchAsync(_capacity, sizeof(size_t), cudaCpuDeviceId, stream);
-      cudaMemPrefetchAsync(_size, sizeof(size_t), cudaCpuDeviceId, stream);
-      cudaStreamSynchronize(stream);
-      cudaMemPrefetchAsync(_data, capacity() * sizeof(T), cudaCpuDeviceId, stream);
+      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_capacity, sizeof(size_t), cudaCpuDeviceId, stream));
+      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_size, sizeof(size_t), cudaCpuDeviceId, stream));
+      SPLIT_CHECK_ERR(cudaStreamSynchronize(stream));
+      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_data, capacity() * sizeof(T), cudaCpuDeviceId, stream));
    }
 
    // Attach to a specific stream
    HOSTONLY void streamAttach(cudaStream_t s, uint32_t flags = cudaMemAttachSingle) {
-      cudaStreamAttachMemAsync(s, (void*)_size, sizeof(size_t), flags);
-      cudaStreamAttachMemAsync(s, (void*)_capacity, sizeof(size_t), flags);
-      cudaStreamAttachMemAsync(s, (void*)_data, *_capacity * sizeof(T), flags);
+      SPLIT_CHECK_ERR(cudaStreamAttachMemAsync(s, (void*)_size, sizeof(size_t), flags));
+      SPLIT_CHECK_ERR(cudaStreamAttachMemAsync(s, (void*)_capacity, sizeof(size_t), flags));
+      SPLIT_CHECK_ERR(cudaStreamAttachMemAsync(s, (void*)_data, *_capacity * sizeof(T), flags));
       return;
    }
 
    // Copy out metadata without prefetching to host first.
    HOSTONLY void copyMetadata(SplitInfo* dst, cudaStream_t s = 0) {
-      cudaMemcpyAsync(&dst->size, _size, sizeof(size_t), cudaMemcpyDeviceToHost, s);
-      cudaMemcpyAsync(&dst->capacity, _capacity, sizeof(size_t), cudaMemcpyDeviceToHost, s);
+      SPLIT_CHECK_ERR(cudaMemcpyAsync(&dst->size, _size, sizeof(size_t), cudaMemcpyDeviceToHost, s));
+      SPLIT_CHECK_ERR(cudaMemcpyAsync(&dst->capacity, _capacity, sizeof(size_t), cudaMemcpyDeviceToHost, s));
    }
 
    // Pass memAdvice direcitves to the data.
    HOSTONLY void memAdvise(cudaMemoryAdvise advice, int device = -1, cudaStream_t stream = 0) {
       if (device == -1) {
-         cudaGetDevice(&device);
+         SPLIT_CHECK_ERR(cudaGetDevice(&device));
       }
-      cudaMemPrefetchAsync(_capacity, sizeof(size_t), cudaCpuDeviceId, stream);
-      cudaStreamSynchronize(stream);
-      cudaMemAdvise(_data, capacity() * sizeof(T), advice, device);
-      cudaMemAdvise(_size, sizeof(size_t), advice, device);
-      cudaMemAdvise(_capacity, sizeof(size_t), advice, device);
-      cudaMemPrefetchAsync(_capacity, sizeof(size_t), device, stream);
+      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_capacity, sizeof(size_t), cudaCpuDeviceId, stream));
+      SPLIT_CHECK_ERR(cudaStreamSynchronize(stream));
+      SPLIT_CHECK_ERR(cudaMemAdvise(_data, capacity() * sizeof(T), advice, device));
+      SPLIT_CHECK_ERR(cudaMemAdvise(_size, sizeof(size_t), advice, device));
+      SPLIT_CHECK_ERR(cudaMemAdvise(_capacity, sizeof(size_t), advice, device));
+      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_capacity, sizeof(size_t), device, stream));
    }
 #endif
 

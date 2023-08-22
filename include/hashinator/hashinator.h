@@ -91,7 +91,7 @@ private:
    HASHINATOR_HOSTONLY
    void preallocate_device_handles() {
 #ifndef HASHINATOR_HOST_ONLY
-      cudaMalloc((void**)&device_map, sizeof(Hashmap));
+      SPLIT_CHECK_ERR(cudaMalloc((void**)&device_map, sizeof(Hashmap)));
 #endif
    }
 
@@ -99,7 +99,7 @@ private:
    HASHINATOR_HOSTONLY
    void deallocate_device_handles() {
 #ifndef HASHINATOR_HOST_ONLY
-      cudaFree(device_map);
+      SPLIT_CHECK_ERR(cudaFree(device_map));
       device_map = nullptr;
 #endif
    }
@@ -163,17 +163,17 @@ public:
    HASHINATOR_HOSTONLY
    void* operator new(size_t len) {
       void* ptr;
-      cudaMallocManaged(&ptr, len);
+      SPLIT_CHECK_ERR(cudaMallocManaged(&ptr, len));
       return ptr;
    }
 
    HASHINATOR_HOSTONLY
-   void operator delete(void* ptr) { cudaFree(ptr); }
+   void operator delete(void* ptr) { SPLIT_CHECK_ERR(cudaFree(ptr)); }
 
    HASHINATOR_HOSTONLY
    void* operator new[](size_t len) {
       void* ptr;
-      cudaMallocManaged(&ptr, len);
+      SPLIT_CHECK_ERR(cudaMallocManaged(&ptr, len));
       return ptr;
    }
 
@@ -182,7 +182,7 @@ public:
 
    HASHINATOR_HOSTONLY
    void copyMetadata(MapInfo* dst, cudaStream_t s = 0) {
-      cudaMemcpyAsync(dst, _mapInfo, sizeof(MapInfo), cudaMemcpyDeviceToHost, s);
+      SPLIT_CHECK_ERR(cudaMemcpyAsync(dst, _mapInfo, sizeof(MapInfo), cudaMemcpyDeviceToHost, s));
    }
 
 #endif
@@ -244,9 +244,10 @@ public:
       size_t priorFill = _mapInfo->fill;
       // Extract all valid elements
       hash_pair<KEY_TYPE, VAL_TYPE>* validElements;
-      cudaMallocAsync((void**)&validElements, (_mapInfo->fill + 1) * sizeof(hash_pair<KEY_TYPE, VAL_TYPE>), s);
+      SPLIT_CHECK_ERR(
+          cudaMallocAsync((void**)&validElements, (_mapInfo->fill + 1) * sizeof(hash_pair<KEY_TYPE, VAL_TYPE>), s));
       optimizeGPU(s);
-      cudaStreamSynchronize(s);
+      SPLIT_CHECK_ERR(cudaStreamSynchronize(s));
 
       auto isValidKey = [] __host__ __device__(hash_pair<KEY_TYPE, VAL_TYPE> & element) {
          if (element.first != TOMBSTONE && element.first != EMPTYBUCKET) {
@@ -256,7 +257,7 @@ public:
       };
       uint32_t nValidElements = extractPattern(validElements, isValidKey, s);
 
-      cudaStreamSynchronize(s);
+      SPLIT_CHECK_ERR(cudaStreamSynchronize(s));
       assert(nValidElements == _mapInfo->fill && "Something really bad happened during rehashing! Ask Kostis!");
       // We can now clear our buckets
       optimizeCPU(s);
@@ -420,7 +421,7 @@ public:
          blocksNeeded = blocksNeeded + (blocksNeeded == 0);
          Hashers::reset_all_to_empty<KEY_TYPE, VAL_TYPE, EMPTYBUCKET>
              <<<blocksNeeded, defaults::MAX_BLOCKSIZE, 0, s>>>(buckets.data(), buckets.size(), &_mapInfo->fill);
-         cudaStreamSynchronize(s);
+         SPLIT_CHECK_ERR(cudaStreamSynchronize(s));
          set_status((_mapInfo->fill == 0) ? success : fail);
          break;
 
@@ -862,13 +863,13 @@ public:
       // this
 
       hash_pair<KEY_TYPE, VAL_TYPE>* overflownElements;
-      cudaMallocAsync((void**)&overflownElements, (1 << _mapInfo->sizePower) * sizeof(hash_pair<KEY_TYPE, VAL_TYPE>),
-                      s);
+      SPLIT_CHECK_ERR(cudaMallocAsync((void**)&overflownElements,
+                                      (1 << _mapInfo->sizePower) * sizeof(hash_pair<KEY_TYPE, VAL_TYPE>), s));
 
       if (prefetches) {
          optimizeGPU(s);
       }
-      cudaStreamSynchronize(s);
+      SPLIT_CHECK_ERR(cudaStreamSynchronize(s));
 
       int currentSizePower = _mapInfo->sizePower;
       hash_pair<KEY_TYPE, VAL_TYPE>* bck_ptr = buckets.data();
@@ -890,22 +891,22 @@ public:
       uint32_t nOverflownElements = extractPattern(overflownElements, isOverflown, s);
 
       if (nOverflownElements == 0) {
-         cudaFreeAsync(overflownElements, s);
+         SPLIT_CHECK_ERR(cudaFreeAsync(overflownElements, s));
          return;
       }
       // If we do have overflown elements we put them back in the buckets
-      cudaStreamSynchronize(s);
+      SPLIT_CHECK_ERR(cudaStreamSynchronize(s));
       Hashers::reset_to_empty<KEY_TYPE, VAL_TYPE, EMPTYBUCKET, HashFunction>
           <<<nOverflownElements, defaults::MAX_BLOCKSIZE, 0, s>>>(
               overflownElements, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
               nOverflownElements);
       _mapInfo->fill -= nOverflownElements;
-      cudaStreamSynchronize(s);
+      SPLIT_CHECK_ERR(cudaStreamSynchronize(s));
 
       DeviceHasher::insert(overflownElements, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
                            &_mapInfo->currentMaxBucketOverflow, &_mapInfo->fill, nOverflownElements, &_mapInfo->err, s);
 
-      cudaFreeAsync(overflownElements, s);
+      SPLIT_CHECK_ERR(cudaFreeAsync(overflownElements, s));
       return;
    }
 
@@ -984,29 +985,29 @@ public:
    HASHINATOR_HOSTONLY
    Hashmap* upload(cudaStream_t stream = 0) {
       optimizeGPU(stream);
-      cudaMemcpyAsync(device_map, this, sizeof(Hashmap), cudaMemcpyHostToDevice, stream);
+      SPLIT_CHECK_ERR(cudaMemcpyAsync(device_map, this, sizeof(Hashmap), cudaMemcpyHostToDevice, stream));
       return device_map;
    }
 
    HASHINATOR_HOSTONLY
    void optimizeGPU(cudaStream_t stream = 0) noexcept {
       int device;
-      cudaGetDevice(&device);
-      cudaMemPrefetchAsync(_mapInfo, sizeof(MapInfo), device, stream);
+      SPLIT_CHECK_ERR(cudaGetDevice(&device));
+      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_mapInfo, sizeof(MapInfo), device, stream));
       buckets.optimizeGPU(stream);
    }
 
    /*Manually prefetch data on Host*/
    HASHINATOR_HOSTONLY
    void optimizeCPU(cudaStream_t stream = 0) noexcept {
-      cudaMemPrefetchAsync(_mapInfo, sizeof(MapInfo), cudaCpuDeviceId, stream);
+      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_mapInfo, sizeof(MapInfo), cudaCpuDeviceId, stream));
       buckets.optimizeCPU(stream);
    }
 
    HASHINATOR_HOSTONLY
    void streamAttach(cudaStream_t s, uint32_t flags = cudaMemAttachSingle) {
       buckets.streamAttach(s, flags);
-      cudaStreamAttachMemAsync(s, (void*)_mapInfo, sizeof(MapInfo), flags);
+      SPLIT_CHECK_ERR(cudaStreamAttachMemAsync(s, (void*)_mapInfo, sizeof(MapInfo), flags));
       return;
    }
 

@@ -845,7 +845,7 @@ public:
       launchParams(len, blocks, blockSize);
       insert_kernel<KEY_TYPE, VAL_TYPE, EMPTYBUCKET, HashFunction, defaults::WARPSIZE, elementsPerWarp>
           <<<blocks, blockSize, 0, s>>>(keys, vals, buckets, sizePower, maxoverflow, d_overflow, d_fill, len, err);
-      cudaStreamSynchronize(s);
+      SPLIT_CHECK_ERR(cudaStreamSynchronize(s));
 #ifndef NDEBUG
       if (*err == status::fail) {
          std::cerr << "***** Hashinator Runtime Warning ********" << std::endl;
@@ -867,7 +867,7 @@ public:
       launchParams(len, blocks, blockSize);
       insert_kernel<KEY_TYPE, VAL_TYPE, EMPTYBUCKET, HashFunction, defaults::WARPSIZE, elementsPerWarp>
           <<<blocks, blockSize, 0, s>>>(src, buckets, sizePower, maxoverflow, d_overflow, d_fill, len, err);
-      cudaStreamSynchronize(s);
+      SPLIT_CHECK_ERR(cudaStreamSynchronize(s));
 #ifndef NDEBUG
       if (*err == status::fail) {
          std::cerr << "***** Hashinator Runtime Warning ********" << std::endl;
@@ -887,7 +887,7 @@ public:
       launchParams(len, blocks, blockSize);
       retrieve_kernel<KEY_TYPE, VAL_TYPE, EMPTYBUCKET, HashFunction, defaults::WARPSIZE, elementsPerWarp>
           <<<blocks, blockSize, 0, s>>>(keys, vals, buckets, sizePower, maxoverflow);
-      cudaStreamSynchronize(s);
+      SPLIT_CHECK_ERR(cudaStreamSynchronize(s));
    }
 
    static void retrieve(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, int sizePower,
@@ -897,7 +897,7 @@ public:
       launchParams(len, blocks, blockSize);
       retrieve_kernel<KEY_TYPE, VAL_TYPE, EMPTYBUCKET, HashFunction, defaults::WARPSIZE, elementsPerWarp>
           <<<blocks, blockSize, 0, s>>>(src, buckets, sizePower, maxoverflow);
-      cudaStreamSynchronize(s);
+      SPLIT_CHECK_ERR(cudaStreamSynchronize(s));
    }
    // Delete wrapper
    static void erase(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, size_t* d_tombstoneCounter, int sizePower,
@@ -907,7 +907,7 @@ public:
       launchParams(len, blocks, blockSize);
       delete_kernel<KEY_TYPE, VAL_TYPE, EMPTYBUCKET, TOMBSTONE, HashFunction, defaults::WARPSIZE, elementsPerWarp>
           <<<blocks, blockSize, 0, s>>>(keys, buckets, d_tombstoneCounter, sizePower, maxoverflow, len);
-      cudaStreamSynchronize(s);
+      SPLIT_CHECK_ERR(cudaStreamSynchronize(s));
    }
 
 private:
