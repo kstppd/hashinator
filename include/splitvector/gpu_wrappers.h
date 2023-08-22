@@ -21,6 +21,11 @@
 #pragma once
 #ifndef SPLIT_HOST_ONLY
 
+#ifdef __NVCC__
+#include <cuda_runtime_api.h>
+#else
+#include <hip/hip_runtime_api.h>
+#endif
 namespace split {
 
 template <typename T>
