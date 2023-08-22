@@ -29,6 +29,14 @@
 #endif
 namespace split {
 
+/**
+ * @brief Wrapper for atomic exchange operation.
+ *
+ * @tparam T The data type of the value being exchanged.
+ * @param address Pointer to the memory location.
+ * @param val The value to exchange.
+ * @return The value that was replaced.
+ */
 template <typename T>
 __device__ __forceinline__ T s_atomicExch(T* address, T val) noexcept {
    static_assert(std::is_integral<T>::value && "Only integers supported");
@@ -42,6 +50,15 @@ __device__ __forceinline__ T s_atomicExch(T* address, T val) noexcept {
    }
 }
 
+/**
+ * @brief Wrapper for atomic compare-and-swap operation.
+ *
+ * @tparam T The data type of the value being compared and swapped.
+ * @param address Pointer to the memory location.
+ * @param compare Predicate.
+ * @param val The value to swap.
+ * @return The original value at the memory location.
+ */
 template <typename T>
 __device__ __forceinline__ T s_atomicCAS(T* address, T compare, T val) noexcept {
    static_assert(std::is_integral<T>::value && "Only integers supported");
@@ -55,6 +72,15 @@ __device__ __forceinline__ T s_atomicCAS(T* address, T compare, T val) noexcept 
    }
 }
 
+/**
+ * @brief Wrapper for atomic addition operation.
+ *
+ * @tparam T The data type of the value being added.
+ * @tparam U The data type of the value to add.
+ * @param address Pointer to the memory location.
+ * @param val The value to add.
+ * @return The original value at the memory location.
+ */
 template <typename T, typename U>
 __device__ __forceinline__ T s_atomicAdd(T* address, U val) noexcept {
    static_assert(std::is_integral<T>::value && "Only integers supported");
@@ -72,6 +98,15 @@ __device__ __forceinline__ T s_atomicAdd(T* address, U val) noexcept {
    }
 }
 
+/**
+ * @brief Wrapper for atomic subtraction operation.
+ *
+ * @tparam T The data type of the value being subtracted.
+ * @tparam U The data type of the value to subtract.
+ * @param address Pointer to the memory location.
+ * @param val The value to subtract.
+ * @return The original value at the memory location.
+ */
 template <typename T, typename U>
 __device__ __forceinline__ T s_atomicSub(T* address, U val) noexcept {
    static_assert(std::is_integral<T>::value && "Only integers supported");
@@ -87,22 +122,29 @@ __device__ __forceinline__ T s_atomicSub(T* address, U val) noexcept {
    }
 }
 
-/*
- * Returns the submask needed by each Virtual Warp during voting
- * CUDA and AMD variants
- */
+/**
+* @brief Returns the submask needed by each Virtual Warp during voting (CUDA variant).
+*/
 [[nodiscard]] __device__ __forceinline__ uint32_t getIntraWarpMask_CUDA(uint32_t n, uint32_t l, uint32_t r) noexcept {
    uint32_t num = ((1 << r) - 1) ^ ((1 << (l - 1)) - 1);
    return (n ^ num);
 };
 
+/**
+* @brief Returns the submask needed by each Virtual Warp during voting (AMD variant).
+*/
 [[nodiscard]] __device__ __forceinline__ uint64_t getIntraWarpMask_AMD(uint64_t n, uint64_t l, uint64_t r) noexcept {
    uint64_t num = ((1ull << r) - 1) ^ ((1ull << (l - 1)) - 1);
    return (n ^ num);
 };
 
-/*
- * Wraps over ballots for AMD and NVIDIA
+/**
+ * @brief Wrapper for warp-level voting (ballot) operation.
+ *
+ * @tparam T The data type of the voting mask.
+ * @param predicate The predicate value.
+ * @param votingMask The voting mask.
+ * @return Result mask.
  */
 template <typename T>
 __device__ __forceinline__ T s_warpVote(bool predicate, T votingMask = T(-1)) noexcept {
@@ -115,8 +157,13 @@ __device__ __forceinline__ T s_warpVote(bool predicate, T votingMask = T(-1)) no
 #endif
 }
 
-/*
- * Wraps over __ffs for AMD and NVIDIA
+
+/**
+ * @brief Wrapper for finding the index of the first set bit in a mask.
+ *
+ * @tparam T The data type of the mask.
+ * @param mask The mask value.
+ * @return The index of the first set bit.
  */
 template <typename T>
 __device__ __forceinline__ int s_findFirstSig(T mask) noexcept {
@@ -129,8 +176,13 @@ __device__ __forceinline__ int s_findFirstSig(T mask) noexcept {
 #endif
 }
 
-/*
- * Wraps over any for AMD and NVIDIA
+/**
+ * @brief Wrapper for warp-level voting (any) operation.
+ *
+ * @tparam T The data type of the voting mask.
+ * @param predicate The predicate value.
+ * @param votingMask The voting mask.
+ * @return Whether any of the warp-threads satisfy the predicate.
  */
 template <typename T>
 __device__ __forceinline__ int s_warpVoteAny(bool predicate, T votingMask = T(-1)) noexcept {
@@ -143,8 +195,12 @@ __device__ __forceinline__ int s_warpVoteAny(bool predicate, T votingMask = T(-1
 #endif
 }
 
-/*
- * Wraps over __popc for AMD and NVIDIA
+/**
+ * @brief Wrapper for counting the number of set bits in a mask.
+ *
+ * @tparam T The data type of the mask.
+ * @param mask The mask value.
+ * @return The number of set bits.
  */
 template <typename T>
 __device__ __forceinline__ uint32_t s_pop_count(T mask) noexcept {
@@ -163,8 +219,15 @@ __device__ __forceinline__ uint32_t s_pop_count(T mask) noexcept {
 #endif
 }
 
-/*
- * Wraps over down register shuffles for AMD and NVIDIA
+/**
+ * @brief Wrapper for performing a down register shuffle operation.
+ *
+ * @tparam T The data type of the variable.
+ * @tparam U The data type of the mask.
+ * @param variable The variable to shuffle.
+ * @param delta The offset.
+ * @param mask Voting mask.
+ * @return The shuffled variable.
  */
 template <typename T, typename U>
 __device__ __forceinline__ T s_shuffle_down(T variable, unsigned int delta, U mask = 0) noexcept {
