@@ -1,3 +1,22 @@
+/* File:    common.h
+ * Authors: Kostis Papadakis (2023)
+ *
+ * Description: Common tools used in hashinator 
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ * */
 #pragma once
 #ifdef HASHINATOR_HOST_ONLY
 #define HASHINATOR_DEVICEONLY
@@ -7,7 +26,13 @@
 #define HASHINATOR_HOSTDEVICE __host__ __device__
 #endif
 
-// Modified from (http://www-graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2) to support 64-bit uints
+/**
+ * @brief Computes the next power of 2 greater than or equal to a given value.
+ *
+ * @param v The value for which to compute the next power of 2.
+ * @return The next power of 2 greater than or equal to the input value.
+ * Modified from (http://www-graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2) to support 64-bit uints
+ */
 HASHINATOR_HOSTDEVICE
 constexpr inline size_t nextPow2(size_t v) noexcept {
    v--;
@@ -21,8 +46,14 @@ constexpr inline size_t nextPow2(size_t v) noexcept {
    return v;
 }
 
+/**
+ * @brief Enum for error checking in Hahsinator.
+ */
 namespace Hashinator {
 enum status { success, fail, invalid };
 
+/**
+ * @brief Enum for specifying backend target.
+ */
 enum targets { host, device, automatic };
 } // namespace Hashinator
