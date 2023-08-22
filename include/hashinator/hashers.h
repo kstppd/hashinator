@@ -658,7 +658,7 @@ __global__ void retrieve_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TY
       // TODO mind AMD 64 thread wavefronts
       submask = SPLIT_VOTING_MASK;
    } else {
-      submask = split::getIntraWarpMask_CUDA(0, VIRTUALWARP * subwarp_relative_index + 1,
+      submask = split::getIntraWarpMask_AMD(0, VIRTUALWARP * subwarp_relative_index + 1,
                                              VIRTUALWARP * subwarp_relative_index + VIRTUALWARP);
    }
 #endif
@@ -723,7 +723,7 @@ __global__ void retrieve_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KE
       // TODO mind AMD 64 thread wavefronts
       submask = SPLIT_VOTING_MASK;
    } else {
-      submask = split::getIntraWarpMask_CUDA(0, VIRTUALWARP * subwarp_relative_index + 1,
+      submask = split::getIntraWarpMask_AMD(0, VIRTUALWARP * subwarp_relative_index + 1,
                                              VIRTUALWARP * subwarp_relative_index + VIRTUALWARP);
    }
 #endif
@@ -794,7 +794,7 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
       // TODO mind AMD 64 thread wavefronts
       submask = SPLIT_VOTING_MASK;
    } else {
-      submask = split::getIntraWarpMask_CUDA(0, VIRTUALWARP * subwarp_relative_index + 1,
+      submask = split::getIntraWarpMask_AMD(0, VIRTUALWARP * subwarp_relative_index + 1,
                                       VIRTUALWARP * subwarp_relative_index + VIRTUALWARP);
    }
 #endif
