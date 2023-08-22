@@ -47,8 +47,29 @@
 namespace split {
 namespace tools {
 
+/**
+ * @brief Check if a value is a power of two.
+ *
+ * This function checks whether the given value is a power of two.
+ *
+ * @param val The value to be checked.
+ * @return constexpr inline bool Returns true if the value is a power of two, false otherwise.
+ */
 constexpr inline bool isPow2(const size_t val) { return (val & (val - 1)) == 0; }
 
+/**
+ * @brief GPU kernel for performing scan-add operation.
+ *
+ * This kernel performs a scan-add operation on the given input array, using the partial sums array.
+ * It updates the input array with the computed values.
+ * Part of splitvector's stream compaction mechanism.
+ *
+ * @tparam T Type of the array elements.
+ * @param input The input array.
+ * @param partial_sums The partial sums array.
+ * @param blockSize The size of the blocks.
+ * @param len The length of the arrays.
+ */
 template <typename T>
 __global__ void scan_add(T* input, T* partial_sums, size_t blockSize, size_t len) {
    const T val = partial_sums[blockIdx.x];
@@ -62,6 +83,19 @@ __global__ void scan_add(T* input, T* partial_sums, size_t blockSize, size_t len
    }
 }
 
+/**
+ * @brief GPU kernel for performing scan-reduce operation.
+ *
+ * This kernel performs a scan-reduce operation on the given input SplitVector, applying the specified rule.
+ * It computes the total number of valid elements using the rule and stores the results in the output SplitVector.
+ * Part of splitvector's stream compaction mechanism.
+ *
+ * @tparam T Type of the array elements.
+ * @tparam Rule The rule functor for element validation.
+ * @param input The input SplitVector.
+ * @param output The output SplitVector for storing the results.
+ * @param rule The rule functor object.
+ */
 template <typename T, typename Rule>
 __global__ void
 scan_reduce(split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>* input,
@@ -79,10 +113,21 @@ scan_reduce(split::SplitVector<T, split::split_unified_allocator<T>, split::spli
    }
 }
 
-/*
-  Prefix Scan routine with Bank Conflict Optimization
-  Credits to  https://www.eecs.umich.edu/courses/eecs570/hw/parprefix.pdf
-*/
+/**
+ * @brief Prefix Scan routine with Bank Conflict Optimization.
+ *
+ * This function performs a prefix scan operation on the given input array, using the bank conflict optimization.
+ * It utilizes shared memory.
+ * Part of splitvector's stream compaction mechanism.
+ * Credits to  https://www.eecs.umich.edu/courses/eecs570/hw/parprefix.pdf
+ *
+ * @tparam T Type of the array elements.
+ * @param input The input array.
+ * @param output The output array for storing the prefix scan results.
+ * @param partial_sums The array of partial sums for each block.
+ * @param n The number of elements per block.
+ * @param len The length of the arrays.
+ */
 template <typename T>
 __global__ void split_prescan(T* input, T* output, T* partial_sums, int n, size_t len) {
 
@@ -148,6 +193,23 @@ __global__ void split_prescan(T* input, T* output, T* partial_sums, int n, size_
    }
 }
 
+/**
+ * @brief Kernel for compacting elements based on a rule.
+ *
+ * This kernel performs element compaction on the given input SplitVector based on a specified rule.
+ * It generates compacted output and updates counts and offsets SplitVectors.
+ * Part of splitvector's stream compaction mechanism.
+ *
+ * @tparam T Type of the array elements.
+ * @tparam Rule The rule functor for element compaction.
+ * @tparam BLOCKSIZE The size of each thread block.
+ * @tparam WARP The size of each warp.
+ * @param input The input SplitVector.
+ * @param counts The SplitVector for storing counts of valid elements.
+ * @param offsets The SplitVector for storing offsets of valid elements.
+ * @param output The output SplitVector for storing the compacted elements.
+ * @param rule The rule functor object.
+ */
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 __global__ void split_compact(
     split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>* input,
@@ -200,6 +262,9 @@ __global__ void split_compact(
    }
 }
 
+/**
+ * @brief Same as split_compact but only for hashinator keys.
+ */
 template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 __global__ void split_compact_keys(
     split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>* input,
@@ -253,6 +318,9 @@ __global__ void split_compact_keys(
    }
 }
 
+/**
+ * @brief Same as split_compact_keys but uses raw memory
+ */
 template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 __global__ void split_compact_keys_raw(T* input, uint32_t* counts, uint32_t* offsets, U* output, Rule rule,
                                        const size_t size, size_t nBlocks, uint32_t* retval) {
@@ -298,6 +366,19 @@ __global__ void split_compact_keys_raw(T* input, uint32_t* counts, uint32_t* off
    }
 }
 
+/**
+ * @brief Perform prefix scan operation with Bank Conflict Optimization.
+ *
+ * This function performs a prefix scan operation on the given SplitVector, utilizing bank conflict optimization.
+ * It utilizes shared memory.
+ *
+ * @tparam T Type of the array elements.
+ * @tparam BLOCKSIZE The size of each thread block.
+ * @tparam WARP The size of each warp.
+ * @param input The input SplitVector.
+ * @param output The output SplitVector for storing the prefix scan results.
+ * @param s The split_gpuStream_t stream for GPU execution (default is 0).
+ */
 template <typename T, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 void split_prefix_scan(
     split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& input,
@@ -357,6 +438,21 @@ void split_prefix_scan(
    }
 }
 
+/**
+ * @brief Perform element compaction based on a rule.
+ *
+ * This function performs element compaction on the given input SplitVector based on a specified rule.
+ * It generates compacted output, updates counts and offsets SplitVectors, and returns compacted count.
+ *
+ * @tparam T Type of the array elements.
+ * @tparam Rule The rule functor for element compaction.
+ * @tparam BLOCKSIZE The size of each thread block.
+ * @tparam WARP The size of each warp.
+ * @param input The input SplitVector.
+ * @param output The output SplitVector for storing the compacted elements.
+ * @param rule The rule functor object.
+ * @param s The split_gpuStream_t stream for GPU execution (default is 0).
+ */
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 void copy_if(split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& input,
              split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& output,
@@ -407,6 +503,9 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>, split::spl
    SPLIT_CHECK_ERR(split_gpuFreeAsync(d_offsets, s));
 }
 
+/**
+ * @brief Same copy_if but only for Hashinator keys
+ */
 template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 size_t
 copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& input,
@@ -461,6 +560,9 @@ copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>, split::spl
    return retval;
 }
 
+/**
+ * @brief Same as split_compact but with raw memory
+ */
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 __global__ void split_compact_raw(T* input, uint32_t* counts, uint32_t* offsets, T* output, Rule rule,
                                   const size_t size, size_t nBlocks, uint32_t* retval) {
@@ -506,6 +608,13 @@ __global__ void split_compact_raw(T* input, uint32_t* counts, uint32_t* offsets,
    }
 }
 
+/**
+ * @brief CUDA Memory Pool class for managing GPU memory.
+ *
+ * This class provides a simle memory pool implementation for allocating and deallocating GPU memory.
+ * It uses async mallocs
+ *
+ */
 class Cuda_mempool {
 private:
    size_t total_bytes;
@@ -539,6 +648,9 @@ public:
    const size_t& capacity() const { return total_bytes; }
 };
 
+/**
+ * @brief Same as scan_reduce but with raw memory
+ */
 template <typename T, typename Rule>
 __global__ void scan_reduce_raw(T* input, uint32_t* output, Rule rule, size_t size) {
 
@@ -551,6 +663,9 @@ __global__ void scan_reduce_raw(T* input, uint32_t* output, Rule rule, size_t si
    }
 }
 
+/**
+ * @brief Same as split_prefix_scan but with raw memory
+ */
 template <typename T, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 void split_prefix_scan_raw(T* input, T* output, Cuda_mempool& mPool, const size_t input_size, split_gpuStream_t s = 0) {
 
@@ -599,6 +714,9 @@ void split_prefix_scan_raw(T* input, T* output, Cuda_mempool& mPool, const size_
    }
 }
 
+/**
+ * @brief Same as copy_if but using raw memory
+ */
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 uint32_t
 copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& input,
@@ -644,6 +762,9 @@ copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>, split::spli
    return numel;
 }
 
+/**
+ * @brief Same as copy_keys_if but using raw memory
+ */
 template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 size_t copy_keys_if_raw(
     split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& input, U* output,

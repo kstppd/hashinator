@@ -47,6 +47,15 @@ void hip_error(hipError_t err, const char* file, int line) {
 }
 #endif
 
+/**
+ * @brief Custom allocator for unified memory (GPU and CPU accessible).
+ *
+ * This class provides an allocator for unified memory, which can be accessed
+ * by both the GPU and the CPU. It allocates and deallocates memory using split_gpuMallocManaged
+ * and split_gpuFree functions, while also providing constructors and destructors for objects.
+ *
+ * @tparam T Type of the allocated objects.
+ */
 template <class T>
 class split_unified_allocator {
 public:
@@ -61,8 +70,19 @@ public:
    struct rebind {
       typedef split_unified_allocator<U> other;
    };
+   /**
+    * @brief Default constructor.
+    */
    split_unified_allocator() throw() {}
+
+   /**
+    * @brief Copy constructor.
+    */
    split_unified_allocator(split_unified_allocator const&) throw() {}
+
+   /**
+    * @brief Copy constructor with different type.
+    */
    template <class U>
    split_unified_allocator(split_unified_allocator<U> const&) throw() {}
    pointer address(reference x) const { return &x; }
@@ -104,6 +124,16 @@ public:
 };
 
 #endif
+
+/**
+ * @brief Custom allocator for host memory.
+ *
+ * This class provides an allocator for host memory, which can be accessed
+ * by the CPU. It allocates and deallocates memory using malloc and free functions,
+ * while also providing constructors and destructors for objects.
+ *
+ * @tparam T Type of the allocated objects.
+ */
 template <class T>
 class split_host_allocator {
 public:
@@ -118,8 +148,20 @@ public:
    struct rebind {
       typedef split_host_allocator<U> other;
    };
+
+   /**
+    * @brief Default constructor.
+    */
    split_host_allocator() throw() {}
+
+   /**
+    * @brief Copy constructor.
+    */
    split_host_allocator(split_host_allocator const&) throw() {}
+
+   /**
+    * @brief Copy constructor with different type.
+    */
    template <class U>
    split_host_allocator(split_host_allocator<U> const&) throw() {}
    pointer address(reference x) const { return &x; }
