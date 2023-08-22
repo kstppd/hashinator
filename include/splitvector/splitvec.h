@@ -61,11 +61,26 @@ void swap(T& t1, T& t2) {
    t2 = std::move(tmp);
 }
 
+/**
+ * @brief Information about the SplitVector.
+ *
+ * This struct holds information about the size and capacity of a SplitVector instance.
+ */
 typedef struct SplitVectorInfo {
    size_t size;
    size_t capacity;
 } SplitInfo;
 
+/**
+ * @brief A lightweight vector implementation with unified memory support.
+ *
+ * The SplitVector class provides a vector-like interface for managing data using unified memory,
+ * allowing seamless data handling on both CPUs and GPUs without explicit migration.
+ *
+ * @tparam T Type of the elements in the vector.
+ * @tparam Allocator The allocator type for managing memory.
+ * @tparam Meta_Allocator The allocator type for managing metadata (size, capacity).
+ */
 template <typename T, class Allocator = DefaultAllocator<T>, class Meta_Allocator = DefaultMetaAllocator<size_t>>
 class SplitVector {
 
@@ -77,14 +92,24 @@ private:
    Allocator _allocator;           // Allocator used to allocate and deallocate memory;
    Meta_Allocator _meta_allocator; // Allocator used to allocate and deallocate memory for metadata
                                    //   (currently: _size, _capacity);
-
+   /**
+    * @brief Checks if a pointer is valid and throws an exception if it's null.
+    *
+    * @param ptr Pointer to be checked.
+    * @throws std::bad_alloc If the pointer is null.
+    */
    void _check_ptr(void* ptr) {
       if (ptr == nullptr) {
          throw std::bad_alloc();
       }
    }
 
-   /*Internal range check for use in .at()*/
+   /**
+    * @brief Internal range check used in the .at() method.
+    *
+    * @param index Index to be checked.
+    * @throws std::out_of_range If the index is out of range.
+    */
    HOSTDEVICE void _rangeCheck(size_t index) const noexcept {
       if (index >= size()) {
          printf("Tried indexing %d/%d\n", (int)index, (int)size());
@@ -92,7 +117,12 @@ private:
       assert(index < size() && "out of range ");
    }
 
-   /*Allocation/Deallocation only on host*/
+   /**
+    * @brief Allocates memory for the vector on the host.
+    *
+    * @param size Number of elements to allocate.
+    * @throws std::bad_alloc If memory allocation fails.
+    */
    HOSTONLY void _allocate(size_t size) {
       _size = _allocate_and_construct(size);
       _capacity = _allocate_and_construct(size);
@@ -109,6 +139,9 @@ private:
       }
    }
 
+   /**
+    * @brief Deallocates memory for the vector on the host.
+    */
    HOSTONLY void _deallocate() {
       if (_data != nullptr) {
          _deallocate_and_destroy(capacity(), _data);
@@ -118,6 +151,13 @@ private:
       _deallocate_and_destroy(_size);
    }
 
+   /**
+    * @brief Allocates memory and constructs elements on the host.
+    *
+    * @param n Number of elements to allocate and construct.
+    * @param val Value to be used for construction.
+    * @return Pointer to the allocated and constructed memory.
+    */
    HOSTONLY T* _allocate_and_construct(size_t n, const T& val) {
       T* _ptr = _allocator.allocate(n);
       for (size_t i = 0; i < n; i++) {
@@ -125,12 +165,25 @@ private:
       }
       return _ptr;
    }
+
+   /**
+    * @brief Allocates memory and constructs metadata on the host.
+    *
+    * @param val Value to be used for construction.
+    * @return Pointer to the allocated and constructed memory.
+    */
    HOSTONLY size_t* _allocate_and_construct(const size_t& val) {
       size_t* _ptr = _meta_allocator.allocate(1);
       _meta_allocator.construct(_ptr, val);
       return _ptr;
    }
 
+   /**
+    * @brief Deallocates memory and destroys elements on the host.
+    *
+    * @param n Number of elements to deallocate and destroy.
+    * @param _ptr Pointer to the memory to be deallocated and destroyed.
+    */
    HOSTONLY void _deallocate_and_destroy(size_t n, T* _ptr) {
       for (size_t i = 0; i < n; i++) {
          _allocator.destroy(&_ptr[i]);
@@ -138,6 +191,11 @@ private:
       _allocator.deallocate(_ptr, n);
    }
 
+   /**
+    * @brief Deallocates memory for metadata on the host.
+    *
+    * @param ptr Pointer to the memory to be deallocated.
+    */
    HOSTONLY void _deallocate_and_destroy(size_t* ptr) { _meta_allocator.deallocate(ptr, 1); }
 
 public:
@@ -153,13 +211,26 @@ public:
     *    -- SplitVector(std::vector&)           --> Creates a SplitVector and copies over the elemets of the std vector
     * */
 
-   /*Constructors*/
+   /**
+    * @brief Default constructor. Creates an empty SplitVector.
+    */
    HOSTONLY explicit SplitVector() {
       this->_allocate(0); // seems counter-intuitive based on stl but it is not!
    }
 
+   /**
+    * @brief Constructor to create a SplitVector of a specified size.
+    *
+    * @param size The size of the SplitVector to be created.
+    */
    HOSTONLY explicit SplitVector(size_t size) { this->_allocate(size); }
 
+   /**
+    * @brief Constructor to create a SplitVector of a specified size with initial values.
+    *
+    * @param size The size of the SplitVector to be created.
+    * @param val The initial value to be assigned to each element.
+    */
    HOSTONLY explicit SplitVector(size_t size, const T& val) {
       this->_allocate(size);
       for (size_t i = 0; i < size; i++) {
@@ -167,6 +238,11 @@ public:
       }
    }
 
+   /**
+    * @brief Copy constructor to create a SplitVector from another SplitVector.
+    *
+    * @param other The SplitVector to be copied.
+    */
    HOSTONLY explicit SplitVector(const SplitVector<T, Allocator, Meta_Allocator>& other) {
       const size_t size_to_allocate = other.size();
       this->_allocate(size_to_allocate);
@@ -175,6 +251,11 @@ public:
       }
    }
 
+   /**
+    * @brief Move constructor to move from another SplitVector.
+    *
+    * @param other The SplitVector to be moved from.
+    */
    HOSTONLY SplitVector(SplitVector<T, Allocator, Meta_Allocator>&& other) noexcept {
       _data = other._data;
       *_size = other.size();
@@ -184,6 +265,11 @@ public:
       other._data = nullptr;
    }
 
+   /**
+    * @brief Constructor to create a SplitVector from an initializer list.
+    *
+    * @param init_list The initializer list to initialize the SplitVector with.
+    */
    HOSTONLY explicit SplitVector(std::initializer_list<T> init_list) {
       this->_allocate(init_list.size());
       for (size_t i = 0; i < size(); i++) {
@@ -191,6 +277,11 @@ public:
       }
    }
 
+   /**
+    * @brief Constructor to create a SplitVector from a std::vector.
+    *
+    * @param other The std::vector to initialize the SplitVector with.
+    */
    HOSTONLY explicit SplitVector(const std::vector<T>& other) {
       this->_allocate(other.size());
       for (size_t i = 0; i < size(); i++) {
@@ -198,10 +289,17 @@ public:
       }
    }
 
-   // Destructor
+   /**
+    * @brief Destructor for the SplitVector. Deallocates memory.
+    */
    HOSTONLY ~SplitVector() { _deallocate(); }
 
-   /*Custom Assignment operator*/
+   /**
+    * @brief Custom assignment operator to assign the content of another SplitVector.
+    *
+    * @param other The SplitVector to assign from.
+    * @return Reference to the assigned SplitVector.
+    */
    HOSTONLY SplitVector<T, Allocator, Meta_Allocator>&
    operator=(const SplitVector<T, Allocator, Meta_Allocator>& other) {
       // Match other's size prior to copying
@@ -212,6 +310,12 @@ public:
       return *this;
    }
 
+   /**
+    * @brief Move assignment operator to move from another SplitVector.
+    *
+    * @param other The SplitVector to move from.
+    * @return Reference to the moved SplitVector.
+    */
    HOSTONLY SplitVector<T, Allocator, Meta_Allocator>&
    operator=(SplitVector<T, Allocator, Meta_Allocator>&& other) noexcept {
       if (this == &other) {
@@ -228,27 +332,54 @@ public:
       return *this;
    }
 
+   /**
+    * @brief Custom new operator for allocation using the allocator.
+    *
+    * @param len The size to allocate.
+    * @return Pointer to the allocated memory.
+    */
    HOSTONLY
    void* operator new(size_t len) {
       void* ptr = Allocator::allocate_raw(len);
       return ptr;
    }
 
+   /**
+    * @brief Custom delete operator for deallocation using the allocator.
+    *
+    * @param ptr Pointer to the memory to deallocate.
+    */
    HOSTONLY
    void operator delete(void* ptr) { Allocator::deallocate(ptr, 1); }
 
+   /**
+    * @brief Custom new operator for array allocation using the allocator.
+    *
+    * @param len The size to allocate.
+    * @return Pointer to the allocated memory.
+    */
    HOSTONLY
    void* operator new[](size_t len) {
       void* ptr = Allocator::allocate_raw(len);
       return ptr;
    }
 
+   /**
+    * @brief Custom delete operator for array deallocation using the allocator.
+    *
+    * @param ptr Pointer to the memory to deallocate.
+    */
    HOSTONLY
    void operator delete[](void* ptr) { Allocator::deallocate(ptr); }
 
 #ifndef SPLIT_HOST_ONLY
-   // Method that return a pointer which can be passed to GPU kernels
-   // Has to be split_gpuFree'd after use otherwise memleak (small one but still)!
+   /**
+    * @brief Uploads the SplitVector to the GPU.
+    *
+    * @param stream The GPU stream to perform the upload on.
+    * @return Pointer to the uploaded SplitVector on the GPU.
+    * Has to be split_gpuFree'd after use otherwise memleak (small one but still)!
+    */
    HOSTONLY
    SplitVector<T, Allocator, Meta_Allocator>* upload(split_gpuStream_t stream = 0) {
       SplitVector* d_vec;
@@ -258,7 +389,11 @@ public:
       return d_vec;
    }
 
-   /*Manually prefetch data on Device*/
+   /**
+    * @brief Manually prefetches data to the GPU.
+    *
+    * @param stream The GPU stream to perform the prefetch on.
+    */
    HOSTONLY void optimizeGPU(split_gpuStream_t stream = 0) noexcept {
       int device;
       SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
@@ -274,7 +409,11 @@ public:
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), device, stream));
    }
 
-   /*Manually prefetch data on Host*/
+   /**
+    * @brief Manually prefetches data to the CPU.
+    *
+    * @param stream The GPU stream to perform the prefetch on.
+    */
    HOSTONLY void optimizeCPU(split_gpuStream_t stream = 0) noexcept {
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), split_gpuCpuDeviceId, stream));
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_size, sizeof(size_t), split_gpuCpuDeviceId, stream));
@@ -282,7 +421,12 @@ public:
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_data, capacity() * sizeof(T), split_gpuCpuDeviceId, stream));
    }
 
-   // Attach to a specific stream
+   /**
+    * @brief Attaches the SplitVector to a specific GPU stream.
+    *
+    * @param s The GPU stream to attach to.
+    * @param flags Flags for memory attachment.
+    */
    HOSTONLY void streamAttach(split_gpuStream_t s, uint32_t flags = split_gpuMemAttachSingle) {
       SPLIT_CHECK_ERR(split_gpuStreamAttachMemAsync(s, (void*)_size, sizeof(size_t), flags));
       SPLIT_CHECK_ERR(split_gpuStreamAttachMemAsync(s, (void*)_capacity, sizeof(size_t), flags));
@@ -290,13 +434,24 @@ public:
       return;
    }
 
-   // Copy out metadata without prefetching to host first.
+   /**
+    * @brief Copies metadata to a provided destination SplitInfo structure.
+    *
+    * @param dst Pointer to the destination SplitInfo structure.
+    * @param s The GPU stream to perform the copy on.
+    */
    HOSTONLY void copyMetadata(SplitInfo* dst, split_gpuStream_t s = 0) {
       SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&dst->size, _size, sizeof(size_t), split_gpuMemcpyDeviceToHost, s));
       SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&dst->capacity, _capacity, sizeof(size_t), split_gpuMemcpyDeviceToHost, s));
    }
 
-   // Pass memAdvice direcitves to the data.
+   /**
+    * @brief Passes memory advice directives to the data.
+    *
+    * @param advice The memory advice to be passed.
+    * @param device The GPU device to target.
+    * @param stream The GPU stream to perform the operation on.
+    */
    HOSTONLY void memAdvise(split_gpuMemoryAdvise advice, int device = -1, split_gpuStream_t stream = 0) {
       if (device == -1) {
          SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
@@ -310,7 +465,10 @@ public:
    }
 #endif
 
-   /* Custom swap method.
+   /**
+    * @brief Swaps the content of two SplitVectors.
+    *
+    * @param other The other SplitVector to swap with.
     * Pointers outside of splitvector's source
     * are invalidated after swap is called.
     */
@@ -326,37 +484,70 @@ public:
    }
 
    /************STL compatibility***************/
-   /*Returns number of elements in this container*/
+   /**
+    * @brief Returns the number of elements in the container.
+    *
+    * @return Number of elements in the container.
+    */
    HOSTDEVICE const size_t& size() const noexcept { return *_size; }
 
-   /*Bracket accessor - no bounds check*/
+   /**
+    * @brief Bracket accessor for accessing elements by index without bounds check.
+    *
+    * @param index The index of the element to access.
+    * @return Reference to the accessed element.
+    */
    HOSTDEVICE T& operator[](size_t index) noexcept { return _data[index]; }
 
-   /*Const Bracket accessor - no bounds check*/
+   /**
+    * @brief Const bracket accessor for accessing elements by index without bounds check.
+    *
+    * @param index The index of the element to access.
+    * @return Const reference to the accessed element.
+    */
    HOSTDEVICE const T& operator[](size_t index) const noexcept { return _data[index]; }
 
-   /*at accesor with bounds check*/
+   /**
+    * @brief At accessor with bounds check for accessing elements by index.
+    *
+    * @param index The index of the element to access.
+    * @return Reference to the accessed element.
+    */
    HOSTDEVICE T& at(size_t index) {
       _rangeCheck(index);
       return _data[index];
    }
 
-   /*const at accesor with bounds check*/
+   /**
+    * @brief Const at accessor with bounds check for accessing elements by index.
+    *
+    * @param index The index of the element to access.
+    * @return Const reference to the accessed element.
+    */
    HOSTDEVICE const T& at(size_t index) const {
       _rangeCheck(index);
       return _data[index];
    }
 
-   /*Return a raw pointer to our data similar to stl vector*/
+   /**
+    * @brief Returns a raw pointer to the data stored in the SplitVector.
+    *
+    * @return Pointer to the data.
+    */
    HOSTDEVICE T* data() noexcept { return &(_data[0]); }
 
-   /*Return a raw pointer to our data similar to stl vector*/
+   /**
+    * @brief Returns a const raw pointer to the data stored in the SplitVector.
+    *
+    * @return Const pointer to the data.
+    */
    HOSTDEVICE const T* data() const noexcept { return &(_data[0]); }
 
-   /* Size Modifiers*/
-
-   /*Reallocates data to a bigeer chunk of memory. At some point
-    * this should be udpated to use move semantics*/
+   /**
+    * @brief Reallocates data to a bigger chunk of memory.
+    *
+    * @param requested_space The size of the requested space.
+    */
    HOSTONLY void reallocate(size_t requested_space) {
       T* _new_data;
       _new_data = _allocate_and_construct(requested_space, T());
@@ -381,11 +572,15 @@ public:
       return;
    }
 
-   /*Reserve method:
-    *Supports only host reserving.
-    *Will never reduce the vector's size.
-    *Memory location will change so any old pointers/iterators
-    *will be invalidated after a call.
+   /**
+    * @brief Reserves memory for the SplitVector.
+    *
+    * @param requested_space The size of the requested space.
+    * @param eco Indicates whether to allocate exactly the requested space.
+    * Supports only host reserving.
+    * Will never reduce the vector's size.
+    * Memory location will change so any old pointers/iterators
+    * will be invalidated after a call.
     */
    HOSTONLY
    void reserve(size_t requested_space, bool eco = false) {
@@ -413,14 +608,17 @@ public:
       return;
    }
 
-   /*
-     Resize method:
-     Supports only host resizing.
-     If new size is smaller than the current size we just reduce size but
-     the capacity remains the same
-     Memory location will change so any old pointers/iterators
-     will be invalid from now on.
-  */
+   /**
+    * @brief Resize the SplitVector to a new size.
+    *
+    * @param newSize The new size of the SplitVector.
+    * @param eco Indicates whether to allocate exactly the requested space.
+    * Supports only host resizing.
+    * If new size is smaller than the current size we just reduce size but
+    * the capacity remains the same
+    * Memory location will change so any old pointers/iterators
+    * will be invalid from now on.
+    */
    HOSTONLY
    void resize(size_t newSize, bool eco = false) {
       // Let's reserve some space and change our size
@@ -433,6 +631,11 @@ public:
    }
 
 #ifndef SPLIT_HOST_ONLY
+   /**
+    * @brief Resize the SplitVector on the device.
+    *
+    * @param newSize The new size of the SplitVector.
+    */
    DEVICEONLY
    void device_resize(size_t newSize) {
       if (newSize > capacity()) {
@@ -445,9 +648,15 @@ public:
    }
 #endif
 
+   /**
+    * @brief Increase the capacity of the SplitVector by 1.
+    */
    HOSTONLY
    void grow() { reserve(capacity() + 1); }
 
+   /**
+    * @brief Reduce the capacity of the SplitVector to match its size.
+    */
    HOSTONLY
    void shrink_to_fit() {
       size_t curr_cap = *_capacity;
@@ -461,7 +670,9 @@ public:
       return;
    }
 
-   /*Removes the last element of the vector*/
+   /**
+    * @brief Remove the last element from the SplitVector.
+    */
    HOSTDEVICE
    void pop_back() {
       if (size() > 0) {
@@ -470,8 +681,11 @@ public:
       return;
    }
 
-   // Removes n elements from the back of the vector
-   // and properly handles object destruction
+   /**
+    * @brief Remove n elements from the back of the SplitVector.
+    *
+    * @param n The number of elements to remove.
+    */
    HOSTDEVICE
    void remove_from_back(size_t n) noexcept {
       const size_t end = size() - n;
@@ -483,6 +697,9 @@ public:
       *_size = end;
    }
 
+   /**
+    * @brief Clear all elements from the SplitVector.
+    */
    HOSTDEVICE
    void clear() noexcept {
       if constexpr (!std::is_pod<T>::value) {
@@ -494,32 +711,59 @@ public:
       return;
    }
 
+   /**
+    * @brief Get the current capacity of the SplitVector.
+    *
+    * @return The capacity of the SplitVector.
+    */
    HOSTDEVICE
    inline size_t capacity() const noexcept { return *_capacity; }
 
+   /**
+    * @brief Get a reference to the last element of the SplitVector.
+    *
+    * @return Reference to the last element.
+    */
    HOSTDEVICE
    T& back() noexcept { return _data[*_size - 1]; }
 
+   /**
+    * @brief Get a const reference to the last element of the SplitVector.
+    *
+    * @return Const reference to the last element.
+    */
    HOSTDEVICE
    const T& back() const noexcept { return _data[*_size - 1]; }
 
+   /**
+    * @brief Get a reference to the first element of the SplitVector.
+    *
+    * @return Reference to the first element.
+    */
    HOSTDEVICE
    T& front() noexcept { return _data[0]; }
 
+   /**
+    * @brief Get a const reference to the first element of the SplitVector.
+    *
+    * @return Const reference to the first element.
+    */
    HOSTDEVICE
    const T& front() const noexcept { return _data[0]; }
 
+   /**
+    * @brief Check if the SplitVector is empty.
+    *
+    * @return True if the SplitVector is empty, otherwise false.
+    */
    HOSTDEVICE
    bool empty() const noexcept { return size() == 0; }
 
-   /*
-      PushBack  method:
-      Supports only host  resizing.
-      Will never reduce the vector's size.
-      Memory location will change so any old pointers/iterators
-      will be invalid from now on.
-      Not thread safe
-   */
+   /**
+    * @brief Push an element to the back of the SplitVector.
+    *
+    * @param val The value to push to the back.
+    */
    HOSTONLY
    void push_back(const T& val) {
       // If we have no allocated memory because the default ctor was used then
@@ -533,6 +777,11 @@ public:
       return;
    }
 
+   /**
+    * @brief Push a moved element to the back of the SplitVector.
+    *
+    * @param val The value to push to the back.
+    */
    HOSTONLY
    void push_back(const T&& val) {
 
@@ -548,12 +797,11 @@ public:
    }
 
 #ifndef SPLIT_HOST_ONLY
-   /*
-      Device PushBack  method:
-      Will never reduce the vector's size.
-      Memory location will not change.
-      Will crash if it runs out of space
-   */
+   /**
+    * @brief Push an element to the back of the SplitVector on the device.
+    *
+    * @param val The value to push to the back.
+    */
    DEVICEONLY
    void device_push_back(const T& val) {
       size_t old = atomicAdd((unsigned int*)_size, 1);
@@ -566,6 +814,11 @@ public:
       return;
    }
 
+   /**
+    * @brief Push a moved element to the back of the SplitVector on the device.
+    *
+    * @param val The value to push to the back.
+    */
    DEVICEONLY
    void device_push_back(const T&& val) {
 
@@ -708,17 +961,46 @@ public:
       }
    };
 
+   /**
+    * @brief Get an iterator pointing to the beginning of the vector.
+    *
+    * @return Iterator to the beginning of the vector.
+    */
    HOSTDEVICE
    iterator begin() noexcept { return iterator(_data); }
 
+   /**
+    * @brief Get an iterator pointing to the end of the vector.
+    *
+    * @return Iterator to the end of the vector.
+    */
    HOSTDEVICE
    const_iterator begin() const noexcept { return const_iterator(_data); }
 
+   /**
+    * @brief Get an iterator pointing to the end of the vector.
+    *
+    * @return Iterator to the end of the vector.
+    */
+
    HOSTDEVICE
    iterator end() noexcept { return iterator(_data + size()); }
+
+   /**
+    * @brief Get a constant iterator pointing to the end of the vector.
+    *
+    * @return Constant iterator to the end of the vector.
+    */
    HOSTDEVICE
    const_iterator end() const noexcept { return const_iterator(_data + size()); }
 
+   /**
+    * @brief Insert a single element at the specified position.
+    *
+    * @param it Iterator pointing to the position where the element should be inserted.
+    * @param val The value to insert.
+    * @return Iterator pointing to the inserted element.
+    */
    HOSTONLY
    iterator insert(iterator it, const T& val) {
 
@@ -746,6 +1028,14 @@ public:
       return iterator(_data + index);
    }
 
+   /**
+    * @brief Insert a specified number of elements with the same value at the specified position.
+    *
+    * @param it Iterator pointing to the position where the elements should be inserted.
+    * @param elements The number of elements to insert.
+    * @param val The value to insert.
+    * @return Iterator pointing to the first inserted element.
+    */
    HOSTONLY
    iterator insert(iterator it, const size_t elements, const T& val) {
 
@@ -770,6 +1060,15 @@ public:
       return retval;
    }
 
+   /**
+    * @brief Insert a range of elements at the specified position.
+    *
+    * @tparam InputIterator Type of the input iterator.
+    * @param it Iterator pointing to the position where the elements should be inserted.
+    * @param p0 Start of the input range.
+    * @param p1 End of the input range.
+    * @return Iterator pointing to the first inserted element.
+    */
    template <typename InputIterator, class = typename std::enable_if<!std::is_integral<InputIterator>::value>::type>
    HOSTONLY iterator insert(iterator it, InputIterator p0, InputIterator p1) {
 
@@ -792,6 +1091,15 @@ public:
    }
 
 #ifndef SPLIT_HOST_ONLY
+   /**
+    * @brief Device version of insert for inserting a range of elements at the specified position.
+    *
+    * @tparam InputIterator Type of the input iterator.
+    * @param it Iterator pointing to the position where the elements should be inserted.
+    * @param p0 Start of the input range.
+    * @param p1 End of the input range.
+    * @return Iterator pointing to the first inserted element.
+    */
    template <typename InputIterator, class = typename std::enable_if<!std::is_integral<InputIterator>::value>::type>
    DEVICEONLY iterator device_insert(iterator it, InputIterator p0, InputIterator p1) noexcept {
 
@@ -817,6 +1125,13 @@ public:
       return retval;
    }
 
+   /**
+    * @brief Device version of insert for inserting a single element at the specified position.
+    *
+    * @param it Iterator pointing to the position where the element should be inserted.
+    * @param val The value to insert.
+    * @return Iterator pointing to the inserted element.
+    */
    DEVICEONLY
    iterator device_insert(iterator it, const T& val) noexcept {
 
@@ -846,6 +1161,15 @@ public:
       return iterator(_data + index);
    }
 
+   /**
+    * @brief Device version of insert for inserting a specified number of elements with the same value at the specified
+    * position.
+    *
+    * @param it Iterator pointing to the position where the elements should be inserted.
+    * @param elements The number of elements to insert.
+    * @param val The value to insert.
+    * @return Iterator pointing to the first inserted element.
+    */
    DEVICEONLY
    iterator device_insert(iterator it, const size_t elements, const T& val) {
 
@@ -884,6 +1208,12 @@ public:
 
 #endif
 
+   /**
+    * @brief Erase an element at the specified position.
+    *
+    * @param it Iterator pointing to the element to erase.
+    * @return Iterator pointing to the element after the erased one.
+    */
    HOSTDEVICE
    iterator erase(iterator it) noexcept {
       const int64_t index = it.data() - begin().data();
@@ -903,6 +1233,13 @@ public:
       return retval;
    }
 
+   /**
+    * @brief Erase elements in the specified range.
+    *
+    * @param p0 Iterator pointing to the start of the range to erase.
+    * @param p1 Iterator pointing to the end of the range to erase.
+    * @return Iterator pointing to the element after the last erased one.
+    */
    HOSTDEVICE
    iterator erase(iterator p0, iterator p1) noexcept {
       const int64_t start = p0.data() - begin().data();
@@ -930,6 +1267,14 @@ public:
    HOSTONLY
    Allocator get_allocator() const noexcept { return _allocator; }
 
+   /**
+    * @brief Emplace an element at the specified position.
+    *
+    * @tparam Args Variadic template for constructor arguments.
+    * @param pos Iterator pointing to the position where the element should be emplaced.
+    * @param args Constructor arguments for the element.
+    * @return Iterator pointing to the emplaced element.
+    */
    template <class... Args>
    iterator emplace(iterator pos, Args&&... args) {
       const int64_t index = pos.data() - begin().data();
@@ -944,6 +1289,12 @@ public:
       return it;
    }
 
+   /**
+    * @brief Emplace an element at the end of the vector.
+    *
+    * @tparam Args Variadic template for constructor arguments.
+    * @param args Constructor arguments for the element.
+    */
    template <class... Args>
    void emplace_back(Args&&... args) {
       emplace(end(), std::forward<Args>(args)...);
