@@ -25,6 +25,7 @@
 #include <cuda_runtime_api.h>
 #else
 #include <hip/hip_runtime_api.h>
+#include <hip/hip_runtime.h>
 #endif
 namespace split {
 
