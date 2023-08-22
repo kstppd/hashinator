@@ -248,65 +248,65 @@ public:
 
 #ifndef SPLIT_HOST_ONLY
    // Method that return a pointer which can be passed to GPU kernels
-   // Has to be cudaFree'd after use otherwise memleak (small one but still)!
+   // Has to be split_gpuFree'd after use otherwise memleak (small one but still)!
    HOSTONLY
-   SplitVector<T, Allocator, Meta_Allocator>* upload(cudaStream_t stream = 0) {
+   SplitVector<T, Allocator, Meta_Allocator>* upload(split_gpuStream_t stream = 0) {
       SplitVector* d_vec;
       optimizeGPU(stream);
-      SPLIT_CHECK_ERR(cudaMallocAsync((void**)&d_vec, sizeof(SplitVector), stream));
-      SPLIT_CHECK_ERR(cudaMemcpyAsync(d_vec, this, sizeof(SplitVector), cudaMemcpyHostToDevice, stream));
+      SPLIT_CHECK_ERR(split_gpuMallocAsync((void**)&d_vec, sizeof(SplitVector), stream));
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(d_vec, this, sizeof(SplitVector), split_gpuMemcpyHostToDevice, stream));
       return d_vec;
    }
 
    /*Manually prefetch data on Device*/
-   HOSTONLY void optimizeGPU(cudaStream_t stream = 0) noexcept {
+   HOSTONLY void optimizeGPU(split_gpuStream_t stream = 0) noexcept {
       int device;
-      SPLIT_CHECK_ERR(cudaGetDevice(&device));
+      SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
 
       // First make sure _capacity does not page-fault ie prefetch it to host
       // This is done because _capacity would page-fault otherwise as pointed by Markus
-      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_capacity, sizeof(size_t), cudaCpuDeviceId, stream));
-      SPLIT_CHECK_ERR(cudaStreamSynchronize(stream));
+      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), split_gpuCpuDeviceId, stream));
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
 
       // Now prefetch everything to device
-      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_data, capacity() * sizeof(T), device, stream));
-      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_size, sizeof(size_t), device, stream));
-      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_capacity, sizeof(size_t), device, stream));
+      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_data, capacity() * sizeof(T), device, stream));
+      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_size, sizeof(size_t), device, stream));
+      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), device, stream));
    }
 
    /*Manually prefetch data on Host*/
-   HOSTONLY void optimizeCPU(cudaStream_t stream = 0) noexcept {
-      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_capacity, sizeof(size_t), cudaCpuDeviceId, stream));
-      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_size, sizeof(size_t), cudaCpuDeviceId, stream));
-      SPLIT_CHECK_ERR(cudaStreamSynchronize(stream));
-      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_data, capacity() * sizeof(T), cudaCpuDeviceId, stream));
+   HOSTONLY void optimizeCPU(split_gpuStream_t stream = 0) noexcept {
+      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), split_gpuCpuDeviceId, stream));
+      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_size, sizeof(size_t), split_gpuCpuDeviceId, stream));
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_data, capacity() * sizeof(T), split_gpuCpuDeviceId, stream));
    }
 
    // Attach to a specific stream
-   HOSTONLY void streamAttach(cudaStream_t s, uint32_t flags = cudaMemAttachSingle) {
-      SPLIT_CHECK_ERR(cudaStreamAttachMemAsync(s, (void*)_size, sizeof(size_t), flags));
-      SPLIT_CHECK_ERR(cudaStreamAttachMemAsync(s, (void*)_capacity, sizeof(size_t), flags));
-      SPLIT_CHECK_ERR(cudaStreamAttachMemAsync(s, (void*)_data, *_capacity * sizeof(T), flags));
+   HOSTONLY void streamAttach(split_gpuStream_t s, uint32_t flags = split_gpuMemAttachSingle) {
+      SPLIT_CHECK_ERR(split_gpuStreamAttachMemAsync(s, (void*)_size, sizeof(size_t), flags));
+      SPLIT_CHECK_ERR(split_gpuStreamAttachMemAsync(s, (void*)_capacity, sizeof(size_t), flags));
+      SPLIT_CHECK_ERR(split_gpuStreamAttachMemAsync(s, (void*)_data, *_capacity * sizeof(T), flags));
       return;
    }
 
    // Copy out metadata without prefetching to host first.
-   HOSTONLY void copyMetadata(SplitInfo* dst, cudaStream_t s = 0) {
-      SPLIT_CHECK_ERR(cudaMemcpyAsync(&dst->size, _size, sizeof(size_t), cudaMemcpyDeviceToHost, s));
-      SPLIT_CHECK_ERR(cudaMemcpyAsync(&dst->capacity, _capacity, sizeof(size_t), cudaMemcpyDeviceToHost, s));
+   HOSTONLY void copyMetadata(SplitInfo* dst, split_gpuStream_t s = 0) {
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&dst->size, _size, sizeof(size_t), split_gpuMemcpyDeviceToHost, s));
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&dst->capacity, _capacity, sizeof(size_t), split_gpuMemcpyDeviceToHost, s));
    }
 
    // Pass memAdvice direcitves to the data.
-   HOSTONLY void memAdvise(cudaMemoryAdvise advice, int device = -1, cudaStream_t stream = 0) {
+   HOSTONLY void memAdvise(split_gpuMemoryAdvise advice, int device = -1, split_gpuStream_t stream = 0) {
       if (device == -1) {
-         SPLIT_CHECK_ERR(cudaGetDevice(&device));
+         SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
       }
-      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_capacity, sizeof(size_t), cudaCpuDeviceId, stream));
-      SPLIT_CHECK_ERR(cudaStreamSynchronize(stream));
-      SPLIT_CHECK_ERR(cudaMemAdvise(_data, capacity() * sizeof(T), advice, device));
-      SPLIT_CHECK_ERR(cudaMemAdvise(_size, sizeof(size_t), advice, device));
-      SPLIT_CHECK_ERR(cudaMemAdvise(_capacity, sizeof(size_t), advice, device));
-      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_capacity, sizeof(size_t), device, stream));
+      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), split_gpuCpuDeviceId, stream));
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+      SPLIT_CHECK_ERR(split_gpuMemAdvise(_data, capacity() * sizeof(T), advice, device));
+      SPLIT_CHECK_ERR(split_gpuMemAdvise(_size, sizeof(size_t), advice, device));
+      SPLIT_CHECK_ERR(split_gpuMemAdvise(_capacity, sizeof(size_t), advice, device));
+      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), device, stream));
    }
 #endif
 

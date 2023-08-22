@@ -21,7 +21,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  * */
 #pragma once
-
+#include "archMacros.h"
 namespace split {
 
 #ifndef SPLIT_HOST_ONLY
@@ -70,7 +70,7 @@ public:
 
    pointer allocate(size_type n, const void* /*hint*/ = 0) {
       T* ret;
-      SPLIT_CHECK_ERR(cudaMallocManaged((void**)&ret, n * sizeof(value_type)));
+      SPLIT_CHECK_ERR(split_gpuMallocManaged((void**)&ret, n * sizeof(value_type)));
       if (ret == nullptr) {
          throw std::bad_alloc();
       }
@@ -79,16 +79,16 @@ public:
 
    static void* allocate_raw(size_type n, const void* /*hint*/ = 0) {
       void* ret;
-      SPLIT_CHECK_ERR(cudaMallocManaged((void**)&ret, n));
+      SPLIT_CHECK_ERR(split_gpuMallocManaged((void**)&ret, n));
       if (ret == nullptr) {
          throw std::bad_alloc();
       }
       return ret;
    }
 
-   void deallocate(pointer p, size_type) { SPLIT_CHECK_ERR(cudaFree(p)); }
+   void deallocate(pointer p, size_type) { SPLIT_CHECK_ERR(split_gpuFree(p)); }
 
-   static void deallocate(void* p, size_type) { SPLIT_CHECK_ERR(cudaFree(p)); }
+   static void deallocate(void* p, size_type) { SPLIT_CHECK_ERR(split_gpuFree(p)); }
 
    size_type max_size() const throw() {
       size_type max = static_cast<size_type>(-1) / sizeof(value_type);

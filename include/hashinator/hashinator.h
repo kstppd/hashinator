@@ -87,11 +87,11 @@ private:
    }
 
    // Used by the constructors. Preallocates the device pointer and bookeepping info for later use on device.
-   // This helps in reducing the number of calls to cudaMalloc
+   // This helps in reducing the number of calls to split_gpuMalloc
    HASHINATOR_HOSTONLY
    void preallocate_device_handles() {
 #ifndef HASHINATOR_HOST_ONLY
-      SPLIT_CHECK_ERR(cudaMalloc((void**)&device_map, sizeof(Hashmap)));
+      SPLIT_CHECK_ERR(split_gpuMalloc((void**)&device_map, sizeof(Hashmap)));
 #endif
    }
 
@@ -99,7 +99,7 @@ private:
    HASHINATOR_HOSTONLY
    void deallocate_device_handles() {
 #ifndef HASHINATOR_HOST_ONLY
-      SPLIT_CHECK_ERR(cudaFree(device_map));
+      SPLIT_CHECK_ERR(split_gpuFree(device_map));
       device_map = nullptr;
 #endif
    }
@@ -163,26 +163,26 @@ public:
    HASHINATOR_HOSTONLY
    void* operator new(size_t len) {
       void* ptr;
-      SPLIT_CHECK_ERR(cudaMallocManaged(&ptr, len));
+      SPLIT_CHECK_ERR(split_gpuMallocManaged(&ptr, len));
       return ptr;
    }
 
    HASHINATOR_HOSTONLY
-   void operator delete(void* ptr) { SPLIT_CHECK_ERR(cudaFree(ptr)); }
+   void operator delete(void* ptr) { SPLIT_CHECK_ERR(split_gpuFree(ptr)); }
 
    HASHINATOR_HOSTONLY
    void* operator new[](size_t len) {
       void* ptr;
-      SPLIT_CHECK_ERR(cudaMallocManaged(&ptr, len));
+      SPLIT_CHECK_ERR(split_gpuMallocManaged(&ptr, len));
       return ptr;
    }
 
    HASHINATOR_HOSTONLY
-   void operator delete[](void* ptr) { cudaFree(ptr); }
+   void operator delete[](void* ptr) { split_gpuFree(ptr); }
 
    HASHINATOR_HOSTONLY
-   void copyMetadata(MapInfo* dst, cudaStream_t s = 0) {
-      SPLIT_CHECK_ERR(cudaMemcpyAsync(dst, _mapInfo, sizeof(MapInfo), cudaMemcpyDeviceToHost, s));
+   void copyMetadata(MapInfo* dst, split_gpuStream_t s = 0) {
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(dst, _mapInfo, sizeof(MapInfo), split_gpuMemcpyDeviceToHost, s));
    }
 
 #endif
@@ -236,7 +236,7 @@ public:
    // Resize the table to fit more things. This is automatically invoked once
    // maxBucketOverflow has triggered. This can only be done on host (so far)
    HASHINATOR_HOSTONLY
-   void device_rehash(int newSizePower, cudaStream_t s = 0) {
+   void device_rehash(int newSizePower, split_gpuStream_t s = 0) {
       if (newSizePower > 32) {
          throw std::out_of_range("Hashmap ran into rehashing catastrophe and exceeded 32bit buckets.");
       }
@@ -245,9 +245,9 @@ public:
       // Extract all valid elements
       hash_pair<KEY_TYPE, VAL_TYPE>* validElements;
       SPLIT_CHECK_ERR(
-          cudaMallocAsync((void**)&validElements, (_mapInfo->fill + 1) * sizeof(hash_pair<KEY_TYPE, VAL_TYPE>), s));
+          split_gpuMallocAsync((void**)&validElements, (_mapInfo->fill + 1) * sizeof(hash_pair<KEY_TYPE, VAL_TYPE>), s));
       optimizeGPU(s);
-      SPLIT_CHECK_ERR(cudaStreamSynchronize(s));
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
 
       auto isValidKey = [] __host__ __device__(hash_pair<KEY_TYPE, VAL_TYPE> & element) {
          if (element.first != TOMBSTONE && element.first != EMPTYBUCKET) {
@@ -257,7 +257,7 @@ public:
       };
       uint32_t nValidElements = extractPattern(validElements, isValidKey, s);
 
-      SPLIT_CHECK_ERR(cudaStreamSynchronize(s));
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
       assert(nValidElements == _mapInfo->fill && "Something really bad happened during rehashing! Ask Kostis!");
       // We can now clear our buckets
       optimizeCPU(s);
@@ -268,7 +268,7 @@ public:
       // Insert valid elements to now larger buckets
       insert(validElements, nValidElements, 1, s);
       set_status((priorFill == _mapInfo->fill) ? status::success : status::fail);
-      cudaFreeAsync(validElements, s);
+      split_gpuFreeAsync(validElements, s);
    }
 #endif
 
@@ -404,7 +404,7 @@ public:
    }
 #else
    HASHINATOR_HOSTONLY
-   void clear(targets t = targets::host, cudaStream_t s = 0, bool prefetches = true) {
+   void clear(targets t = targets::host, split_gpuStream_t s = 0, bool prefetches = true) {
       size_t blocksNeeded;
       switch (t) {
       case targets::host:
@@ -421,7 +421,7 @@ public:
          blocksNeeded = blocksNeeded + (blocksNeeded == 0);
          Hashers::reset_all_to_empty<KEY_TYPE, VAL_TYPE, EMPTYBUCKET>
              <<<blocksNeeded, defaults::MAX_BLOCKSIZE, 0, s>>>(buckets.data(), buckets.size(), &_mapInfo->fill);
-         SPLIT_CHECK_ERR(cudaStreamSynchronize(s));
+         SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
          set_status((_mapInfo->fill == 0) ? success : fail);
          break;
 
@@ -446,7 +446,7 @@ public:
    void resize(int newSizePower) { rehash(newSizePower); }
 #else
    HASHINATOR_HOSTONLY
-   void resize(int newSizePower, targets t = targets::host, cudaStream_t s = 0) {
+   void resize(int newSizePower, targets t = targets::host, split_gpuStream_t s = 0) {
       switch (t) {
       case targets::host:
          rehash(newSizePower);
@@ -538,7 +538,7 @@ public:
 #else
    // Try to get the overflow back to the original one
    HASHINATOR_HOSTONLY
-   void performCleanupTasks(cudaStream_t s = 0) {
+   void performCleanupTasks(split_gpuStream_t s = 0) {
       while (_mapInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW) {
          device_rehash(_mapInfo->sizePower + 1);
       }
@@ -775,9 +775,9 @@ public:
 
 #ifndef HASHINATOR_HOST_ONLY
    // Pass memAdvice to hashinator and the underlying splitvector
-   HOSTONLY void memAdvise(cudaMemoryAdvise advice, int device, cudaStream_t stream = 0) {
+   HOSTONLY void memAdvise(split_gpuMemoryAdvise advice, int device, split_gpuStream_t stream = 0) {
       buckets.memAdvise(advice, device, stream);
-      cudaMemAdvise(_mapInfo, sizeof(MapInfo), advice, device);
+      split_gpuMemAdvise(_mapInfo, sizeof(MapInfo), advice, device);
    }
 
    /*
@@ -802,7 +802,7 @@ public:
     * */
    template <typename Rule>
    HASHINATOR_HOSTONLY size_t extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements, Rule rule,
-                                             cudaStream_t s = 0, bool prefetches = true) {
+                                             split_gpuStream_t s = 0, bool prefetches = true) {
       elements.resize(_mapInfo->fill + 1, true);
       if (prefetches) {
          elements.optimizeGPU(s);
@@ -818,7 +818,7 @@ public:
    }
 
    template <typename Rule>
-   HASHINATOR_HOSTONLY size_t extractPattern(hash_pair<KEY_TYPE, VAL_TYPE>* elements, Rule rule, cudaStream_t s = 0) {
+   HASHINATOR_HOSTONLY size_t extractPattern(hash_pair<KEY_TYPE, VAL_TYPE>* elements, Rule rule, split_gpuStream_t s = 0) {
       // Extract elements matching the Pattern Rule(element)==true;
       size_t retval =
           split::tools::copy_if_raw<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, defaults::MAX_BLOCKSIZE, defaults::WARPSIZE>(
@@ -828,7 +828,7 @@ public:
 
    template <typename Rule>
    HASHINATOR_HOSTONLY size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements, Rule rule,
-                                                   cudaStream_t s = 0, bool prefetches = true) {
+                                                   split_gpuStream_t s = 0, bool prefetches = true) {
       elements.resize(_mapInfo->fill + 1, true);
       if (prefetches) {
          elements.optimizeGPU(s);
@@ -843,7 +843,7 @@ public:
    }
 
    HASHINATOR_HOSTONLY
-   size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, cudaStream_t s = 0, bool prefetches = true) {
+   size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, split_gpuStream_t s = 0, bool prefetches = true) {
       // Extract all keys
       auto rule = [] __host__ __device__(const hash_pair<KEY_TYPE, VAL_TYPE>& kval) -> bool {
          return kval.first != EMPTYBUCKET && kval.first != TOMBSTONE;
@@ -851,7 +851,7 @@ public:
       return extractKeysByPattern(elements, rule, s, prefetches);
    }
 
-   void clean_tombstones(cudaStream_t s = 0, bool prefetches = false) {
+   void clean_tombstones(split_gpuStream_t s = 0, bool prefetches = false) {
 
       if (_mapInfo->tombstoneCounter == 0) {
          return;
@@ -863,13 +863,13 @@ public:
       // this
 
       hash_pair<KEY_TYPE, VAL_TYPE>* overflownElements;
-      SPLIT_CHECK_ERR(cudaMallocAsync((void**)&overflownElements,
+      SPLIT_CHECK_ERR(split_gpuMallocAsync((void**)&overflownElements,
                                       (1 << _mapInfo->sizePower) * sizeof(hash_pair<KEY_TYPE, VAL_TYPE>), s));
 
       if (prefetches) {
          optimizeGPU(s);
       }
-      SPLIT_CHECK_ERR(cudaStreamSynchronize(s));
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
 
       int currentSizePower = _mapInfo->sizePower;
       hash_pair<KEY_TYPE, VAL_TYPE>* bck_ptr = buckets.data();
@@ -891,28 +891,28 @@ public:
       uint32_t nOverflownElements = extractPattern(overflownElements, isOverflown, s);
 
       if (nOverflownElements == 0) {
-         SPLIT_CHECK_ERR(cudaFreeAsync(overflownElements, s));
+         SPLIT_CHECK_ERR(split_gpuFreeAsync(overflownElements, s));
          return;
       }
       // If we do have overflown elements we put them back in the buckets
-      SPLIT_CHECK_ERR(cudaStreamSynchronize(s));
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
       Hashers::reset_to_empty<KEY_TYPE, VAL_TYPE, EMPTYBUCKET, HashFunction>
           <<<nOverflownElements, defaults::MAX_BLOCKSIZE, 0, s>>>(
               overflownElements, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
               nOverflownElements);
       _mapInfo->fill -= nOverflownElements;
-      SPLIT_CHECK_ERR(cudaStreamSynchronize(s));
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
 
       DeviceHasher::insert(overflownElements, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
                            &_mapInfo->currentMaxBucketOverflow, &_mapInfo->fill, nOverflownElements, &_mapInfo->err, s);
 
-      SPLIT_CHECK_ERR(cudaFreeAsync(overflownElements, s));
+      SPLIT_CHECK_ERR(split_gpuFreeAsync(overflownElements, s));
       return;
    }
 
    // Uses Hasher's insert_kernel to insert all elements
    HASHINATOR_HOSTONLY
-   void insert(KEY_TYPE* keys, VAL_TYPE* vals, size_t len, float targetLF = 0.5, cudaStream_t s = 0,
+   void insert(KEY_TYPE* keys, VAL_TYPE* vals, size_t len, float targetLF = 0.5, split_gpuStream_t s = 0,
                bool prefetches = true) {
       // Here we do some calculations to estimate how much if any we need to grow our buckets
       size_t neededPowerSize = std::ceil(std::log2((_mapInfo->fill + len) * (1.0 / targetLF)));
@@ -930,7 +930,7 @@ public:
 
    // Uses Hasher's insert_kernel to insert all elements
    HASHINATOR_HOSTONLY
-   void insert(hash_pair<KEY_TYPE, VAL_TYPE>* src, size_t len, float targetLF = 0.5, cudaStream_t s = 0) {
+   void insert(hash_pair<KEY_TYPE, VAL_TYPE>* src, size_t len, float targetLF = 0.5, split_gpuStream_t s = 0) {
       if (len == 0) {
          set_status(status::success);
          return;
@@ -948,7 +948,7 @@ public:
 
    // Uses Hasher's retrieve_kernel to read all elements
    HASHINATOR_HOSTONLY
-   void retrieve(KEY_TYPE* keys, VAL_TYPE* vals, size_t len, cudaStream_t s = 0) {
+   void retrieve(KEY_TYPE* keys, VAL_TYPE* vals, size_t len, split_gpuStream_t s = 0) {
       buckets.optimizeGPU(s);
       DeviceHasher::retrieve(keys, vals, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow, len,
                              s);
@@ -957,7 +957,7 @@ public:
 
    // Uses Hasher's retrieve_kernel to read all elements
    HASHINATOR_HOSTONLY
-   void retrieve(hash_pair<KEY_TYPE, VAL_TYPE>* src, size_t len, cudaStream_t s = 0) {
+   void retrieve(hash_pair<KEY_TYPE, VAL_TYPE>* src, size_t len, split_gpuStream_t s = 0) {
       buckets.optimizeGPU(s);
       DeviceHasher::retrieve(src, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow, len, s);
       return;
@@ -965,7 +965,7 @@ public:
 
    // Uses Hasher's erase_kernel to delete all elements
    HASHINATOR_HOSTONLY
-   void erase(KEY_TYPE* keys, size_t len, cudaStream_t s = 0) {
+   void erase(KEY_TYPE* keys, size_t len, split_gpuStream_t s = 0) {
       buckets.optimizeGPU(s);
       // Remember the last numeber of tombstones
       size_t tbStore = tombstone_count();
@@ -983,31 +983,31 @@ public:
     * call download() after usage on device.
     */
    HASHINATOR_HOSTONLY
-   Hashmap* upload(cudaStream_t stream = 0) {
+   Hashmap* upload(split_gpuStream_t stream = 0) {
       optimizeGPU(stream);
-      SPLIT_CHECK_ERR(cudaMemcpyAsync(device_map, this, sizeof(Hashmap), cudaMemcpyHostToDevice, stream));
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(device_map, this, sizeof(Hashmap), split_gpuMemcpyHostToDevice, stream));
       return device_map;
    }
 
    HASHINATOR_HOSTONLY
-   void optimizeGPU(cudaStream_t stream = 0) noexcept {
+   void optimizeGPU(split_gpuStream_t stream = 0) noexcept {
       int device;
-      SPLIT_CHECK_ERR(cudaGetDevice(&device));
-      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_mapInfo, sizeof(MapInfo), device, stream));
+      SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
+      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_mapInfo, sizeof(MapInfo), device, stream));
       buckets.optimizeGPU(stream);
    }
 
    /*Manually prefetch data on Host*/
    HASHINATOR_HOSTONLY
-   void optimizeCPU(cudaStream_t stream = 0) noexcept {
-      SPLIT_CHECK_ERR(cudaMemPrefetchAsync(_mapInfo, sizeof(MapInfo), cudaCpuDeviceId, stream));
+   void optimizeCPU(split_gpuStream_t stream = 0) noexcept {
+      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_mapInfo, sizeof(MapInfo), split_gpuCpuDeviceId, stream));
       buckets.optimizeCPU(stream);
    }
 
    HASHINATOR_HOSTONLY
-   void streamAttach(cudaStream_t s, uint32_t flags = cudaMemAttachSingle) {
+   void streamAttach(split_gpuStream_t s, uint32_t flags = split_gpuMemAttachSingle) {
       buckets.streamAttach(s, flags);
-      SPLIT_CHECK_ERR(cudaStreamAttachMemAsync(s, (void*)_mapInfo, sizeof(MapInfo), flags));
+      SPLIT_CHECK_ERR(split_gpuStreamAttachMemAsync(s, (void*)_mapInfo, sizeof(MapInfo), flags));
       return;
    }
 
@@ -1024,7 +1024,7 @@ public:
     *  • If there are Tombstones then those are removed
     * */
    HASHINATOR_HOSTONLY
-   void download(cudaStream_t stream = 0) {
+   void download(split_gpuStream_t stream = 0) {
       // Copy over fill as it might have changed
       optimizeCPU(stream);
       if (_mapInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW) {
