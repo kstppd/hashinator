@@ -3,7 +3,6 @@
 #include <chrono>
 #include <gtest/gtest.h>
 #include "../../include/splitvector/splitvec.h"
-#include <cuda_profiler_api.h>
 #include "../../include/splitvector/split_tools.h"
 #define N 1024
 #define expect_true EXPECT_TRUE
@@ -15,26 +14,26 @@ class Managed {
 public:
    void *operator new(size_t len) {
       void *ptr;
-      cudaMallocManaged(&ptr, len);
-      cudaDeviceSynchronize();
+      split_gpuMallocManaged(&ptr, len);
+      split_gpuDeviceSynchronize();
       return ptr;
    }
 
    void operator delete(void *ptr) {
-      cudaDeviceSynchronize();
-      cudaFree(ptr);
+      split_gpuDeviceSynchronize();
+      split_gpuFree(ptr);
    }
 
    void* operator new[] (size_t len) {
       void *ptr;
-      cudaMallocManaged(&ptr, len);
-      cudaDeviceSynchronize();
+      split_gpuMallocManaged(&ptr, len);
+      split_gpuDeviceSynchronize();
       return ptr;
    }
 
    void operator delete[] (void* ptr) {
-      cudaDeviceSynchronize();
-      cudaFree(ptr);
+      split_gpuDeviceSynchronize();
+      split_gpuFree(ptr);
    }
 
 };
@@ -60,7 +59,7 @@ TEST(Test_GPU,VectorPrint){
    TestClass* test;
    test=new TestClass();
    printClassVec<<<1,1>>>(test->a);
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
    delete test;
 }
 

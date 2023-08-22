@@ -40,8 +40,8 @@ int main(int argc, char* argv[]){
    vector cpu_src(1<<sz);
    create_input(cpu_src.data(),sz);
    hash_pair<key_type,val_type>* src;
-   cudaMalloc((void **) &src, (1<<sz)*sizeof(hash_pair<key_type,val_type>));
-   cudaMemcpy(src,cpu_src.data(),cpu_src.size()*sizeof(hash_pair<key_type,val_type>),cudaMemcpyHostToDevice);
+   split_gpuMalloc((void **) &src, (1<<sz)*sizeof(hash_pair<key_type,val_type>));
+   split_gpuMemcpy(src,cpu_src.data(),cpu_src.size()*sizeof(hash_pair<key_type,val_type>),split_gpuMemcpyHostToDevice);
 
    for (int i =0; i<R; i++){
       hmap.optimizeGPU();
@@ -49,7 +49,7 @@ int main(int argc, char* argv[]){
       benchInsert(hmap,src,cpu_src,sz);
    }
 
-   cudaFree(src);
+   split_gpuFree(src);
    return 0;
 
 }

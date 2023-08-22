@@ -7,7 +7,6 @@
 #define  SPLIT_HOST_ONLY
 #endif
 #include "../../include/splitvector/splitvec.h"
-#include <cuda_profiler_api.h>
 
 #define expect_true EXPECT_TRUE
 #define expect_false EXPECT_FALSE

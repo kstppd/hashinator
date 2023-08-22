@@ -231,13 +231,13 @@ bool test_hashmap_1(int power){
    //Upload to device and insert input
    d_hmap=hmap.upload();
    gpu_write<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
    hmap.download();
 
    //Verify all elements
    cpuOK=recover_all_elements(hmap,src);
    gpu_recover_all_elements<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
    return true;
    if (!cpuOK){
       return false;
@@ -246,7 +246,7 @@ bool test_hashmap_1(int power){
    //Delete some selection of the source data
    d_hmap=hmap.upload();
    gpu_delete_even<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
    hmap.download();
 
    //Quick check to verify there are no even elements
@@ -260,7 +260,7 @@ bool test_hashmap_1(int power){
    //Verify odd elements;
    cpuOK=recover_odd_elements(hmap,src);
    gpu_recover_odd_elements<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
    if (!cpuOK){
       return false;
    }
@@ -268,7 +268,7 @@ bool test_hashmap_1(int power){
    //Reinsert so that we can also test duplicate insertion
    d_hmap=hmap.upload();
    gpu_write<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
    //Download
    hmap.download();
 
@@ -276,7 +276,7 @@ bool test_hashmap_1(int power){
    //Verify all elements
    cpuOK=recover_all_elements(hmap,src);
    gpu_recover_all_elements<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
    if (!cpuOK ){
       return false;
    }
@@ -302,33 +302,33 @@ bool test_hashmap_2(int power){
 
    //Upload to device and insert input
    gpu_write<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
 
    //Verify all elements
    cpuOK=recover_all_elements(hmap,src);
    gpu_recover_all_elements<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
    if (!cpuOK ){
       return false;
    }
 
    //Delete some selection of the source data
    gpu_delete_even<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
 
 
    //Upload to device and insert input
    gpu_write<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
 
    //Upload to device and insert input
    gpu_write<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
 
 
    //Delete some selection of the source data
    gpu_delete_even<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
 
    //Quick check to verify there are no even elements
    for (const auto& kval : *hmap){
@@ -341,7 +341,7 @@ bool test_hashmap_2(int power){
    //Verify odd elements;
    cpuOK=recover_odd_elements(hmap,src);
    gpu_recover_odd_elements<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   //cudaDeviceSynchronize();
+   //split_gpuDeviceSynchronize();
    if (!cpuOK){
       return false;
    }
@@ -349,12 +349,12 @@ bool test_hashmap_2(int power){
    //Clean Tomstones and reinsert so that we can also test duplicate insertion
    hmap->clean_tombstones();
    gpu_write<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
 
    //Verify all elements
    cpuOK=recover_all_elements(hmap,src);
    gpu_recover_all_elements<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
    if (!cpuOK ){
       return false;
    }
@@ -362,9 +362,9 @@ bool test_hashmap_2(int power){
    vector src2(N);
    create_input(src2);
    gpu_remove_insert<<<1,1>>>(hmap,src.data(),src2.data(),src.size());
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
    gpu_recover_all_elements<<<blocks,blocksize>>>(hmap,src2.data(),src2.size());
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
 
    delete hmap;
    hmap=nullptr;
@@ -458,8 +458,8 @@ bool test_hashmap_4(int power){
       }
    }
 
-   cudaStream_t s ;
-   cudaStreamCreate(&s);
+   split_gpuStream_t s ;
+   split_gpuStreamCreate(&s);
    hmap.clean_tombstones(s);
    cpuOK=recover_odd_elements(hmap,src);
    if (!cpuOK){
@@ -523,7 +523,7 @@ TEST(HashmapUnitTets ,Test_Clear_Perf_Host){
       expect_true(false);
    }
    hmap.optimizeGPU();
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
    std::chrono::time_point<std::chrono::_V2::system_clock, std::chrono::_V2::system_clock::duration> start,stop;
    start = std::chrono::high_resolution_clock::now();
    hmap.clear();
@@ -546,7 +546,7 @@ TEST(HashmapUnitTets ,Test_Clear_Perf_Device){
       expect_true(false);
    }
    hmap.optimizeGPU();
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
    std::chrono::time_point<std::chrono::_V2::system_clock, std::chrono::_V2::system_clock::duration> start,stop;
    start = std::chrono::high_resolution_clock::now();
    hmap.clear(targets::device);
@@ -568,7 +568,7 @@ TEST(HashmapUnitTets ,Test_Resize_Perf_Host){
       std::cout<<"Error at recovering all elements 1"<<std::endl;
       expect_true(false);
    }
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
    std::chrono::time_point<std::chrono::_V2::system_clock, std::chrono::_V2::system_clock::duration> start,stop;
    start = std::chrono::high_resolution_clock::now();
    hmap.resize(sz+2);
@@ -591,7 +591,7 @@ TEST(HashmapUnitTets ,Test_Resize_Perf_Device){
       std::cout<<"Error at recovering all elements 1"<<std::endl;
       expect_true(false);
    }
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
    std::chrono::time_point<std::chrono::_V2::system_clock, std::chrono::_V2::system_clock::duration> start,stop;
    start = std::chrono::high_resolution_clock::now();
    hmap.resize(sz+2,targets::device);
@@ -640,7 +640,7 @@ TEST(HashmapUnitTets ,Test_Copy_Metadata){
    expect_true(hmap.peek_status()==status::success);
    Info info;
    hmap.copyMetadata(&info);
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
    expect_true(1<<info.sizePower==hmap.bucket_count());
    expect_true(info.tombstoneCounter==hmap.tombstone_count());
 
