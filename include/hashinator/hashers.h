@@ -659,7 +659,7 @@ __global__ void retrieve_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TY
       submask = SPLIT_VOTING_MASK;
    } else {
       submask = split::getIntraWarpMask_AMD(0, VIRTUALWARP * subwarp_relative_index + 1,
-                                             VIRTUALWARP * subwarp_relative_index + VIRTUALWARP);
+                                            VIRTUALWARP * subwarp_relative_index + VIRTUALWARP);
    }
 #endif
    KEY_TYPE& candidateKey = keys[wid];
@@ -724,7 +724,7 @@ __global__ void retrieve_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KE
       submask = SPLIT_VOTING_MASK;
    } else {
       submask = split::getIntraWarpMask_AMD(0, VIRTUALWARP * subwarp_relative_index + 1,
-                                             VIRTUALWARP * subwarp_relative_index + VIRTUALWARP);
+                                            VIRTUALWARP * subwarp_relative_index + VIRTUALWARP);
    }
 #endif
    hash_pair<KEY_TYPE, VAL_TYPE>& candidate = src[wid];
@@ -795,7 +795,7 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
       submask = SPLIT_VOTING_MASK;
    } else {
       submask = split::getIntraWarpMask_AMD(0, VIRTUALWARP * subwarp_relative_index + 1,
-                                      VIRTUALWARP * subwarp_relative_index + VIRTUALWARP);
+                                            VIRTUALWARP * subwarp_relative_index + VIRTUALWARP);
    }
 #endif
 

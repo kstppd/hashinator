@@ -740,7 +740,7 @@ public:
     * */
    template <typename Rule>
    size_t extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements, Rule rule,
-                                             split_gpuStream_t s = 0, bool prefetches = true) {
+                         split_gpuStream_t s = 0, bool prefetches = true) {
       elements.resize(_mapInfo->fill + 1, true);
       if (prefetches) {
          elements.optimizeGPU(s);
@@ -756,8 +756,7 @@ public:
    }
 
    template <typename Rule>
-   size_t extractPattern(hash_pair<KEY_TYPE, VAL_TYPE>* elements, Rule rule,
-                                             split_gpuStream_t s = 0) {
+   size_t extractPattern(hash_pair<KEY_TYPE, VAL_TYPE>* elements, Rule rule, split_gpuStream_t s = 0) {
       // Extract elements matching the Pattern Rule(element)==true;
       size_t retval =
           split::tools::copy_if_raw<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, defaults::MAX_BLOCKSIZE, defaults::WARPSIZE>(
@@ -766,8 +765,8 @@ public:
    }
 
    template <typename Rule>
-   size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements, Rule rule,
-                                                   split_gpuStream_t s = 0, bool prefetches = true) {
+   size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements, Rule rule, split_gpuStream_t s = 0,
+                               bool prefetches = true) {
       elements.resize(_mapInfo->fill + 1, true);
       if (prefetches) {
          elements.optimizeGPU(s);
