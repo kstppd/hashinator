@@ -36,8 +36,9 @@ int main()
 }
 ```
 `g++   main.cpp  -std=c++17 -o example`
-```
+
 ### SplitVector: Basic Usage on device
+```
 #include "splitvec.h"
 //main.cu
 using vector = split::SplitVector<int>;
