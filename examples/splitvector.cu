@@ -47,6 +47,7 @@ void basic_device_usage_with_new()
    cudaDeviceSynchronize();
    vec->optimizeCPU();
    std::cout<<*vec<<std::endl;
+   delete vec;
 }
 
 int main()

@@ -139,6 +139,7 @@ void basic_hybrid_usage_with_new()
    hmap->stats();
    hmap->clean_tombstones();
    hmap->stats();
+   delete hmap;
 }
 
 int main()
