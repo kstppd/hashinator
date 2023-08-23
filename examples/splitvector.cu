@@ -5,7 +5,6 @@
 typedef int val_type;
 typedef split::SplitVector<val_type> vector;
 
-
 static inline std::ostream& operator<<(std::ostream& os, vector& vec ){
    for (const auto&i : vec){
       std::cout<<i<<" ";
@@ -30,18 +29,30 @@ void basic_host_usage()
 
 void basic_device_usage()
 {
-
    vector vec {1,2,3,4,5};
    vec.reserve(128);
    auto d_vec= vec.upload();
    push_back_kernel<<<1,64>>>(d_vec);
+   cudaDeviceSynchronize();
    cudaFree(d_vec);
    std::cout<<vec<<std::endl;
+}
+
+void basic_device_usage_with_new()
+{
+   vector* vec = new vector{1,2,3,4,5};
+   vec->reserve(128);
+   vec->optimizeGPU();
+   push_back_kernel<<<1,64>>>(vec);
+   cudaDeviceSynchronize();
+   vec->optimizeCPU();
+   std::cout<<*vec<<std::endl;
 }
 
 int main()
 {
    basic_host_usage();
    basic_device_usage();
+   basic_device_usage_with_new();
    return 0;
 }
