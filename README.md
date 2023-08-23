@@ -16,6 +16,9 @@
 
 + For systems without GPUs, Hashinator and SplitVector compile with a c++ compiler by defining ```-DHASHINATOR_HOST_ONLY``` and ```-DSPLIT_HOST_ONLY``` respectively.
 
++ Hashinator is open-source and distributed under GPL-3.0.
+
+
 ## Installation
 No installation required. Just include  "hashinator.h" . However, if you plan to use Hashinator at its full potential you will need a system with a dedicated GPU card, either NVIDIA or AMD and  a healthy installation of CUDA or ROCm. Hashinator rerquires at least ```cuda-9.0``` or ```rocm 5.4```. To run the tests ```googletest``` needs to be installed.
 
