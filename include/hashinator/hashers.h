@@ -417,12 +417,23 @@ __global__ void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_
    const size_t w_tid = tid % VIRTUALWARP;
    const size_t proper_w_tid = tid % WARPSIZE; // the proper WID as if we had no Virtual warps
    const size_t proper_wid = tid / WARPSIZE;
-   const size_t blockWid = proper_wid % WARPSIZE;
+   const size_t blockWid = proper_wid % (WARPSIZE/4); //we have twice the warpsize and half the warps per block
 
+   __shared__ uint32_t addMask[WARPSIZE/2];
+   __shared__ uint64_t warpOverflow[WARPSIZE/2];
    // Early quit if we have more warps than elements to insert
    if (wid >= len) {
       return;
    }
+
+   // Zero out shared count;
+   if (proper_w_tid == 0 && blockWid == 0) {
+      for (int i = 0; i < WARPSIZE; i++) {
+         addMask[i] = 0;
+         warpOverflow[i] = 0;
+      }
+   }
+   __syncthreads();
 
    uint64_t subwarp_relative_index = (wid) % (WARPSIZE / VIRTUALWARP);
    uint64_t submask;
@@ -496,20 +507,31 @@ __global__ void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_
       }
    }
 
-   /*
-      Update fill and overflow
-      First thread per warp reduces the total elements added (per Warp)
-   */
+   //Update fill and overflow
+   __syncthreads();
    // Per warp reduction
    int warpTotals = warpReduce<WARPSIZE>(localCount);
    uint64_t perWarpOverflow = warpReduceMax<WARPSIZE>(threadOverflow);
+   __syncthreads();
 
-   // Update fill and overlfow
+   // Store to shmem minding Bank Conflicts
    if (proper_w_tid == 0) {
-      split::s_atomicAdd(d_fill, warpTotals);
-      ;
-      if (perWarpOverflow > *d_overflow) {
-         split::s_atomicExch(d_overflow, nextPow2(perWarpOverflow));
+      // Write the count to the same place
+      addMask[(blockWid)] = warpTotals;
+      warpOverflow[(blockWid)] = perWarpOverflow;
+   }
+
+   __syncthreads();
+   // First warp in block reductions
+   if (blockWid == 0) {
+      uint64_t blockOverflow = warpReduceMax<WARPSIZE/2>(warpOverflow[(proper_w_tid)]);
+      int blockTotal =warpReduce<WARPSIZE/2>(addMask[(proper_w_tid)]);
+      // First thread updates fill and overlfow (1 update per block)
+      if (proper_w_tid == 0) {
+	      if (blockOverflow>*d_overflow){
+		      split::s_atomicExch((unsigned long long*)d_overflow, (unsigned long long)nextPow2(blockOverflow));
+	      }
+         split::s_atomicAdd(d_fill, blockTotal);
       }
    }
    return;
@@ -527,12 +549,23 @@ __global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE
    const size_t w_tid = tid % VIRTUALWARP;
    const size_t proper_w_tid = tid % WARPSIZE; // the proper WID as if we had no Virtual warps
    const size_t proper_wid = tid / WARPSIZE;
-   const size_t blockWid = proper_wid % WARPSIZE;
+   const size_t blockWid = proper_wid % (WARPSIZE/4); //we have twice the warpsize and half the warps per block
 
+   __shared__ uint32_t addMask[WARPSIZE/2];
+   __shared__ uint64_t warpOverflow[WARPSIZE/2];
    // Early quit if we have more warps than elements to insert
    if (wid >= len) {
       return;
    }
+
+   // Zero out shared count;
+   if (proper_w_tid == 0 && blockWid == 0) {
+      for (int i = 0; i < WARPSIZE; i++) {
+         addMask[i] = 0;
+         warpOverflow[i] = 0;
+      }
+   }
+   __syncthreads();
 
    uint64_t subwarp_relative_index = (wid) % (WARPSIZE / VIRTUALWARP);
    uint64_t submask;
@@ -606,20 +639,31 @@ __global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE
       }
    }
 
-   /*
-      Update fill and overflow
-      First thread per warp reduces the total elements added (per Warp)
-   */
+   //Update fill and overflow
+   __syncthreads();
    // Per warp reduction
    int warpTotals = warpReduce<WARPSIZE>(localCount);
    uint64_t perWarpOverflow = warpReduceMax<WARPSIZE>(threadOverflow);
+   __syncthreads();
 
-   // Update fill and overlfow
+   // Store to shmem minding Bank Conflicts
    if (proper_w_tid == 0) {
-      split::s_atomicAdd(d_fill, warpTotals);
-      ;
-      if (perWarpOverflow > *d_overflow) {
-         split::s_atomicExch(d_overflow, nextPow2(perWarpOverflow));
+      // Write the count to the same place
+      addMask[(blockWid)] = warpTotals;
+      warpOverflow[(blockWid)] = perWarpOverflow;
+   }
+
+   __syncthreads();
+   // First warp in block reductions
+   if (blockWid == 0) {
+      uint64_t blockOverflow = warpReduceMax<WARPSIZE/2>(warpOverflow[(proper_w_tid)]);
+      int blockTotal =warpReduce<WARPSIZE/2>(addMask[(proper_w_tid)]);
+      // First thread updates fill and overlfow (1 update per block)
+      if (proper_w_tid == 0) {
+	      if (blockOverflow>*d_overflow){
+		      split::s_atomicExch((unsigned long long*)d_overflow, (unsigned long long)nextPow2(blockOverflow));
+	      }
+         split::s_atomicAdd(d_fill, blockTotal);
       }
    }
    return;
