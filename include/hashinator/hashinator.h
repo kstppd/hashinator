@@ -21,8 +21,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  * */
 #pragma once
-#ifdef HASHINATOR_HOST_ONLY 
-#define SPLIT_HOST_ONLY
+#ifdef HASHINATOR_CPU_ONLY_MODE 
+#define SPLIT_CPU_ONLY_MODE
 #endif
 #include "../common.h"
 #include "../splitvector/gpu_wrappers.h"
@@ -35,14 +35,14 @@
 #include <cassert>
 #include <limits>
 #include <stdexcept>
-#ifndef HASHINATOR_HOST_ONLY
+#ifndef HASHINATOR_CPU_ONLY_MODE
 #include "../splitvector/split_tools.h"
 #include "hashers.h"
 #endif
 
 namespace Hashinator {
 
-#ifndef HASHINATOR_HOST_ONLY
+#ifndef HASHINATOR_CPU_ONLY_MODE
 template <typename T>
 using DefaultMetaAllocator = split::split_unified_allocator<T>;
 #define DefaultHasher                                                                                                  \
@@ -92,14 +92,14 @@ private:
    // Used by the constructors. Preallocates the device pointer and bookeepping info for later use on device.
    // This helps in reducing the number of calls to split_gpuMalloc
    void preallocate_device_handles() {
-#ifndef HASHINATOR_HOST_ONLY
+#ifndef HASHINATOR_CPU_ONLY_MODE
       SPLIT_CHECK_ERR(split_gpuMalloc((void**)&device_map, sizeof(Hashmap)));
 #endif
    }
 
    // Deallocates the bookeepping info and the device pointer
    void deallocate_device_handles() {
-#ifndef HASHINATOR_HOST_ONLY
+#ifndef HASHINATOR_CPU_ONLY_MODE
       SPLIT_CHECK_ERR(split_gpuFree(device_map));
       device_map = nullptr;
 #endif
@@ -137,7 +137,7 @@ public:
       _metaAllocator.deallocate(_mapInfo, 1);
    };
 
-#ifdef HASHINATOR_HOST_ONLY
+#ifdef HASHINATOR_CPU_ONLY_MODE
    void* operator new(size_t len) {
       void* ptr = (void*)malloc(len);
       return ptr;
@@ -219,7 +219,7 @@ public:
       _mapInfo->tombstoneCounter = 0;
    }
 
-#ifndef HASHINATOR_HOST_ONLY
+#ifndef HASHINATOR_CPU_ONLY_MODE
    // Resize the table to fit more things. This is automatically invoked once
    // maxBucketOverflow has triggered. This can only be done on host (so far)
    void device_rehash(int newSizePower, split_gpuStream_t s = 0) {
@@ -313,7 +313,7 @@ public:
       }
 
       // Not found, and we have no free slots to create a new one. So we need to rehash to a larger size.
-#ifdef HASHINATOR_HOST_ONLY
+#ifdef HASHINATOR_CPU_ONLY_MODE
       rehash(_mapInfo->sizePower + 1);
 #else
       device_rehash(_mapInfo->sizePower + 1);
@@ -377,7 +377,7 @@ public:
       }
    }
 
-#ifdef HASHINATOR_HOST_ONLY
+#ifdef HASHINATOR_CPU_ONLY_MODE
    void clear() {
       buckets = split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>(1 << _mapInfo->sizePower, {EMPTYBUCKET, VAL_TYPE()});
       *_mapInfo = MapInfo(_mapInfo->sizePower);
@@ -420,7 +420,7 @@ public:
       }
    }
 
-#ifdef HASHINATOR_HOST_ONLY
+#ifdef HASHINATOR_CPU_ONLY_MODE
    void resize(int newSizePower) { rehash(newSizePower); }
 #else
    void resize(int newSizePower, targets t = targets::host, split_gpuStream_t s = 0) {
@@ -494,7 +494,7 @@ public:
       std::swap(device_map, other.device_map);
    }
 
-#ifdef HASHINATOR_HOST_ONLY
+#ifdef HASHINATOR_CPU_ONLY_MODE
    // Try to get the overflow back to the original one
    void performCleanupTasks() {
       while (_mapInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW) {
@@ -714,7 +714,7 @@ public:
       }
    }
 
-#ifndef HASHINATOR_HOST_ONLY
+#ifndef HASHINATOR_CPU_ONLY_MODE
    // Pass memAdvice to hashinator and the underlying splitvector
    HOSTONLY void memAdvise(split_gpuMemoryAdvise advice, int device, split_gpuStream_t stream = 0) {
       buckets.memAdvise(advice, device, stream);

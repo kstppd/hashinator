@@ -3,8 +3,8 @@
 #include <chrono>
 #include <vector>
 #include <gtest/gtest.h>
-#ifndef SPLIT_HOST_ONLY
-#define  SPLIT_HOST_ONLY
+#ifndef SPLIT_CPU_ONLY_MODE
+#define  SPLIT_CPU_ONLY_MODE
 #endif
 #include "../../include/splitvector/splitvec.h"
 

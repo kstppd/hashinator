@@ -19,7 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  * */
 #pragma once
-#ifndef SPLIT_HOST_ONLY
+#ifndef SPLIT_CPU_ONLY_MODE
 
 #ifdef __NVCC__
 #include <cuda_runtime_api.h>

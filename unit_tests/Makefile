@@ -59,4 +59,4 @@ hybrid_gpu.o: hybrid/main.cpp
 	${CC} -x cu  ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o hybrid_gpu hybrid/main.cpp
 
 hybrid_cpu.o: hybrid/main.cpp
-	g++ -fsanitize=address -fno-omit-frame-pointer ${CXXFLAGS} -O3  -std=c++17 -DHASHINATOR_HOST_ONLY  -o hybrid_cpu hybrid/main.cpp -I/usr/local/cuda/include/ -L/usr/local/cuda/lib64 -lcudart -lcuda  -lgtest -lgtest_main -lpthread  -Wall  -Wpedantic -Werror -static-libasan
+	g++ -fsanitize=address -fno-omit-frame-pointer ${CXXFLAGS} -O3  -std=c++17 -DHASHINATOR_CPU_ONLY_MODE  -o hybrid_cpu hybrid/main.cpp -I/usr/local/cuda/include/ -L/usr/local/cuda/lib64 -lcudart -lcuda  -lgtest -lgtest_main -lpthread  -Wall  -Wpedantic -Werror -static-libasan

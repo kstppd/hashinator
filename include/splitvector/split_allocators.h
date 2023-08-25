@@ -24,7 +24,7 @@
 #include "archMacros.h"
 namespace split {
 
-#ifndef SPLIT_HOST_ONLY
+#ifndef SPLIT_CPU_ONLY_MODE
 
 #ifdef __NVCC__
 /* Define the CUDA error checking macro */

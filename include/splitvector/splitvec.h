@@ -29,7 +29,7 @@
 #include <memory>
 #include <stdlib.h>
 
-#ifndef SPLIT_HOST_ONLY
+#ifndef SPLIT_CPU_ONLY_MODE
 #ifdef __NVCC__
 #include <cuda_runtime_api.h>
 #else
@@ -372,7 +372,7 @@ public:
    HOSTONLY
    void operator delete[](void* ptr) { Allocator::deallocate(ptr); }
 
-#ifndef SPLIT_HOST_ONLY
+#ifndef SPLIT_CPU_ONLY_MODE
    /**
     * @brief Uploads the SplitVector to the GPU.
     *
@@ -630,7 +630,7 @@ public:
       *_size = newSize;
    }
 
-#ifndef SPLIT_HOST_ONLY
+#ifndef SPLIT_CPU_ONLY_MODE
    /**
     * @brief Resize the SplitVector on the device.
     *
@@ -796,7 +796,7 @@ public:
       return;
    }
 
-#ifndef SPLIT_HOST_ONLY
+#ifndef SPLIT_CPU_ONLY_MODE
    /**
     * @brief Push an element to the back of the SplitVector on the device.
     *
@@ -1090,7 +1090,7 @@ public:
       return retval;
    }
 
-#ifndef SPLIT_HOST_ONLY
+#ifndef SPLIT_CPU_ONLY_MODE
    /**
     * @brief Device version of insert for inserting a range of elements at the specified position.
     *

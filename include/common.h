@@ -18,7 +18,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  * */
 #pragma once
-#ifdef HASHINATOR_HOST_ONLY
+#ifdef HASHINATOR_CPU_ONLY_MODE
 #define HASHINATOR_DEVICEONLY
 #define HASHINATOR_HOSTDEVICE
 #else
