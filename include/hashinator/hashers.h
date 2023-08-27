@@ -471,8 +471,8 @@ __global__ void reset_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY
       return;
    }
 
-   uint32_t subwarp_relative_index = (wid) % (WARPSIZE / VIRTUALWARP);
-   uint32_t submask;
+   uint64_t subwarp_relative_index = (wid) % (WARPSIZE / VIRTUALWARP);
+   uint64_t submask;
    if constexpr (elementsPerWarp == 1) {
       // TODO mind AMD 64 thread wavefronts
       submask = SPLIT_VOTING_MASK;
@@ -485,7 +485,7 @@ __global__ void reset_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY
    const int bitMask = (1 << (sizePower)) - 1;
    const auto hashIndex = HashFunction::_hash(candidate.first, sizePower);
    const size_t optimalindex = (hashIndex)&bitMask;
-   uint32_t vWarpDone = 0; // state of virtual warp
+   uint64_t vWarpDone = 0; // state of virtual warp
 
    for (size_t i = 0; i < (1 << sizePower); i += VIRTUALWARP) {
 
