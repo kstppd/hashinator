@@ -914,6 +914,7 @@ namespace Hashinator{
              Overflown_Predicate<KEY_TYPE,VAL_TYPE>(buckets.data(),_mapInfo->sizePower),
              s);
          
+         _mapInfo-> currentMaxBucketOverflow= defaults::BUCKET_OVERFLOW;
 
          if (nOverflownElements ==0 ){
             cudaFreeAsync(overflownElements,s);
