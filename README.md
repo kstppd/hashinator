@@ -14,7 +14,7 @@
 
 + Hashinator and SplitVector are arch agnostic. The codebase can be compiled with NVCC or ROCm without the need of hipification.  
 
-+ For systems without GPUs, Hashinator and SplitVector compile with a c++ compiler by defining ```-DHASHINATOR_HOST_ONLY``` and ```-DSPLIT_HOST_ONLY``` respectively.
++ For systems without GPUs, Hashinator and SplitVector compile with a c++ compiler by defining ```-DHASHINATOR_CPU_ONLY_MODE``` and ```-DSPLIT_CPU_ONLY_MODE``` respectively.
 
 + Hashinator is open-source and distributed under GPL-3.0.
 
