@@ -80,7 +80,7 @@ HASHINATOR_DEVICEONLY __forceinline__ uint64_t warpReduceMax(uint64_t entry) {
  * If an elements in src is not found this will assert(false)
  * */
 template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(),
-          class HashFunction = HashFunctions::Fibonacci<KEY_TYPE> ,int WARPSIZE = defaults::WARPSIZE,
+          class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>, int WARPSIZE = defaults::WARPSIZE,
           int elementsPerWarp>
 __global__ void reset_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* dst,
                                const int sizePower, size_t maxoverflow, size_t len)
@@ -113,7 +113,7 @@ __global__ void reset_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY
    uint32_t vWarpDone = 0; // state of virtual warp
 
    for (size_t i = 0; i < (1 << sizePower); i += VIRTUALWARP) {
-      
+
       // Check if this virtual warp is done.
       if (vWarpDone) {
          break;
@@ -131,8 +131,8 @@ __global__ void reset_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY
          int winner = split::s_findFirstSig(mask) - 1;
          int sub_winner = winner - (subwarp_relative_index)*VIRTUALWARP;
          if (w_tid == sub_winner) {
-            dst[probingindex].first=EMPTYBUCKET;
-            vWarpDone=1;
+            dst[probingindex].first = EMPTYBUCKET;
+            vWarpDone = 1;
          }
          // If any of the virtual warp threads are done the the whole
          // Virtual warp is done
@@ -450,13 +450,12 @@ __global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE
 #endif
 #ifdef __HIP_PLATFORM_HCC___
 
-
 /*
  * Resets all elements pointed by src to EMPTY in dst
  * If an elements in src is not found this will assert(false)
  * */
 template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(),
-          class HashFunction = HashFunctions::Fibonacci<KEY_TYPE> ,int WARPSIZE = defaults::WARPSIZE,
+          class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>, int WARPSIZE = defaults::WARPSIZE,
           int elementsPerWarp>
 __global__ void reset_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* dst,
                                const int sizePower, size_t maxoverflow, size_t len)
@@ -479,7 +478,7 @@ __global__ void reset_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY
       submask = SPLIT_VOTING_MASK;
    } else {
       submask = split::getIntraWarpMask_AMD(0, VIRTUALWARP * subwarp_relative_index + 1,
-                                             VIRTUALWARP * subwarp_relative_index + VIRTUALWARP);
+                                            VIRTUALWARP * subwarp_relative_index + VIRTUALWARP);
    }
 
    hash_pair<KEY_TYPE, VAL_TYPE> candidate = src[wid];
@@ -489,7 +488,7 @@ __global__ void reset_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY
    uint32_t vWarpDone = 0; // state of virtual warp
 
    for (size_t i = 0; i < (1 << sizePower); i += VIRTUALWARP) {
-      
+
       // Check if this virtual warp is done.
       if (vWarpDone) {
          break;
@@ -501,14 +500,14 @@ __global__ void reset_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY
 
       // vote for available emptybuckets in warp region
       // Note that this has to be done before voting for already existing elements (below)
-      auto mask = split::s_warpVote(target.first == candidate.first, submask)&submask;
+      auto mask = split::s_warpVote(target.first == candidate.first, submask) & submask;
 
       while (mask && !vWarpDone) {
          int winner = split::s_findFirstSig(mask) - 1;
          int sub_winner = winner - (subwarp_relative_index)*VIRTUALWARP;
          if (w_tid == sub_winner) {
-            dst[probingindex].first=EMPTYBUCKET;
-            vWarpDone=1;
+            dst[probingindex].first = EMPTYBUCKET;
+            vWarpDone = 1;
          }
          // If any of the virtual warp threads are done the the whole
          // Virtual warp is done
@@ -1070,23 +1069,24 @@ public:
    }
 
    // Reset wrapper
-   static void reset(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* dst,
-                      const int sizePower, size_t maxoverflow, size_t len,split_gpuStream_t s=0) {
+   static void reset(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* dst, const int sizePower,
+                     size_t maxoverflow, size_t len, split_gpuStream_t s = 0) {
       size_t blocks, blockSize;
       launchParams(len, blocks, blockSize);
-      reset_to_empty<KEY_TYPE, VAL_TYPE, EMPTYBUCKET,  HashFunction, defaults::WARPSIZE, elementsPerWarp>
-          <<<blocks, blockSize, 0, s>>>(src,dst,sizePower, maxoverflow, len);
+      reset_to_empty<KEY_TYPE, VAL_TYPE, EMPTYBUCKET, HashFunction, defaults::WARPSIZE, elementsPerWarp>
+          <<<blocks, blockSize, 0, s>>>(src, dst, sizePower, maxoverflow, len);
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    }
 
    // Reset wrapper for all elements
-   static void reset_all(hash_pair<KEY_TYPE, VAL_TYPE>* dst,size_t len,split_gpuStream_t s=0) {
+   static void reset_all(hash_pair<KEY_TYPE, VAL_TYPE>* dst, size_t len, split_gpuStream_t s = 0) {
       size_t blocksNeeded = len / defaults::MAX_BLOCKSIZE;
       blocksNeeded = blocksNeeded + (blocksNeeded == 0);
       Hashers::reset_all_to_empty<KEY_TYPE, VAL_TYPE, EMPTYBUCKET>
-          <<<blocksNeeded, defaults::MAX_BLOCKSIZE, 0, s>>>(dst,len);
+          <<<blocksNeeded, defaults::MAX_BLOCKSIZE, 0, s>>>(dst, len);
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    }
+
 private:
    static void launchParams(size_t N, size_t& blocks, size_t& blockSize) {
       // fast ceil for positive ints

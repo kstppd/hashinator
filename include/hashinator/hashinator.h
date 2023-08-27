@@ -21,7 +21,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  * */
 #pragma once
-#ifdef HASHINATOR_CPU_ONLY_MODE 
+#ifdef HASHINATOR_CPU_ONLY_MODE
 #define SPLIT_CPU_ONLY_MODE
 #endif
 #include "../common.h"
@@ -396,8 +396,8 @@ public:
          if (prefetches) {
             buckets.optimizeGPU(s);
          }
-         DeviceHasher::reset_all(buckets.data(),buckets.size(),s);
-         _mapInfo->fill=0;
+         DeviceHasher::reset_all(buckets.data(), buckets.size(), s);
+         _mapInfo->fill = 0;
          set_status((_mapInfo->fill == 0) ? success : fail);
          break;
 
@@ -824,7 +824,7 @@ public:
          return isOverflown;
       };
 
-      //Extract overflown elements and reset overflow
+      // Extract overflown elements and reset overflow
       uint32_t nOverflownElements = extractPattern(overflownElements, isOverflown, s);
       _mapInfo->currentMaxBucketOverflow = defaults::BUCKET_OVERFLOW;
 
@@ -834,7 +834,8 @@ public:
       }
       // If we do have overflown elements we put them back in the buckets
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-      DeviceHasher::reset(overflownElements, buckets.data(), _mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,nOverflownElements,s);
+      DeviceHasher::reset(overflownElements, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
+                          nOverflownElements, s);
       _mapInfo->fill -= nOverflownElements;
       DeviceHasher::insert(overflownElements, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
                            &_mapInfo->currentMaxBucketOverflow, &_mapInfo->fill, nOverflownElements, &_mapInfo->err, s);
