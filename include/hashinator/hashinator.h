@@ -828,7 +828,9 @@ public:
          return isOverflown;
       };
 
+      //Extract overflown elements and reset overflow
       uint32_t nOverflownElements = extractPattern(overflownElements, isOverflown, s);
+      _mapInfo->currentMaxBucketOverflow = defaults::BUCKET_OVERFLOW;
 
       if (nOverflownElements == 0) {
          SPLIT_CHECK_ERR(split_gpuFreeAsync(overflownElements, s));
