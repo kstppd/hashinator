@@ -385,7 +385,6 @@ public:
    }
 #else
    void clear(targets t = targets::host, split_gpuStream_t s = 0, bool prefetches = true) {
-      size_t blocksNeeded;
       switch (t) {
       case targets::host:
          buckets =
@@ -397,11 +396,8 @@ public:
          if (prefetches) {
             buckets.optimizeGPU(s);
          }
-         blocksNeeded = buckets.size() / defaults::MAX_BLOCKSIZE;
-         blocksNeeded = blocksNeeded + (blocksNeeded == 0);
-         Hashers::reset_all_to_empty<KEY_TYPE, VAL_TYPE, EMPTYBUCKET>
-             <<<blocksNeeded, defaults::MAX_BLOCKSIZE, 0, s>>>(buckets.data(), buckets.size(), &_mapInfo->fill);
-         SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+         DeviceHasher::reset_all(buckets.data(),buckets.size(),s);
+         _mapInfo->fill=0;
          set_status((_mapInfo->fill == 0) ? success : fail);
          break;
 
@@ -838,13 +834,8 @@ public:
       }
       // If we do have overflown elements we put them back in the buckets
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-      Hashers::reset_to_empty<KEY_TYPE, VAL_TYPE, EMPTYBUCKET, HashFunction>
-          <<<nOverflownElements, defaults::MAX_BLOCKSIZE, 0, s>>>(
-              overflownElements, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
-              nOverflownElements);
+      DeviceHasher::reset(overflownElements, buckets.data(), _mapInfo->sizePower,_mapInfo->currentMaxBucketOverflow,nOverflownElements,s);
       _mapInfo->fill -= nOverflownElements;
-      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-
       DeviceHasher::insert(overflownElements, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
                            &_mapInfo->currentMaxBucketOverflow, &_mapInfo->fill, nOverflownElements, &_mapInfo->err, s);
 
