@@ -1,12 +1,12 @@
 CC=nvcc  
 LNK=nvcc 
-OPT=  -Xcompiler 
+OPT= -O3 -Xcompiler 
 CXXFLAGS= 
 EXTRA= -g3  --std=c++17
 EXTRA+= -gencode arch=compute_60,code=sm_60  -L /usr/lib/x86_64-linux-gnu
 EXTRA+=  -DHASHMAPDEBUG --expt-relaxed-constexpr  --expt-extended-lambda
 GTEST=-lgtest -lgtest_main -lpthread
-OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o delete_mechanism.o insertion_mechanism.o hybrid_cpu.o hybrid_gpu.o pointer_test.o benchmark.o benchmarkLF.o tbPerf.o
+OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o delete_mechanism.o insertion_mechanism.o hybrid_cpu.o hybrid_gpu.o pointer_test.o benchmark.o benchmarkLF.o tbPerf.o realistic.o
 
 
 default: tests
@@ -27,6 +27,7 @@ allclean:
 	rm benchmark_hashinator &
 	rm benchmark_hashinator_lf &
 	rm benchmark_hashinator_tb &
+	rm benchmark_hashinator_rl &
 	rm insertion
 
 gtest_hashmap.o: hashmap_unit_test/main.cu
@@ -37,6 +38,9 @@ benchmark.o: benchmark/main.cu
 
 tbPerf.o: benchmark/tbPerf.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o benchmark_hashinator_tb benchmark/tbPerf.cu
+
+realistic.o: benchmark/realistic.cu
+	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o benchmark_hashinator_rl benchmark/realistic.cu
 
 benchmarkLF.o: benchmark/loadFactor.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o benchmark_hashinator_lf benchmark/loadFactor.cu
