@@ -26,6 +26,7 @@ allclean:
 	rm pointertest &
 	rm benchmark_hashinator &
 	rm benchmark_hashinator_lf &
+	rm benchmark_hashinator_tb &
 	rm insertion
 
 gtest_hashmap.o: hashmap_unit_test/main.cu
