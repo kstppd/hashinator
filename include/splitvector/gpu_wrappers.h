@@ -125,7 +125,7 @@ __device__ __forceinline__ T s_atomicSub(T* address, U val) noexcept {
 /**
 * @brief Returns the submask needed by each Virtual Warp during voting (CUDA variant).
 */
-[[nodiscard]] __device__ __forceinline__ uint32_t getIntraWarpMask_CUDA(uint32_t n, uint32_t l, uint32_t r) noexcept {
+[[nodiscard]] __device__ __forceinline__ uint32_t constexpr getIntraWarpMask_CUDA(uint32_t n, uint32_t l, uint32_t r) noexcept {
    uint32_t num = ((1 << r) - 1) ^ ((1 << (l - 1)) - 1);
    return (n ^ num);
 };
@@ -133,7 +133,7 @@ __device__ __forceinline__ T s_atomicSub(T* address, U val) noexcept {
 /**
 * @brief Returns the submask needed by each Virtual Warp during voting (AMD variant).
 */
-[[nodiscard]] __device__ __forceinline__ uint64_t getIntraWarpMask_AMD(uint64_t n, uint64_t l, uint64_t r) noexcept {
+[[nodiscard]] __device__ __forceinline__ uint64_t constexpr getIntraWarpMask_AMD(uint64_t n, uint64_t l, uint64_t r) noexcept {
    uint64_t num = ((1ull << r) - 1) ^ ((1ull << (l - 1)) - 1);
    return (n ^ num);
 };

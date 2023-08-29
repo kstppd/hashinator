@@ -55,7 +55,7 @@ namespace tools {
  * @param val The value to be checked.
  * @return constexpr inline bool Returns true if the value is a power of two, false otherwise.
  */
-constexpr inline bool isPow2(const size_t val) { return (val & (val - 1)) == 0; }
+constexpr inline bool isPow2(const size_t val) noexcept { return (val & (val - 1)) == 0; }
 
 /**
  * @brief GPU kernel for performing scan-add operation.

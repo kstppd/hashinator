@@ -36,7 +36,7 @@ struct Fibonacci {
     * @param sizePower The size power for mixing the key.
     * @return uint32_t The computed hash value.
     */
-   [[nodiscard]] HOSTDEVICE inline static uint32_t fibhash(uint32_t key, const int sizePower) {
+   [[nodiscard]] HOSTDEVICE inline static constexpr uint32_t fibhash(uint32_t key, const int sizePower) {
       key ^= key >> (32 - sizePower);
       uint32_t retval = (uint64_t)(key * 2654435769ul) >> (32 - sizePower);
       return retval;
@@ -49,7 +49,7 @@ struct Fibonacci {
     * @param sizePower The size power for mixing the key.
     * @return uint64_t The computed hash value.
     */
-   [[nodiscard]] HOSTDEVICE inline static uint64_t fibhash(uint64_t key, int sizePower) {
+   [[nodiscard]] HOSTDEVICE inline static uint64_t constexpr fibhash(uint64_t key, int sizePower) {
       key ^= key >> (64 - sizePower);
       uint64_t retval = (key * 11400714819323198485ull) >> (64 - sizePower);
       return retval;
@@ -65,7 +65,7 @@ struct Fibonacci {
     * @param sizePower The size power for mixing the key.
     * @return T The computed hash value.
     */
-   [[nodiscard]] HOSTDEVICE inline static T _hash(T key, const int sizePower) { return fibhash(key, sizePower); }
+   [[nodiscard]] HOSTDEVICE inline static constexpr T _hash(T key, const int sizePower) { return fibhash(key, sizePower); }
 };
 } // namespace HashFunctions
 } // namespace Hashinator
