@@ -65,7 +65,9 @@ struct Fibonacci {
     * @param sizePower The size power for mixing the key.
     * @return T The computed hash value.
     */
-   [[nodiscard]] HOSTDEVICE inline static constexpr T _hash(T key, const int sizePower) { return fibhash(key, sizePower); }
+   [[nodiscard]] HOSTDEVICE inline static constexpr T _hash(T key, const int sizePower) {
+      return fibhash(key, sizePower);
+   }
 };
 } // namespace HashFunctions
 } // namespace Hashinator

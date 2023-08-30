@@ -868,7 +868,7 @@ public:
 
    // Uses Hasher's insert_kernel to insert all elements
    void insert(hash_pair<KEY_TYPE, VAL_TYPE>* src, size_t len, float targetLF = 0.5, split_gpuStream_t s = 0,
-         bool prefetches = true) {
+               bool prefetches = true) {
       if (len == 0) {
          set_status(status::success);
          return;

@@ -411,7 +411,6 @@ __global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE
       }
    }
 
-
    /*
       Update fill and overflow in 2 steps:
       Step 1--> First thread per warp reduces the total elements added (per Warp)

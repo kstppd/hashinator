@@ -1,7 +1,7 @@
 /* File:    common.h
  * Authors: Kostis Papadakis (2023)
  *
- * Description: Common tools used in hashinator 
+ * Description: Common tools used in hashinator
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
