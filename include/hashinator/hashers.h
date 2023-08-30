@@ -363,6 +363,7 @@ __global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE
       if (vWarpDone) {
          break;
       }
+
       // Get the position we should be looking into
       size_t probingindex = ((hashIndex + i + w_tid) & bitMask);
       auto target = buckets[probingindex];
@@ -377,7 +378,7 @@ __global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE
          int winner = split::s_findFirstSig(already_exists) - 1;
          int sub_winner = winner - (subwarp_relative_index)*VIRTUALWARP;
          if (w_tid == sub_winner) {
-            split::s_atomicExch(&target.second, candidateVal);
+            split::s_atomicExch(&buckets[probingindex].second, candidateVal);
             // This virtual warp is now done.
             vWarpDone = 1;
          }
@@ -410,15 +411,18 @@ __global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE
       }
    }
 
+
    /*
       Update fill and overflow in 2 steps:
       Step 1--> First thread per warp reduces the total elements added (per Warp)
       Step 2--> Reduce the blockTotal from the warpTotals but do it in registers using the first warp in the block
    */
-   __syncwarp();
+
    // Per warp reduction
+   __syncwarp();
    int warpTotals = warpReduce<WARPSIZE>(localCount);
    uint64_t perWarpOverflow = warpReduceMax<WARPSIZE>(threadOverflow);
+   __syncwarp();
 
    // Store to shmem minding Bank Conflicts
    if (proper_w_tid == 0) {
@@ -719,7 +723,7 @@ __global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE
          int winner = split::s_findFirstSig(already_exists) - 1;
          int sub_winner = winner - (subwarp_relative_index)*VIRTUALWARP;
          if (w_tid == sub_winner) {
-            split::s_atomicExch(&target.second, candidateVal);
+            split::s_atomicExch(&buckets[probingindex].second, candidateVal);
             // This virtual warp is now done.
             vWarpDone = 1;
          }
