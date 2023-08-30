@@ -80,6 +80,11 @@ int main(int argc, char* argv[]){
       sz=atoi(argv[1]);
    }
    hashmap hmap(sz+1);
+   int device;
+   split_gpuGetDevice(&device);
+   hmap.memAdvise(cudaMemAdviseSetPreferredLocation,device);
+   hmap.memAdvise(cudaMemAdviseSetAccessedBy,device);
+   hmap.optimizeGPU();
    hmap.optimizeGPU();
    vector cpu_src;
    key_vec cpu_keys;
