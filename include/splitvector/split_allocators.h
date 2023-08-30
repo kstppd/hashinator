@@ -29,7 +29,7 @@ namespace split {
 #ifdef __NVCC__
 /* Define the CUDA error checking macro */
 #define SPLIT_CHECK_ERR(err) (split::cuda_error(err, __FILE__, __LINE__))
-void cuda_error(cudaError_t err, const char* file, int line) {
+static void cuda_error(cudaError_t err, const char* file, int line) {
    if (err != cudaSuccess) {
       printf("\n\n%s in %s at line %d\n", cudaGetErrorString(err), file, line);
       exit(1);
@@ -39,7 +39,7 @@ void cuda_error(cudaError_t err, const char* file, int line) {
 #ifdef __HIP_PLATFORM_HCC___
 /* Define the HIP error checking macro */
 #define SPLIT_CHECK_ERR(err) (split::hip_error(err, __FILE__, __LINE__))
-void hip_error(hipError_t err, const char* file, int line) {
+static void hip_error(hipError_t err, const char* file, int line) {
    if (err != hipSuccess) {
       printf("\n\n%s in %s at line %d\n", hipGetErrorString(err), file, line);
       exit(1);
