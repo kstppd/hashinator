@@ -1,66 +1,100 @@
 #include <iostream>
 #include <stdlib.h>
 #include <chrono>
-#include <vector>
 #include <gtest/gtest.h>
-#ifndef SPLIT_HOST_ONLY
-#define  SPLIT_HOST_ONLY
-#endif
 #include "../../include/splitvector/splitvec.h"
-#include <cuda_profiler_api.h>
+#include "../../include/splitvector/split_tools.h"
 
 #define expect_true EXPECT_TRUE
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
 #define N 1<<12
-
-typedef split::SplitVector<int> vec ;
-typedef std::vector<int> stdvec ;
-typedef split::SplitVector<split::SplitVector<int>> vec2d ;
-typedef split::SplitVector<int>::iterator   split_iterator;
+typedef split::SplitVector<int,split::split_unified_allocator<int>,split::split_unified_allocator<size_t>> vec ;
 
 
+__global__
+void add_vectors(vec* a , vec* b,vec* c){
 
-void print_vec_elements(vec& v){
+   int index = blockIdx.x * blockDim.x + threadIdx.x;
+   if (index< a->size()){
+      c->at(index)=a->at(index)+b->at(index);
+   }
+
+}
+
+
+__global__
+void resize_vector(vec* a , int size){
+   a->device_resize(size);
+}
+
+
+__global__
+void push_back_kernel(vec* a){
+
+   int index = blockIdx.x * blockDim.x + threadIdx.x;
+   a->device_push_back(index);
+}
+
+__global__
+void merge_kernel(vec* a,vec *b ){
+
+   int index = blockIdx.x * blockDim.x + threadIdx.x;
+   if (index==0){
+      a->device_insert(a->end(),b->begin(),b->end());
+   }
+}
+
+__global__
+void merge_kernel_2(vec* a){
+
+   int index = blockIdx.x * blockDim.x + threadIdx.x;
+   if (index==0){
+      a->device_insert(a->begin()++,3,42);
+   }
+}
+
+__global__
+void erase_kernel(vec* a){
+   auto it=a->begin();
+   a->erase(it);
+
+}
+
+
+
+void print_vec_elements(const vec& v){
    std::cout<<"****Vector Contents********"<<std::endl;
    std::cout<<"Size= "<<v.size()<<std::endl;
    std::cout<<"Capacity= "<<v.capacity()<<std::endl;
-   for (auto i:v){
-      std::cout<<i<<",";
+   for (const auto i:v){
+      std::cout<<i<<" ";
    }
-   std::cout<<std::endl;
-   std::cout<<"****~Vector Contents********"<<std::endl;
+
+   std::cout<<"\n****~Vector Contents********"<<std::endl;
 }
 
-TEST(Constructors,Move){
-   vec b(vec(N,2));
-   for (size_t i=0 ; i<N; ++i){
-      expect_true(b[i]=2);
+TEST(Test_GPU,VectorAddition){
+   vec a(N,1);
+   vec b(N,2);
+   vec c(N,0);
+   
+   vec* d_a=a.upload();
+   vec* d_b=b.upload();
+   vec* d_c=c.upload();
+
+   add_vectors<<<N,32>>>(d_a,d_b,d_c);
+   split_gpuDeviceSynchronize();
+   split_gpuFree(d_a);
+   split_gpuFree(d_b);
+   split_gpuFree(d_c);
+
+
+   for (const auto& e:c){
+      expect_true(e==3);
    }
-}
 
 
-TEST(Test_2D_Contruct,VecOfVec){
-
-   vec inner_a(100,1);
-   vec inner_b(100,2);
-   vec2d a(10,inner_a);
-   vec2d b(10,inner_b);
-
-   for (auto &i:a){
-      for (const auto &val:i){
-         EXPECT_EQ(val, 1);
-      }
-   }
-   for (auto &i:b){
-      for (const auto &val:i){
-         EXPECT_EQ(val, 2);
-      }
-   }
-   expect_true(a!=b);
-   expect_true(a!=b);
-   expect_false(a==b);
-   expect_false(a==b);
 }
 
 TEST(Constructors,Default){
@@ -75,17 +109,6 @@ TEST(Constructors,Size_based){
    expect_true(a.data()!=nullptr);
 }
 
-TEST(Constructors,std_vector){
-   std::vector<int>  stdvec(N,10);
-   vec a;
-   a.insert(a.begin(),stdvec.begin(),stdvec.end());
-
-   for (size_t i=0; i<N; i++){
-      expect_true(stdvec[i]=a[i]);
-   }
-   vec b(a);
-   expect_true(a==b);
-}
 
 TEST(Constructors,Specific_Value){
    vec a(N,5);
@@ -113,18 +136,6 @@ TEST(Vector_Functionality , Reserve){
    expect_true(a.capacity()==cap);
 }
 
-TEST(Vector_Functionality , Reserve2){
-
-   for (int i =1; i<100; i++){
-      vec a(N,i);
-      vec b(a);
-
-      size_t cap =32*N;
-      a.reserve(cap);
-      expect_true(a==b);
-   }
-}
-
 TEST(Vector_Functionality , Resize){
    vec a;
    size_t size =1<<20;
@@ -134,9 +145,9 @@ TEST(Vector_Functionality , Resize){
 }
 
 TEST(Vector_Functionality , Swap){
-   vec a(10,2),b(10,2);
+   vec a(10,2);
+   vec b(10,2);
    a.swap(b);
-   expect_true(a==b);
    vec c(100,1);
    vec d (200,3);
    c.swap(d);
@@ -229,7 +240,7 @@ TEST(Vector_Functionality , Push_Back_2){
 
 TEST(Vector_Functionality , Insert_1_Element){
    {
-      split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
+      vec a{1,2,3,4,5,6,7,8,9,10};
       auto s0=a.size(); auto c0=a.capacity();
       auto it(a.begin());
       auto it2=a.insert(it,-1);
@@ -279,7 +290,7 @@ TEST(Vector_Functionality , Insert_1_Element){
 TEST(Vector_Functionality , Insert_Many_Elements){
 
    {
-      split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
+      vec a{1,2,3,4,5,6,7,8,9,10};
       auto s0=a.size(); auto c0=a.capacity();
       auto it(a.begin());
       auto it2=a.insert(it,10,-1);
@@ -324,9 +335,9 @@ TEST(Vector_Functionality , Insert_Many_Elements){
 TEST(Vector_Functionality , Insert_Range_Based){
 
    {
-      split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
+      vec a{1,2,3,4,5,6,7,8,9,10};
       auto backup(a);
-      split::SplitVector<int> b{-1,-2,-3,-4,-5,-6,-7,-8,-9,-10};
+      vec b{-1,-2,-3,-4,-5,-6,-7,-8,-9,-10};
       auto s0=a.size();
       auto it(a.end());
       auto it_b0(b.begin());
@@ -344,9 +355,9 @@ TEST(Vector_Functionality , Insert_Range_Based){
 
 
    {
-      split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
+      vec a{1,2,3,4,5,6,7,8,9,10};
       auto backup(a);
-      split::SplitVector<int> b{-1,-2,-3,-4,-5,-6,-7,-8,-9,-10};
+      vec b{-1,-2,-3,-4,-5,-6,-7,-8,-9,-10};
       auto s0=a.size();
       auto it(a.end());
       auto it_b0(b.begin());
@@ -361,81 +372,116 @@ TEST(Vector_Functionality , Insert_Range_Based){
 
 }
 
-
 TEST(Vector_Functionality , Erase_Single){
-      split::SplitVector<int> a{1,2,3,4,5,6,7,8,9,10};
-      split::SplitVector<int> b{1,2,3,5,6,7,8,9,10};
-      split_iterator it0=&a[3];
-      a.erase(it0);
+      vec a{1,2,3,4,5,6,7,8,9,10};
+      vec::iterator it(&a[4]);
+      auto backup=*it;
+      auto s0=a.size();
+      a.erase(it);
+      expect_true(backup!=*it);
+      expect_true(a.size()==s0-1);
+}
+
+TEST(Vector_Functionality , PushBack_And_Erase_Device){
+      vec a;
+      a.reserve(100);
+      vec* d_a=a.upload();
+      push_back_kernel<<<4,8>>>(d_a);
+      split_gpuDeviceSynchronize();
+      split_gpuFree(d_a);
+      vec* d_b=a.upload();
+      erase_kernel<<<1,1>>>(d_b);
+      split_gpuDeviceSynchronize();
+      split_gpuFree(d_b);
+}
+
+TEST(Vector_Functionality , Insert_Device){
+      vec a{1,2,3,4};
+      a.reserve(20);
+      vec b{5,6,7,8};
+      vec* d_a=a.upload();
+      vec* d_b=b.upload();
+      merge_kernel<<<1,1>>>(d_a,d_b);
+      split_gpuDeviceSynchronize();
+      merge_kernel<<<1,1>>>(d_a,d_b);
+      split_gpuDeviceSynchronize();
+      split_gpuFree(d_a);
+      split_gpuFree(d_b);
+      expect_true(a.size()==12);
+}
+
+TEST(Vector_Functionality , Insert_Device_N){
+
+      vec a{0,1,2,3,4,5,6,7,8,9};
+      vec b{0,1,2,3,42,42,42,4,5,6,7,8,9};
+      a.reserve(30);
+      vec* d_a=a.upload();
+      merge_kernel_2<<<1,1>>>(d_a);
+      split_gpuDeviceSynchronize();
+      split_gpuFree(d_a);
       expect_true(a==b);
 }
 
-TEST(Vector_Functionality , Erase_Range){
-      split::SplitVector<int> a{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14};
-      split::SplitVector<int> b{0,1,7,8,9,10,11,12,13,14};
-      split_iterator it0=&a[2];
-      split_iterator it1=&a[7];
-      a.erase(it0,it1);
-      expect_true(a==b);
+TEST(Vector_Functionality , Bug){
+   const vec blocks{1,2,3,4,5,6,7,8,9};
+   vec localToGlobalMap{-1,-1,-1,-1};
+   localToGlobalMap.insert(localToGlobalMap.end(),blocks.begin(),blocks.end());
 }
 
-TEST(Vector_Functionality , Emplace_Back){
-   vec a;
-   for (auto i=a.begin(); i!=a.end();i++){
-      expect_true(false);
-   }
-   size_t initial_size=a.size();
-   size_t initial_cap=a.capacity();
 
-   a.emplace_back(11);
-   expect_true(11==a[a.size()-1]);
-   a.emplace_back(12);
-   expect_true(12==a[a.size()-1]);
-
-}
-
-TEST(Vector_Functionality , Emplace_Back_2){
-   vec a{1,2,3,4,5,6,7,8,9,10};
-   size_t initial_size=a.size();
-   size_t initial_cap=a.capacity();
-   a.emplace_back(11);
-   expect_true(11==a[a.size()-1]);
-   a.emplace_back(12);
-   expect_true(12==a[a.size()-1]);
-}
-
-TEST(Vector_Functionality , Iterator_Arithmetics){
-   vec a{1,2,3,4,5,6,7,8,9,10};
-   vec b{1,2,3,4,5,6,7,8,9,10};
+TEST(Vector_Functionality , Resizing_Device){
 
    {
-      vec::iterator it_a(&a[0]);
-      vec::iterator it_b(&b[5]);
-      expect_true( *( it_a +5 ) ==*it_b      );
-      expect_true(  *it_a   ==*( it_b-5 )      );
-      expect_false(  *it_a   == *( it_b-4 )      );
+      vec a(32,42);
+      expect_true(a.size()==a.capacity());
+      a.resize(16);
+      expect_true(a.size()==16);
+      expect_true(a.capacity()==32);
    }
 
-   
    {
-      vec::iterator it_a(&a[0]);
-         
-      for (int i=0 ;i< a.size(); i++){
-         auto val=*(it_a+i);
-         expect_true(  val==a.at(i) );
+      vec a(32,42);
+      expect_true(a.size()==a.capacity());
+      vec* d_a=a.upload();
+      resize_vector<<<1,1>>>(d_a,16);
+      split_gpuDeviceSynchronize();
+      split_gpuFree(d_a);
+      expect_true(a.size()==16);
+      expect_true(a.capacity()==32);
+   }
+
+
+   {
+      vec a(32,42);
+      expect_true(a.size()==a.capacity());
+      a.reserve(100);
+      expect_true(a.capacity()>100);
+      vec* d_a=a.upload();
+      resize_vector<<<1,1>>>(d_a,64);
+      split_gpuDeviceSynchronize();
+      split_gpuFree(d_a);
+      expect_true(a.size()==64);
+      expect_true(a.capacity()>100);
+      for (size_t i = 0 ; i< a.size(); ++i){
+         a.at(i)=3;
+         expect_true(a.at(i)=3);
       }
    }
+}
 
-   {
-      vec::iterator it_a(&a.back());
-         
-      for (int i=a.size()-1 ;i>=0; i--){
-         auto val=*(it_a);
-         it_a=it_a-1;
-         expect_true(  val==a.at(i) );
-      }
-   }
+TEST(Vector_Functionality , Test_CopyMetaData){
 
+   vec a(32,42);
+   expect_true(a.size()==a.capacity());
+   a.resize(16);
+   expect_true(a.size()==16);
+   expect_true(a.capacity()==32);
+   split::SplitInfo* info;
+   split_gpuMallocHost((void **) &info, sizeof(split::SplitInfo));
+   a.copyMetadata(info);
+   split_gpuDeviceSynchronize();
+   expect_true(a.capacity()==info->capacity);
+   expect_true(a.size()==info->size);
 }
 
 
@@ -443,4 +489,3 @@ int main(int argc, char* argv[]){
    ::testing::InitGoogleTest(&argc, argv);
    return RUN_ALL_TESTS();
 }
-

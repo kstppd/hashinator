@@ -1,6 +1,6 @@
 /* File:    split_allocators.h
  * Authors: Kostis Papadakis (2023)
- * Description: Custom allocators for splitvectors 
+ * Description: Custom allocators for splitvector
  *
  * This file defines the following classes:
  *    --split::split_unified_allocator;
@@ -20,145 +20,183 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  * */
-#pragma once 
+#pragma once
+#include "archMacros.h"
+namespace split {
 
-#ifndef SPLIT_HOST_ONLY
-#ifdef CUDAVEC
-   #define CheckErrors(msg) \
-      do { \
-         cudaError_t __err = cudaGetLastError(); \
-         if (__err != cudaSuccess) { \
-               fprintf(stderr, "Fatal error: %s (%s at %s:%d)\n", \
-                  msg, cudaGetErrorString(__err), \
-                  __FILE__, __LINE__); \
-               fprintf(stderr, "***** FAILED - ABORTING*****\n"); \
-               exit(1); \
-         } \
-      } while (0)
-#else
-//TODO--> make it do smth.
-   #define CheckErrors(msg) \
-      do { }  while (0)
+#ifndef SPLIT_CPU_ONLY_MODE
+
+#ifdef __NVCC__
+/* Define the CUDA error checking macro */
+#define SPLIT_CHECK_ERR(err) (split::cuda_error(err, __FILE__, __LINE__))
+static void cuda_error(cudaError_t err, const char* file, int line) {
+   if (err != cudaSuccess) {
+      printf("\n\n%s in %s at line %d\n", cudaGetErrorString(err), file, line);
+      exit(1);
+   }
+}
 #endif
+#ifdef __HIP_PLATFORM_HCC___
+/* Define the HIP error checking macro */
+#define SPLIT_CHECK_ERR(err) (split::hip_error(err, __FILE__, __LINE__))
+static void hip_error(hipError_t err, const char* file, int line) {
+   if (err != hipSuccess) {
+      printf("\n\n%s in %s at line %d\n", hipGetErrorString(err), file, line);
+      exit(1);
+   }
+}
 #endif
 
-namespace split{
+/**
+ * @brief Custom allocator for unified memory (GPU and CPU accessible).
+ *
+ * This class provides an allocator for unified memory, which can be accessed
+ * by both the GPU and the CPU. It allocates and deallocates memory using split_gpuMallocManaged
+ * and split_gpuFree functions, while also providing constructors and destructors for objects.
+ *
+ * @tparam T Type of the allocated objects.
+ */
+template <class T>
+class split_unified_allocator {
+public:
+   typedef T value_type;
+   typedef value_type* pointer;
+   typedef const value_type* const_pointer;
+   typedef value_type& reference;
+   typedef const value_type& const_reference;
+   typedef ptrdiff_t difference_type;
+   typedef size_t size_type;
+   template <class U>
+   struct rebind {
+      typedef split_unified_allocator<U> other;
+   };
+   /**
+    * @brief Default constructor.
+    */
+   split_unified_allocator() throw() {}
 
-#ifndef SPLIT_HOST_ONLY
-#include <cuda_runtime.h> 
-   template <class T>
-   class split_unified_allocator{
-      public:
-      typedef T value_type;
-      typedef value_type* pointer;
-      typedef const value_type* const_pointer;
-      typedef value_type& reference;
-      typedef const value_type& const_reference;
-      typedef ptrdiff_t difference_type;
-      typedef size_t size_type;
-      template<class U> struct rebind {typedef split_unified_allocator<U> other;};
-      split_unified_allocator() throw() { }
-      split_unified_allocator(split_unified_allocator const&) throw() { }
-      template<class U>
-      split_unified_allocator(split_unified_allocator<U> const&) throw() { }
-      pointer address(reference x) const { return &x; }
-      const_pointer address(const_reference x) const { return &x; }
+   /**
+    * @brief Copy constructor.
+    */
+   split_unified_allocator(split_unified_allocator const&) throw() {}
 
-      pointer allocate(size_type n, const void* /*hint*/ = 0){
-         T* ret;
-         cudaMallocManaged((void**)&ret, n * sizeof(value_type));
-         CheckErrors("Managed Allocation");
-         if (ret == nullptr) {throw std::bad_alloc();}
-         return ret;
+   /**
+    * @brief Copy constructor with different type.
+    */
+   template <class U>
+   split_unified_allocator(split_unified_allocator<U> const&) throw() {}
+   pointer address(reference x) const { return &x; }
+   const_pointer address(const_reference x) const { return &x; }
+
+   pointer allocate(size_type n, const void* /*hint*/ = 0) {
+      T* ret;
+      SPLIT_CHECK_ERR(split_gpuMallocManaged((void**)&ret, n * sizeof(value_type)));
+      if (ret == nullptr) {
+         throw std::bad_alloc();
       }
+      return ret;
+   }
 
-     static void* allocate_raw(size_type n, const void* /*hint*/ = 0){
-         void* ret;
-         cudaMallocManaged((void**)&ret, n );
-         CheckErrors("Managed Allocation");
-         if (ret == nullptr) {throw std::bad_alloc();}
-         return ret;
+   static void* allocate_raw(size_type n, const void* /*hint*/ = 0) {
+      void* ret;
+      SPLIT_CHECK_ERR(split_gpuMallocManaged((void**)&ret, n));
+      if (ret == nullptr) {
+         throw std::bad_alloc();
       }
+      return ret;
+   }
 
-      void deallocate(pointer p, size_type){
-         cudaFree(p);
-         CheckErrors("Managed Deallocation");
-      }
+   void deallocate(pointer p, size_type) { SPLIT_CHECK_ERR(split_gpuFree(p)); }
 
-      static void deallocate(void* p, size_type){
-         cudaFree(p);
-      }
+   static void deallocate(void* p, size_type) { SPLIT_CHECK_ERR(split_gpuFree(p)); }
 
-      size_type max_size() const throw(){
-         size_type max = static_cast<size_type>(-1) / sizeof (value_type);
-         return (max > 0 ? max : 1);
-      }
+   size_type max_size() const throw() {
+      size_type max = static_cast<size_type>(-1) / sizeof(value_type);
+      return (max > 0 ? max : 1);
+   }
 
-      template <typename U, typename... Args>
-      __host__ __device__
-      void construct(U *p, Args&& ... args){
-            ::new(p) U(std::forward<Args>(args)...);
-      }
+   template <typename U, typename... Args>
+   __host__ __device__ void construct(U* p, Args&&... args) {
+      ::new (p) U(std::forward<Args>(args)...);
+   }
 
-      void destroy(pointer p) { 
-         p->~value_type(); 
-      }
+   void destroy(pointer p) { p->~value_type(); }
+};
+
+#endif
+
+/**
+ * @brief Custom allocator for host memory.
+ *
+ * This class provides an allocator for host memory, which can be accessed
+ * by the CPU. It allocates and deallocates memory using malloc and free functions,
+ * while also providing constructors and destructors for objects.
+ *
+ * @tparam T Type of the allocated objects.
+ */
+template <class T>
+class split_host_allocator {
+public:
+   typedef T value_type;
+   typedef value_type* pointer;
+   typedef const value_type* const_pointer;
+   typedef value_type& reference;
+   typedef const value_type& const_reference;
+   typedef ptrdiff_t difference_type;
+   typedef size_t size_type;
+   template <class U>
+   struct rebind {
+      typedef split_host_allocator<U> other;
    };
 
+   /**
+    * @brief Default constructor.
+    */
+   split_host_allocator() throw() {}
 
+   /**
+    * @brief Copy constructor.
+    */
+   split_host_allocator(split_host_allocator const&) throw() {}
 
-#endif
-   template <class T>
-   class split_host_allocator{
-      public:
-      typedef T value_type;
-      typedef value_type* pointer;
-      typedef const value_type* const_pointer;
-      typedef value_type& reference;
-      typedef const value_type& const_reference;
-      typedef ptrdiff_t difference_type;
-      typedef size_t size_type;
-      template<class U> struct rebind {typedef split_host_allocator<U> other;};
-      split_host_allocator() throw() { }
-      split_host_allocator(split_host_allocator const&) throw() { }
-      template<class U>
-      split_host_allocator(split_host_allocator<U> const&) throw() { }
-      pointer address(reference x) const { return &x; }
-      const_pointer address(const_reference x) const { return &x; }
+   /**
+    * @brief Copy constructor with different type.
+    */
+   template <class U>
+   split_host_allocator(split_host_allocator<U> const&) throw() {}
+   pointer address(reference x) const { return &x; }
+   const_pointer address(const_reference x) const { return &x; }
 
-      pointer allocate(size_type n, const void* /*hint*/ = 0){
-         pointer const ret = reinterpret_cast<pointer>(malloc(n*sizeof(value_type)));
-         if (ret == nullptr) {throw std::bad_alloc();}
-         return ret;
+   pointer allocate(size_type n, const void* /*hint*/ = 0) {
+      pointer const ret = reinterpret_cast<pointer>(malloc(n * sizeof(value_type)));
+      if (ret == nullptr) {
+         throw std::bad_alloc();
       }
+      return ret;
+   }
 
-      static void* allocate_raw(size_type n, const void* /*hint*/ = 0){
-         void* ret =(void*)malloc(n);
-         if (ret == nullptr) {throw std::bad_alloc();}
-         return ret;
+   static void* allocate_raw(size_type n, const void* /*hint*/ = 0) {
+      void* ret = (void*)malloc(n);
+      if (ret == nullptr) {
+         throw std::bad_alloc();
       }
+      return ret;
+   }
 
-      void deallocate(pointer p, size_type){
-         free(p);
-      }
+   void deallocate(pointer p, size_type) { free(p); }
 
-      static void deallocate(void* p, size_type){
-         free(p);
-      }
+   static void deallocate(void* p, size_type) { free(p); }
 
-      size_type max_size() const throw(){
-         size_type max = static_cast<size_type>(-1) / sizeof (value_type);
-         return (max > 0 ? max : 1);
-      }
+   size_type max_size() const throw() {
+      size_type max = static_cast<size_type>(-1) / sizeof(value_type);
+      return (max > 0 ? max : 1);
+   }
 
-      template <typename U, typename... Args>
-      void construct(U *p, Args&& ... args){
-            ::new(p) U(std::forward<Args>(args)...);
-      }
+   template <typename U, typename... Args>
+   void construct(U* p, Args&&... args) {
+      ::new (p) U(std::forward<Args>(args)...);
+   }
 
-      void destroy(pointer p) { 
-         p->~value_type(); 
-      }
-   };
-}//namespace split
-
+   void destroy(pointer p) { p->~value_type(); }
+};
+} // namespace split

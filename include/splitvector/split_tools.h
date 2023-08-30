@@ -1,6 +1,6 @@
 /* File:    split::tools.h
  * Authors: Kostis Papadakis (2023)
- * Description: Set of tools used by SplitVectors
+ * Description: Set of tools used by SplitVector
  *
  * This file defines the following classes or functions:
  *    --split::tools::Cuda_mempool
@@ -29,648 +29,786 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  * */
-#pragma once 
-#include "split_allocators.h"
-#define SPLIT_VOTING_MASK 0xFFFFFFFF //32-bit wide for cuda warps not sure what we do on AMD HW
-#define NUM_BANKS 32 //TODO depends on device
+#pragma once
+#include "gpu_wrappers.h"
+#define NUM_BANKS 32 // TODO depends on device
 #define LOG_NUM_BANKS 5
 #define CONFLICT_FREE_OFFSET(n) ((n) >> LOG_NUM_BANKS)
+#ifdef __NVCC__
+#define SPLIT_VOTING_MASK 0xFFFFFFFF // 32-bit wide for split_gpu warps
+#define WARPLENGTH 32
+#endif
+#ifdef __HIP_PLATFORM_HCC___
+#define SPLIT_VOTING_MASK 0xFFFFFFFFFFFFFFFFull // 64-bit wide for amd warps
+#define WARPLENGTH 64
 
-namespace split{
-   namespace tools{
-    
-      inline bool isPow2(const size_t val ) {
-         return (val &(val-1))==0;
+#endif
+
+namespace split {
+namespace tools {
+
+/**
+ * @brief Check if a value is a power of two.
+ *
+ * This function checks whether the given value is a power of two.
+ *
+ * @param val The value to be checked.
+ * @return constexpr inline bool Returns true if the value is a power of two, false otherwise.
+ */
+constexpr inline bool isPow2(const size_t val) noexcept { return (val & (val - 1)) == 0; }
+
+/**
+ * @brief GPU kernel for performing scan-add operation.
+ *
+ * This kernel performs a scan-add operation on the given input array, using the partial sums array.
+ * It updates the input array with the computed values.
+ * Part of splitvector's stream compaction mechanism.
+ *
+ * @tparam T Type of the array elements.
+ * @param input The input array.
+ * @param partial_sums The partial sums array.
+ * @param blockSize The size of the blocks.
+ * @param len The length of the arrays.
+ */
+template <typename T>
+__global__ void scan_add(T* input, T* partial_sums, size_t blockSize, size_t len) {
+   const T val = partial_sums[blockIdx.x];
+   const size_t target1 = 2 * blockIdx.x * blockDim.x + threadIdx.x;
+   const size_t target2 = target1 + blockDim.x;
+   if (target1 < len) {
+      input[target1] += val;
+      if (target2 < len) {
+         input[target2] += val;
       }
+   }
+}
 
-      template <typename T>
-      __global__
-      void scan_add(T* input,T* partial_sums, size_t blockSize,size_t len){
-         const T val=partial_sums[blockIdx.x];
-         const size_t target1 = 2*blockIdx.x*blockDim.x+threadIdx.x;
-         const size_t target2 = target1+blockDim.x;
-         if (target1<len){
-            input[target1]+=val;
-            if (target2<len){
-               input[target2]+=val;
-            }
-         }
+/**
+ * @brief GPU kernel for performing scan-reduce operation.
+ *
+ * This kernel performs a scan-reduce operation on the given input SplitVector, applying the specified rule.
+ * It computes the total number of valid elements using the rule and stores the results in the output SplitVector.
+ * Part of splitvector's stream compaction mechanism.
+ *
+ * @tparam T Type of the array elements.
+ * @tparam Rule The rule functor for element validation.
+ * @param input The input SplitVector.
+ * @param output The output SplitVector for storing the results.
+ * @param rule The rule functor object.
+ */
+template <typename T, typename Rule>
+__global__ void
+scan_reduce(split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>* input,
+            split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>,
+                               split::split_unified_allocator<size_t>>* output,
+            Rule rule) {
+
+   size_t size = input->size();
+   size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
+   if (tid < size) {
+      size_t total_valid_elements = __syncthreads_count(rule(input->at(tid)));
+      if (threadIdx.x == 0) {
+         output->at(blockIdx.x) = total_valid_elements;
       }
+   }
+}
 
+/**
+ * @brief Prefix Scan routine with Bank Conflict Optimization.
+ *
+ * This function performs a prefix scan operation on the given input array, using the bank conflict optimization.
+ * It utilizes shared memory.
+ * Part of splitvector's stream compaction mechanism.
+ * Credits to  https://www.eecs.umich.edu/courses/eecs570/hw/parprefix.pdf
+ *
+ * @tparam T Type of the array elements.
+ * @param input The input array.
+ * @param output The output array for storing the prefix scan results.
+ * @param partial_sums The array of partial sums for each block.
+ * @param n The number of elements per block.
+ * @param len The length of the arrays.
+ */
+template <typename T>
+__global__ void split_prescan(T* input, T* output, T* partial_sums, int n, size_t len) {
 
-      template<typename T,typename Rule>
-      __global__
-      void scan_reduce(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* input,
-                      split::SplitVector<uint32_t,split::split_unified_allocator<uint32_t>,split::split_unified_allocator<size_t>>* output,
-                      Rule rule){
+   extern __shared__ T buffer[];
+   int tid = threadIdx.x;
+   int offset = 1;
+   int local_start = blockIdx.x * n;
+   input = input + local_start;
+   output = output + local_start;
 
-         size_t size=input->size();
-         size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
-         if (tid<size){
-            size_t total_valid_elements=__syncthreads_count(rule(input->at(tid)));
-            if (threadIdx.x==0){
-               output->at(blockIdx.x)=total_valid_elements;
-            }
-         }
+   // Load into shared memory
+   int ai = tid;
+   int bi = tid + (n / 2);
+   int bankOffsetA = CONFLICT_FREE_OFFSET(ai);
+   int bankOffsetB = CONFLICT_FREE_OFFSET(bi);
+
+   if (local_start + ai < len && local_start + bi < len) {
+      buffer[ai + bankOffsetA] = input[ai];
+      buffer[bi + bankOffsetB] = input[bi];
+   }
+
+   // Reduce Phase
+   for (int d = n >> 1; d > 0; d >>= 1) {
+      __syncthreads();
+
+      if (tid < d) {
+         int ai = offset * (2 * tid + 1) - 1;
+         int bi = offset * (2 * tid + 2) - 1;
+         ai += CONFLICT_FREE_OFFSET(ai);
+         bi += CONFLICT_FREE_OFFSET(bi);
+
+         buffer[bi] += buffer[ai];
       }
+      offset *= 2;
+   }
 
+   // Exclusive scan so zero out last element (will propagate to first)
+   if (tid == 0) {
+      partial_sums[blockIdx.x] = buffer[n - 1 + CONFLICT_FREE_OFFSET(n - 1)];
+      buffer[n - 1 + CONFLICT_FREE_OFFSET(n - 1)] = 0;
+   }
 
-      /*
-        Prefix Scan routine with Bank Conflict Optimization
-        Credits to  https://www.eecs.umich.edu/courses/eecs570/hw/parprefix.pdf
-      */
-      template <typename T>
-      __global__
-      void split_prescan(T* input,T* output,T* partial_sums, int n,size_t len){
+   // Downsweep Phase
+   for (int d = 1; d < n; d *= 2) {
 
-         extern __shared__ T buffer[];
-         int tid = threadIdx.x;
-         int offset=1;
-         int local_start=blockIdx.x*n;
-         input=input+local_start;
-         output=output+local_start;
+      offset >>= 1;
+      __syncthreads();
+      if (tid < d) {
+         int ai = offset * (2 * tid + 1) - 1;
+         int bi = offset * (2 * tid + 2) - 1;
+         ai += CONFLICT_FREE_OFFSET(ai);
+         bi += CONFLICT_FREE_OFFSET(bi);
 
-
-         //Load into shared memory 
-         int ai = tid;
-         int bi = tid + (n/2);
-         int bankOffsetA = CONFLICT_FREE_OFFSET(ai);
-         int bankOffsetB = CONFLICT_FREE_OFFSET(bi);
-         
-         if (local_start+ai<len && local_start+bi<len){
-            buffer[ai + bankOffsetA] = input[ai];
-            buffer[bi + bankOffsetB] = input[bi];
-         }
-
-         //Reduce Phase
-         for (int d =n>>1; d>0; d>>=1){
-            __syncthreads();
-
-            if (tid<d){
-               int ai = offset*(2*tid+1)-1;
-               int bi = offset*(2*tid+2)-1;
-               ai += CONFLICT_FREE_OFFSET(ai);
-               bi += CONFLICT_FREE_OFFSET(bi);
-
-               buffer[bi]+=buffer[ai];
-            }
-            offset*=2;
-         }
-         
-         //Exclusive scan so zero out last element (will propagate to first)
-         if (tid==0){ partial_sums[blockIdx.x]=buffer[n-1+CONFLICT_FREE_OFFSET(n-1)] ;buffer[n-1+CONFLICT_FREE_OFFSET(n-1)]=0;}
-
-         //Downsweep Phase
-         for (int d =1; d<n; d*=2){
-
-            offset>>=1;
-            __syncthreads();
-            if (tid<d){
-               int ai = offset*(2*tid+1)-1;
-               int bi = offset*(2*tid+2)-1;
-               ai += CONFLICT_FREE_OFFSET(ai);
-               bi += CONFLICT_FREE_OFFSET(bi);
-
-               T tmp=buffer[ai];
-               buffer[ai]=buffer[bi];
-               buffer[bi]+=tmp;
-            }
-         }
-         __syncthreads();
-         if (local_start+ai<len && local_start+bi<len){
-            output[ai] = buffer[ai + bankOffsetA];
-            output[bi] = buffer[bi + bankOffsetB];
-         }
+         T tmp = buffer[ai];
+         buffer[ai] = buffer[bi];
+         buffer[bi] += tmp;
       }
+   }
+   __syncthreads();
+   if (local_start + ai < len && local_start + bi < len) {
+      output[ai] = buffer[ai + bankOffsetA];
+      output[bi] = buffer[bi + bankOffsetB];
+   }
+}
 
+/**
+ * @brief Kernel for compacting elements based on a rule.
+ *
+ * This kernel performs element compaction on the given input SplitVector based on a specified rule.
+ * It generates compacted output and updates counts and offsets SplitVectors.
+ * Part of splitvector's stream compaction mechanism.
+ *
+ * @tparam T Type of the array elements.
+ * @tparam Rule The rule functor for element compaction.
+ * @tparam BLOCKSIZE The size of each thread block.
+ * @tparam WARP The size of each warp.
+ * @param input The input SplitVector.
+ * @param counts The SplitVector for storing counts of valid elements.
+ * @param offsets The SplitVector for storing offsets of valid elements.
+ * @param output The output SplitVector for storing the compacted elements.
+ * @param rule The rule functor object.
+ */
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+__global__ void split_compact(
+    split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>* input,
+    split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>, split::split_unified_allocator<size_t>>*
+        counts,
+    split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>, split::split_unified_allocator<size_t>>*
+        offsets,
+    split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>* output,
+    Rule rule) {
+   extern __shared__ uint32_t buffer[];
+   const size_t size = input->size();
+   const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
+   if (tid >= size) {
+      return;
+   }
+   unsigned int offset = BLOCKSIZE / WARP;
+   const unsigned int wid = tid / WARP;
+   const unsigned int widb = threadIdx.x / WARP;
+   const unsigned int w_tid = tid % WARP;
+   const unsigned int warps_in_block = blockDim.x / WARP;
+   const bool tres = rule(input->at(tid));
 
-      template <typename T,typename Rule,size_t BLOCKSIZE=1024, size_t WARP=32>
-      __global__
-      void split_compact(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* input,
-                         split::SplitVector<uint32_t,split::split_unified_allocator<uint32_t>,split::split_unified_allocator<size_t>>* counts,
-                         split::SplitVector<uint32_t,split::split_unified_allocator<uint32_t>,split::split_unified_allocator<size_t>>* offsets,
-                         split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* output,
-                         Rule rule)
-      {
-         extern __shared__ uint32_t buffer[];
-         const size_t size=input->size();
-         const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
-         if (tid>=size) {return;}
-         unsigned int offset = BLOCKSIZE/WARP;
-         const unsigned int wid = tid/WARP;
-         const unsigned int widb = threadIdx.x/WARP;
-         const unsigned int w_tid=tid%WARP;
-         const unsigned int warps_in_block = blockDim.x/WARP;
-         const bool tres=rule(input->at(tid));
-
-         unsigned int  mask= __ballot_sync(SPLIT_VOTING_MASK,tres);
-         unsigned int n_neighbors= mask & ((1 << w_tid) - 1);
-         unsigned int total_valid_in_warp	= __popc(mask);
-         if (w_tid==0 ){
-            buffer[widb]=total_valid_in_warp;
-         }
-         __syncthreads();
-         if (w_tid==0 && wid%warps_in_block==0){
-            buffer[offset+widb]=0;
-            for (unsigned int i =0 ; i < warps_in_block-1;++i){
-               buffer[offset+widb+i+1]=buffer[offset+widb+i] +buffer[widb+i];
-            }
-         }
-         __syncthreads();
-         const unsigned int neighbor_count= __popc(n_neighbors);
-         const unsigned int private_index	= buffer[offset+widb] + offsets->at(wid/warps_in_block) + neighbor_count ;
-         if (tres && widb!=warps_in_block){
-            output->at(private_index) = input->at(tid);
-         }
-         __syncthreads();
-         if (tid==0){
-            const unsigned int actual_total_blocks=offsets->back()+counts->back();
-            output->erase(&output->at(actual_total_blocks),output->end());
-         }
+   auto mask = split::s_warpVote(tres, SPLIT_VOTING_MASK);
+#ifdef __NVCC__
+   uint32_t n_neighbors = mask & ((1 << w_tid) - 1);
+#else
+   uint64_t n_neighbors = mask & ((1ul << w_tid) - 1);
+#endif
+   auto total_valid_in_warp = split::s_pop_count(mask);
+   if (w_tid == 0) {
+      buffer[widb] = total_valid_in_warp;
+   }
+   __syncthreads();
+   if (w_tid == 0 && wid % warps_in_block == 0) {
+      buffer[offset + widb] = 0;
+      for (unsigned int i = 0; i < warps_in_block - 1; ++i) {
+         buffer[offset + widb + i + 1] = buffer[offset + widb + i] + buffer[widb + i];
       }
+   }
+   __syncthreads();
+   const unsigned int neighbor_count = split::s_pop_count(n_neighbors);
+   const unsigned int private_index = buffer[offset + widb] + offsets->at(wid / warps_in_block) + neighbor_count;
+   if (tres && widb != warps_in_block) {
+      output->at(private_index) = input->at(tid);
+   }
+   __syncthreads();
+   if (tid == 0) {
+      const unsigned int actual_total_blocks = offsets->back() + counts->back();
+      output->erase(&output->at(actual_total_blocks), output->end());
+   }
+}
 
+/**
+ * @brief Same as split_compact but only for hashinator keys.
+ */
+template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+__global__ void split_compact_keys(
+    split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>* input,
+    split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>, split::split_unified_allocator<size_t>>*
+        counts,
+    split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>, split::split_unified_allocator<size_t>>*
+        offsets,
+    split::SplitVector<U, split::split_unified_allocator<U>, split::split_unified_allocator<size_t>>* output,
+    Rule rule) {
+   extern __shared__ uint32_t buffer[];
+   const size_t size = input->size();
+   const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
+   if (tid >= size) {
+      return;
+   }
+   unsigned int offset = BLOCKSIZE / WARP;
+   const unsigned int wid = tid / WARP;
+   const unsigned int widb = threadIdx.x / WARP;
+   const unsigned int w_tid = tid % WARP;
+   const unsigned int warps_in_block = blockDim.x / WARP;
+   const bool tres = rule(input->at(tid));
 
-      template <typename T,typename U,typename Rule,size_t BLOCKSIZE=1024, size_t WARP=32>
-      __global__
-      void split_compact_keys(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>* input,
-                         split::SplitVector<uint32_t,split::split_unified_allocator<uint32_t>,split::split_unified_allocator<size_t>>* counts,
-                         split::SplitVector<uint32_t,split::split_unified_allocator<uint32_t>,split::split_unified_allocator<size_t>>* offsets,
-                         split::SplitVector<U,split::split_unified_allocator<U>,split::split_unified_allocator<size_t>>* output,
-                         Rule rule)
-      {
-         extern __shared__ uint32_t buffer[];
-         const size_t size=input->size();
-         const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
-         if (tid>=size) {return;}
-         unsigned int offset = BLOCKSIZE/WARP;
-         const unsigned int wid = tid/WARP;
-         const unsigned int widb = threadIdx.x/WARP;
-         const unsigned int w_tid=tid%WARP;
-         const unsigned int warps_in_block = blockDim.x/WARP;
-         const bool tres=rule(input->at(tid));
-
-         unsigned int  mask= __ballot_sync(SPLIT_VOTING_MASK,tres);
-         unsigned int n_neighbors= mask & ((1 << w_tid) - 1);
-         unsigned int total_valid_in_warp	= __popc(mask);
-         if (w_tid==0 ){
-            buffer[widb]=total_valid_in_warp;
-         }
-         __syncthreads();
-         if (w_tid==0 && wid%warps_in_block==0){
-            buffer[offset+widb]=0;
-            for (unsigned int i =0 ; i < warps_in_block-1;++i){
-               buffer[offset+widb+i+1]=buffer[offset+widb+i] +buffer[widb+i];
-            }
-         }
-         __syncthreads();
-         const unsigned int neighbor_count= __popc(n_neighbors);
-         const unsigned int private_index	= buffer[offset+widb] + offsets->at(wid/warps_in_block) + neighbor_count ;
-         if (tres && widb!=warps_in_block){
-            output->at(private_index) = (input->at(tid)).first;
-         }
-
-         __syncthreads();
-         if (tid==0){
-            const unsigned int actual_total_blocks=offsets->back()+counts->back();
-            output->erase(&output->at(actual_total_blocks),output->end());
-         }
-
+   auto mask = split::s_warpVote(tres, SPLIT_VOTING_MASK);
+#ifdef __NVCC__
+   uint32_t n_neighbors = mask & ((1 << w_tid) - 1);
+#else
+   uint64_t n_neighbors = mask & ((1ul << w_tid) - 1);
+#endif
+   auto total_valid_in_warp = split::s_pop_count(mask);
+   if (w_tid == 0) {
+      buffer[widb] = total_valid_in_warp;
+   }
+   __syncthreads();
+   if (w_tid == 0 && wid % warps_in_block == 0) {
+      buffer[offset + widb] = 0;
+      for (unsigned int i = 0; i < warps_in_block - 1; ++i) {
+         buffer[offset + widb + i + 1] = buffer[offset + widb + i] + buffer[widb + i];
       }
+   }
+   __syncthreads();
+   const unsigned int neighbor_count = split::s_pop_count(n_neighbors);
+   const unsigned int private_index = buffer[offset + widb] + offsets->at(wid / warps_in_block) + neighbor_count;
+   if (tres && widb != warps_in_block) {
+      output->at(private_index) = (input->at(tid)).first;
+   }
 
-      template <typename T,typename U, typename Rule,size_t BLOCKSIZE=1024, size_t WARP=32>
-      __global__
-      void split_compact_keys_raw(T* input, uint32_t* counts, uint32_t* offsets, U* output, Rule rule,const size_t size,size_t nBlocks,uint32_t* retval){
+   __syncthreads();
+   if (tid == 0) {
+      const unsigned int actual_total_blocks = offsets->back() + counts->back();
+      output->erase(&output->at(actual_total_blocks), output->end());
+   }
+}
 
-         extern __shared__ uint32_t buffer[];
-         const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
-         if (tid>=size) {return;}
-         unsigned int offset = BLOCKSIZE/WARP;
-         const unsigned int wid = tid/WARP;
-         const unsigned int widb = threadIdx.x/WARP;
-         const unsigned int w_tid=tid%WARP;
-         const unsigned int warps_in_block = blockDim.x/WARP;
-         const bool tres=rule(input[tid]);
+/**
+ * @brief Same as split_compact_keys but uses raw memory
+ */
+template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+__global__ void split_compact_keys_raw(T* input, uint32_t* counts, uint32_t* offsets, U* output, Rule rule,
+                                       const size_t size, size_t nBlocks, uint32_t* retval) {
 
-         unsigned int  mask= __ballot_sync(SPLIT_VOTING_MASK,tres);
-         unsigned int n_neighbors= mask & ((1 << w_tid) - 1);
-         unsigned int total_valid_in_warp	= __popc(mask);
-         if (w_tid==0 ){
-            buffer[widb]=total_valid_in_warp;
-         }
-         __syncthreads();
-         if (w_tid==0 && wid%warps_in_block==0){
-            buffer[offset+widb]=0;
-            for (unsigned int i =0 ; i < warps_in_block-1;++i){
-               buffer[offset+widb+i+1]=buffer[offset+widb+i] +buffer[widb+i];
-            }
-         }
-         __syncthreads();
-         const unsigned int neighbor_count= __popc(n_neighbors);
-         const unsigned int private_index	= buffer[offset+widb] + offsets[(wid/warps_in_block)] + neighbor_count ;
-         if (tres && widb!=warps_in_block){
-            output[private_index] = input[tid].first;
-         }
-         if (tid==0){
-            //const unsigned int actual_total_blocks=offsets->back()+counts->back();
-            *retval=offsets[nBlocks-1]+counts[nBlocks-1];
-         }
+   extern __shared__ uint32_t buffer[];
+   const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
+   if (tid >= size) {
+      return;
+   }
+   unsigned int offset = BLOCKSIZE / WARP;
+   const unsigned int wid = tid / WARP;
+   const unsigned int widb = threadIdx.x / WARP;
+   const unsigned int w_tid = tid % WARP;
+   const unsigned int warps_in_block = blockDim.x / WARP;
+   const bool tres = rule(input[tid]);
+
+   auto mask = split::s_warpVote(tres, SPLIT_VOTING_MASK);
+#ifdef __NVCC__
+   uint32_t n_neighbors = mask & ((1 << w_tid) - 1);
+#else
+   uint64_t n_neighbors = mask & ((1ul << w_tid) - 1);
+#endif
+   auto total_valid_in_warp = split::s_pop_count(mask);
+   if (w_tid == 0) {
+      buffer[widb] = total_valid_in_warp;
+   }
+   __syncthreads();
+   if (w_tid == 0 && wid % warps_in_block == 0) {
+      buffer[offset + widb] = 0;
+      for (unsigned int i = 0; i < warps_in_block - 1; ++i) {
+         buffer[offset + widb + i + 1] = buffer[offset + widb + i] + buffer[widb + i];
       }
+   }
+   __syncthreads();
+   const unsigned int neighbor_count = split::s_pop_count(n_neighbors);
+   const unsigned int private_index = buffer[offset + widb] + offsets[(wid / warps_in_block)] + neighbor_count;
+   if (tres && widb != warps_in_block) {
+      output[private_index] = input[tid].first;
+   }
+   if (tid == 0) {
+      // const unsigned int actual_total_blocks=offsets->back()+counts->back();
+      *retval = offsets[nBlocks - 1] + counts[nBlocks - 1];
+   }
+}
 
+/**
+ * @brief Perform prefix scan operation with Bank Conflict Optimization.
+ *
+ * This function performs a prefix scan operation on the given SplitVector, utilizing bank conflict optimization.
+ * It utilizes shared memory.
+ *
+ * @tparam T Type of the array elements.
+ * @tparam BLOCKSIZE The size of each thread block.
+ * @tparam WARP The size of each warp.
+ * @param input The input SplitVector.
+ * @param output The output SplitVector for storing the prefix scan results.
+ * @param s The split_gpuStream_t stream for GPU execution (default is 0).
+ */
+template <typename T, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+void split_prefix_scan(
+    split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& input,
+    split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& output,
+    split_gpuStream_t s = 0)
 
-      template <typename T, size_t BLOCKSIZE=1024,size_t WARP=32>
-      void split_prefix_scan(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
-                             split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& output,
-                             cudaStream_t s=0)
+{
+   using vector = split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>;
 
-      {
-         using vector=split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>;
+   // Input size
+   const size_t input_size = input.size();
 
-         //Input size
-         const size_t input_size=input.size();
+   // Scan is performed in half Blocksizes
+   size_t scanBlocksize = BLOCKSIZE / 2;
+   size_t scanElements = 2 * scanBlocksize;
+   size_t gridSize = input_size / scanElements;
 
-         //Scan is performed in half Blocksizes
-         size_t scanBlocksize= BLOCKSIZE/2;
-         size_t scanElements=2*scanBlocksize;
-         size_t gridSize = input_size/scanElements;
+   // If input is not exactly divisible by scanElements we launch an extra block
+   assert(isPow2(input_size) && "Using prefix scan with non powers of 2 as input size is not thought out yet :D");
 
-         //If input is not exactly divisible by scanElements we launch an extra block
-         assert(isPow2(input_size) && "Using prefix scan with non powers of 2 as input size is not thought out yet :D");
+   if (input_size % scanElements != 0) {
+      gridSize = 1 << ((int)ceil(log(++gridSize) / log(2)));
+   }
 
-         if (input_size%scanElements!=0){
-            gridSize=1<<((int)ceil(log(++gridSize)/log(2)));
-         }
-
-         //If the elements are too few manually override and launch a small kernel
-         if (input_size<scanElements){
-            scanBlocksize=input_size/2;
-            scanElements=input_size;
-            if (scanBlocksize==0){scanBlocksize+=1;}
-            gridSize=1;
-         }
-
-         //Allocate memory for partial sums
-         vector partial_sums(gridSize); 
-
-         //TODO +FIXME extra shmem allocations
-         split::tools::split_prescan<<<gridSize,scanBlocksize,2*scanElements*sizeof(T),s>>>(input.data(),output.data(),partial_sums.data(),scanElements,input.size());
-         cudaStreamSynchronize(s);
-
-         if (gridSize>1){
-            if (partial_sums.size()<=scanElements){
-               vector partial_sums_dummy(gridSize); 
-               //TODO +FIXME extra shmem allocations
-               split::tools::split_prescan<<<1,scanBlocksize,2*scanElements*sizeof(T),s>>>(partial_sums.data(),partial_sums.data(),partial_sums_dummy.data(),gridSize,partial_sums.size());
-               cudaStreamSynchronize(s);
-            }else{
-               vector partial_sums_clone(partial_sums);
-               split_prefix_scan<T,BLOCKSIZE,WARP>(partial_sums_clone,partial_sums,s);
-            }
-            split::tools::scan_add<<<gridSize,scanBlocksize,0,s>>>(output.data(),partial_sums.data(),scanElements,output.size());
-            cudaStreamSynchronize(s);
-         }
+   // If the elements are too few manually override and launch a small kernel
+   if (input_size < scanElements) {
+      scanBlocksize = input_size / 2;
+      scanElements = input_size;
+      if (scanBlocksize == 0) {
+         scanBlocksize += 1;
       }
+      gridSize = 1;
+   }
 
-      
-      template <typename T, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=32>
-      void copy_if(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
-                   split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& output,
-                   Rule rule,
-                   cudaStream_t s=0)
-      {
+   // Allocate memory for partial sums
+   vector partial_sums(gridSize);
 
+   // TODO +FIXME extra shmem allocations
+   split::tools::split_prescan<<<gridSize, scanBlocksize, 2 * scanElements * sizeof(T), s>>>(
+       input.data(), output.data(), partial_sums.data(), scanElements, input.size());
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
 
-         using vector=split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>;
-         using vector_int=split::SplitVector<uint32_t,split::split_unified_allocator<uint32_t>,split::split_unified_allocator<size_t>>;
-         
-         //Figure out Blocks to use
-         size_t nBlocks=input.size()/BLOCKSIZE; 
-         if (nBlocks==0){nBlocks+=1;}
-         vector_int counts(nBlocks);
-         vector_int offsets(nBlocks);
-
-               
-         //Phase 1 -- Calculate per warp workload
-         vector * d_input=input.upload(s);
-         vector_int * d_counts=counts.upload(s);
-         split::tools::scan_reduce<<<nBlocks,BLOCKSIZE,0,s>>>(d_input,d_counts,rule);
-         cudaStreamSynchronize(s);
-         cudaFreeAsync(d_input,s);
-         cudaFreeAsync(d_counts,s);
-
-
-         //Step 2 -- Exclusive Prefix Scan on offsets
-         if (nBlocks==1){
-            split_prefix_scan<uint32_t,2,WARP>(counts,offsets,s);
-         }else{
-            split_prefix_scan<uint32_t,BLOCKSIZE,WARP>(counts,offsets,s);
-         }
-         cudaStreamSynchronize(s);
-
-
-         //Step 3 -- Compaction
-         vector* d_output=output.upload(s);
-         vector_int* d_offsets=offsets.upload(s);
-         d_input=input.upload(s);
-         d_counts=counts.upload(s);
-         split::tools::split_compact<T,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int),s>>>(d_input,d_counts,d_offsets,d_output,rule);
-         cudaStreamSynchronize(s);
-         //Deallocate the handle pointers
-
-         cudaFreeAsync(d_input,s);
-         cudaFreeAsync(d_counts,s);
-         cudaFreeAsync(d_output,s);
-         cudaFreeAsync(d_offsets,s);
+   if (gridSize > 1) {
+      if (partial_sums.size() <= scanElements) {
+         vector partial_sums_dummy(gridSize);
+         // TODO +FIXME extra shmem allocations
+         split::tools::split_prescan<<<1, scanBlocksize, 2 * scanElements * sizeof(T), s>>>(
+             partial_sums.data(), partial_sums.data(), partial_sums_dummy.data(), gridSize, partial_sums.size());
+         SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+      } else {
+         vector partial_sums_clone(partial_sums);
+         split_prefix_scan<T, BLOCKSIZE, WARP>(partial_sums_clone, partial_sums, s);
       }
+      split::tools::scan_add<<<gridSize, scanBlocksize, 0, s>>>(output.data(), partial_sums.data(), scanElements,
+                                                                output.size());
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   }
+}
 
-      template <typename T,typename U, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=32>
-      size_t copy_keys_if(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
-                   split::SplitVector<U,split::split_unified_allocator<U>,split::split_unified_allocator<size_t>>& output,
-                   Rule rule,
-                   cudaStream_t s=0)
-      {
+/**
+ * @brief Perform element compaction based on a rule.
+ *
+ * This function performs element compaction on the given input SplitVector based on a specified rule.
+ * It generates compacted output, updates counts and offsets SplitVectors, and returns compacted count.
+ *
+ * @tparam T Type of the array elements.
+ * @tparam Rule The rule functor for element compaction.
+ * @tparam BLOCKSIZE The size of each thread block.
+ * @tparam WARP The size of each warp.
+ * @param input The input SplitVector.
+ * @param output The output SplitVector for storing the compacted elements.
+ * @param rule The rule functor object.
+ * @param s The split_gpuStream_t stream for GPU execution (default is 0).
+ */
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+void copy_if(split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& input,
+             split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& output,
+             Rule rule, split_gpuStream_t s = 0) {
 
+   using vector = split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>;
+   using vector_int =
+       split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>, split::split_unified_allocator<size_t>>;
 
-         using vector=split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>;
-         using keyvector=split::SplitVector<U,split::split_unified_allocator<U>,split::split_unified_allocator<size_t>>;
-         using vector_int=split::SplitVector<uint32_t,split::split_unified_allocator<uint32_t>,split::split_unified_allocator<size_t>>;
-         
-         //Figure out Blocks to use
-         size_t nBlocks=input.size()/BLOCKSIZE; 
-         if (nBlocks==0){nBlocks+=1;}
-         vector_int counts(nBlocks);
-         vector_int offsets(nBlocks);
+   // Figure out Blocks to use
+   size_t nBlocks = input.size() / BLOCKSIZE;
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+   vector_int counts(nBlocks);
+   vector_int offsets(nBlocks);
 
-               
-         //Phase 1 -- Calculate per warp workload
-         vector * d_input=input.upload(s);
-         vector_int * d_counts=counts.upload(s);
-         split::tools::scan_reduce<<<nBlocks,BLOCKSIZE,0,s>>>(d_input,d_counts,rule);
-         cudaStreamSynchronize(s);
-         cudaFreeAsync(d_input,s);
-         cudaFreeAsync(d_counts,s);
+   // Phase 1 -- Calculate per warp workload
+   vector* d_input = input.upload(s);
+   vector_int* d_counts = counts.upload(s);
+   split::tools::scan_reduce<<<nBlocks, BLOCKSIZE, 0, s>>>(d_input, d_counts, rule);
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_input, s));
+   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_counts, s));
 
+   // Step 2 -- Exclusive Prefix Scan on offsets
+   if (nBlocks == 1) {
+      split_prefix_scan<uint32_t, 2, WARP>(counts, offsets, s);
+   } else {
+      split_prefix_scan<uint32_t, BLOCKSIZE, WARP>(counts, offsets, s);
+   }
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
 
-         //Step 2 -- Exclusive Prefix Scan on offsets
-         if (nBlocks==1){
-            split_prefix_scan<uint32_t,2,WARP>(counts,offsets,s);
-         }else{
-            split_prefix_scan<uint32_t,BLOCKSIZE,WARP>(counts,offsets,s);
-         }
-         cudaStreamSynchronize(s);
+   // Step 3 -- Compaction
+   vector* d_output = output.upload(s);
+   vector_int* d_offsets = offsets.upload(s);
+   d_input = input.upload(s);
+   d_counts = counts.upload(s);
+   split::tools::split_compact<T, Rule, BLOCKSIZE, WARP>
+       <<<nBlocks, BLOCKSIZE, 2 * (BLOCKSIZE / WARP) * sizeof(unsigned int), s>>>(d_input, d_counts, d_offsets,
+                                                                                  d_output, rule);
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   // Deallocate the handle pointers
 
+   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_input, s));
+   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_counts, s));
+   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_output, s));
+   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_offsets, s));
+}
 
-         //Step 3 -- Compaction
-         keyvector* d_output=output.upload(s);
-         vector_int* d_offsets=offsets.upload(s);
-         d_input=input.upload(s);
-         d_counts=counts.upload(s);
-         split::tools::split_compact_keys<T,U,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int),s>>>(d_input,d_counts,d_offsets,d_output,rule);
-         cudaStreamSynchronize(s);
-         size_t retval = output.size();
-         //Deallocate the handle pointers
+/**
+ * @brief Same copy_if but only for Hashinator keys
+ */
+template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+size_t
+copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& input,
+             split::SplitVector<U, split::split_unified_allocator<U>, split::split_unified_allocator<size_t>>& output,
+             Rule rule, split_gpuStream_t s = 0) {
 
-         cudaFreeAsync(d_input,s);
-         cudaFreeAsync(d_counts,s);
-         cudaFreeAsync(d_output,s);
-         cudaFreeAsync(d_offsets,s);
-         return retval;
+   using vector = split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>;
+   using keyvector = split::SplitVector<U, split::split_unified_allocator<U>, split::split_unified_allocator<size_t>>;
+   using vector_int =
+       split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>, split::split_unified_allocator<size_t>>;
+
+   // Figure out Blocks to use
+   size_t nBlocks = input.size() / BLOCKSIZE;
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+   vector_int counts(nBlocks);
+   vector_int offsets(nBlocks);
+
+   // Phase 1 -- Calculate per warp workload
+   vector* d_input = input.upload(s);
+   vector_int* d_counts = counts.upload(s);
+   split::tools::scan_reduce<<<nBlocks, BLOCKSIZE, 0, s>>>(d_input, d_counts, rule);
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_input, s));
+   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_counts, s));
+
+   // Step 2 -- Exclusive Prefix Scan on offsets
+   if (nBlocks == 1) {
+      split_prefix_scan<uint32_t, 2, WARP>(counts, offsets, s);
+   } else {
+      split_prefix_scan<uint32_t, BLOCKSIZE, WARP>(counts, offsets, s);
+   }
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+
+   // Step 3 -- Compaction
+   keyvector* d_output = output.upload(s);
+   vector_int* d_offsets = offsets.upload(s);
+   d_input = input.upload(s);
+   d_counts = counts.upload(s);
+   split::tools::split_compact_keys<T, U, Rule, BLOCKSIZE, WARP>
+       <<<nBlocks, BLOCKSIZE, 2 * (BLOCKSIZE / WARP) * sizeof(unsigned int), s>>>(d_input, d_counts, d_offsets,
+                                                                                  d_output, rule);
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   size_t retval = output.size();
+   // Deallocate the handle pointers
+
+   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_input, s));
+   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_counts, s));
+   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_output, s));
+   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_offsets, s));
+   return retval;
+}
+
+/**
+ * @brief Same as split_compact but with raw memory
+ */
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+__global__ void split_compact_raw(T* input, uint32_t* counts, uint32_t* offsets, T* output, Rule rule,
+                                  const size_t size, size_t nBlocks, uint32_t* retval) {
+
+   extern __shared__ uint32_t buffer[];
+   const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
+   if (tid >= size) {
+      return;
+   }
+   unsigned int offset = BLOCKSIZE / WARP;
+   const unsigned int wid = tid / WARP;
+   const unsigned int widb = threadIdx.x / WARP;
+   const unsigned int w_tid = tid % WARP;
+   const unsigned int warps_in_block = blockDim.x / WARP;
+   const bool tres = rule(input[tid]);
+
+   auto mask = split::s_warpVote(tres, SPLIT_VOTING_MASK);
+#ifdef __NVCC__
+   uint32_t n_neighbors = mask & ((1 << w_tid) - 1);
+#else
+   uint64_t n_neighbors = mask & ((1ul << w_tid) - 1);
+#endif
+   auto total_valid_in_warp = split::s_pop_count(mask);
+   if (w_tid == 0) {
+      buffer[widb] = total_valid_in_warp;
+   }
+   __syncthreads();
+   if (w_tid == 0 && wid % warps_in_block == 0) {
+      buffer[offset + widb] = 0;
+      for (unsigned int i = 0; i < warps_in_block - 1; ++i) {
+         buffer[offset + widb + i + 1] = buffer[offset + widb + i] + buffer[widb + i];
       }
+   }
+   __syncthreads();
+   const unsigned int neighbor_count = split::s_pop_count(n_neighbors);
+   const unsigned int private_index = buffer[offset + widb] + offsets[(wid / warps_in_block)] + neighbor_count;
+   if (tres && widb != warps_in_block) {
+      output[private_index] = input[tid];
+   }
+   if (tid == 0) {
+      // const unsigned int actual_total_blocks=offsets->back()+counts->back();
+      *retval = offsets[nBlocks - 1] + counts[nBlocks - 1];
+   }
+}
 
-      
-      template <typename T,typename Rule,size_t BLOCKSIZE=1024, size_t WARP=32>
-      __global__
-      void split_compact_raw(T* input, uint32_t* counts, uint32_t* offsets, T* output, Rule rule,const size_t size,size_t nBlocks,uint32_t* retval){
+/**
+ * @brief CUDA Memory Pool class for managing GPU memory.
+ *
+ * This class provides a simle memory pool implementation for allocating and deallocating GPU memory.
+ * It uses async mallocs
+ *
+ */
+class Cuda_mempool {
+private:
+   size_t total_bytes;
+   size_t bytes_used;
+   void* _data;
+   split_gpuStream_t s;
 
-         extern __shared__ uint32_t buffer[];
-         const size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
-         if (tid>=size) {return;}
-         unsigned int offset = BLOCKSIZE/WARP;
-         const unsigned int wid = tid/WARP;
-         const unsigned int widb = threadIdx.x/WARP;
-         const unsigned int w_tid=tid%WARP;
-         const unsigned int warps_in_block = blockDim.x/WARP;
-         const bool tres=rule(input[tid]);
+public:
+   explicit Cuda_mempool(size_t bytes, split_gpuStream_t str) {
+      s = str;
+      SPLIT_CHECK_ERR(split_gpuMallocAsync(&_data, bytes, s));
+      total_bytes = bytes;
+      bytes_used = 0;
+   }
+   Cuda_mempool(const Cuda_mempool& other) = delete;
+   Cuda_mempool(Cuda_mempool&& other) = delete;
+   ~Cuda_mempool() { SPLIT_CHECK_ERR(split_gpuFreeAsync(_data, s)); }
 
-         unsigned int  mask= __ballot_sync(SPLIT_VOTING_MASK,tres);
-         unsigned int n_neighbors= mask & ((1 << w_tid) - 1);
-         unsigned int total_valid_in_warp	= __popc(mask);
-         if (w_tid==0 ){
-            buffer[widb]=total_valid_in_warp;
-         }
-         __syncthreads();
-         if (w_tid==0 && wid%warps_in_block==0){
-            buffer[offset+widb]=0;
-            for (unsigned int i =0 ; i < warps_in_block-1;++i){
-               buffer[offset+widb+i+1]=buffer[offset+widb+i] +buffer[widb+i];
-            }
-         }
-         __syncthreads();
-         const unsigned int neighbor_count= __popc(n_neighbors);
-         const unsigned int private_index	= buffer[offset+widb] + offsets[(wid/warps_in_block)] + neighbor_count ;
-         if (tres && widb!=warps_in_block){
-            output[private_index] = input[tid];
-         }
-         if (tid==0){
-            //const unsigned int actual_total_blocks=offsets->back()+counts->back();
-            *retval=offsets[nBlocks-1]+counts[nBlocks-1];
-         }
+   void* allocate(const size_t bytes) {
+      assert(bytes_used + bytes < total_bytes && "Mempool run out of space and crashed!");
+      void* ptr = reinterpret_cast<void*>(reinterpret_cast<char*>(_data) + bytes_used);
+      bytes_used += bytes;
+      return ptr;
+   };
+
+   void deallocate(const size_t bytes) { bytes_used -= bytes; };
+
+   void reset() { bytes_used = 0; }
+
+   const size_t& fill() const { return bytes_used; }
+   const size_t& capacity() const { return total_bytes; }
+};
+
+/**
+ * @brief Same as scan_reduce but with raw memory
+ */
+template <typename T, typename Rule>
+__global__ void scan_reduce_raw(T* input, uint32_t* output, Rule rule, size_t size) {
+
+   size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
+   if (tid < size) {
+      size_t total_valid_elements = __syncthreads_count(rule(input[tid]));
+      if (threadIdx.x == 0) {
+         output[blockIdx.x] = total_valid_elements;
       }
+   }
+}
 
+/**
+ * @brief Same as split_prefix_scan but with raw memory
+ */
+template <typename T, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+void split_prefix_scan_raw(T* input, T* output, Cuda_mempool& mPool, const size_t input_size, split_gpuStream_t s = 0) {
 
-      class Cuda_mempool{
-         private:
-            size_t total_bytes;
-            size_t bytes_used;
-            void* _data;
-            cudaStream_t s;
+   // Scan is performed in half Blocksizes
+   size_t scanBlocksize = BLOCKSIZE / 2;
+   size_t scanElements = 2 * scanBlocksize;
+   size_t gridSize = input_size / scanElements;
 
-         public:
-            explicit Cuda_mempool(size_t bytes,cudaStream_t str){
-               s=str;
-               cudaMallocAsync(&_data, bytes,s);
-               CheckErrors("Cuda Memory Allocation");
-               total_bytes=bytes;
-               bytes_used=0;
-            }
-            Cuda_mempool(const Cuda_mempool& other)=delete;
-            Cuda_mempool(Cuda_mempool&& other)=delete;
-            ~Cuda_mempool(){
-               cudaFreeAsync(_data,s);
-            }
-
-            void* allocate(const size_t bytes){
-               assert(bytes_used+bytes<total_bytes && "Mempool run out of space and crashed!");
-               void* ptr=reinterpret_cast<void*> (reinterpret_cast<char*>(_data)+bytes_used);
-               bytes_used+=bytes;
-               return ptr;
-            };
-
-            void deallocate(const size_t bytes){
-               bytes_used-=bytes;
-            };
-
-            void reset(){
-               bytes_used=0;
-            }
-
-            const size_t& fill()const{return bytes_used;}
-            const size_t& capacity()const{return total_bytes;}
-      };
-
-
-
-      template<typename T,typename Rule>
-      __global__
-      void scan_reduce_raw(T* input, uint32_t* output, Rule rule,size_t size){
-
-         size_t tid = threadIdx.x + blockIdx.x*blockDim.x;
-         if (tid<size){
-            size_t total_valid_elements=__syncthreads_count(rule(input[tid]));
-            if (threadIdx.x==0){
-               output[blockIdx.x]=total_valid_elements;
-            }
-         }
+   // If input is not exactly divisible by scanElements we launch an extra block
+   assert(isPow2(input_size) && "Using prefix scan with non powers of 2 as input size is not thought out yet :D");
+   if (input_size % scanElements != 0) {
+      gridSize = 1 << ((int)ceil(log(++gridSize) / log(2)));
+   }
+   // If the elements are too few manually override and launch a small kernel
+   if (input_size < scanElements) {
+      scanBlocksize = input_size / 2;
+      scanElements = input_size;
+      if (scanBlocksize == 0) {
+         scanBlocksize += 1;
       }
+      gridSize = 1;
+   }
 
+   // Allocate memory for partial sums
+   T* partial_sums = (T*)mPool.allocate(gridSize * sizeof(T));
+   // TODO + FIXME extra shmem
+   split::tools::split_prescan<<<gridSize, scanBlocksize, 2 * scanElements * sizeof(T), s>>>(
+       input, output, partial_sums, scanElements, input_size);
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
 
-      template <typename T, size_t BLOCKSIZE=1024,size_t WARP=32>
-      void split_prefix_scan_raw(T* input, T* output ,Cuda_mempool& mPool, const size_t input_size,cudaStream_t s=0){
-
-         //Scan is performed in half Blocksizes
-         size_t scanBlocksize= BLOCKSIZE/2;
-         size_t scanElements=2*scanBlocksize;
-         size_t gridSize = input_size/scanElements;
-
-         //If input is not exactly divisible by scanElements we launch an extra block
-         assert(isPow2(input_size) && "Using prefix scan with non powers of 2 as input size is not thought out yet :D");
-         if (input_size%scanElements!=0){
-            gridSize=1<<((int)ceil(log(++gridSize)/log(2)));
-         }
-         //If the elements are too few manually override and launch a small kernel
-         if (input_size<scanElements){
-            scanBlocksize=input_size/2;
-            scanElements=input_size;
-            if (scanBlocksize==0){scanBlocksize+=1;}
-            gridSize=1;
-         }
-         
-
-         //Allocate memory for partial sums
-         T* partial_sums = (T*)mPool.allocate(gridSize*sizeof(T)); 
-         //TODO + FIXME extra shmem
-         split::tools::split_prescan<<<gridSize,scanBlocksize,2*scanElements*sizeof(T),s>>>(input,output,partial_sums,scanElements,input_size);
-         cudaStreamSynchronize(s);
-
-
-         if (gridSize>1){
-            if (gridSize<=scanElements){
-               T* partial_sums_dummy=(T*)mPool.allocate(sizeof(T));
-               //TODO + FIXME extra shmem
-               split::tools::split_prescan<<<1,scanBlocksize,2*scanElements*sizeof(T),s>>>(partial_sums,partial_sums,partial_sums_dummy,gridSize,gridSize*sizeof(T));
-               cudaStreamSynchronize(s);
-            }else{
-               T* partial_sums_clone=(T*)mPool.allocate(gridSize*sizeof(T));
-               cudaMemcpyAsync(partial_sums_clone, partial_sums, gridSize*sizeof(T),cudaMemcpyDeviceToDevice,s);
-               split_prefix_scan_raw(partial_sums_clone,partial_sums,mPool,gridSize,s);
-               
-            }
-            split::tools::scan_add<<<gridSize,scanBlocksize,0,s>>>(output,partial_sums,scanElements,input_size);
-            cudaStreamSynchronize(s);
-         }
+   if (gridSize > 1) {
+      if (gridSize <= scanElements) {
+         T* partial_sums_dummy = (T*)mPool.allocate(sizeof(T));
+         // TODO + FIXME extra shmem
+         split::tools::split_prescan<<<1, scanBlocksize, 2 * scanElements * sizeof(T), s>>>(
+             partial_sums, partial_sums, partial_sums_dummy, gridSize, gridSize * sizeof(T));
+         SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+      } else {
+         T* partial_sums_clone = (T*)mPool.allocate(gridSize * sizeof(T));
+         SPLIT_CHECK_ERR(split_gpuMemcpyAsync(partial_sums_clone, partial_sums, gridSize * sizeof(T),
+                                              split_gpuMemcpyDeviceToDevice, s));
+         split_prefix_scan_raw(partial_sums_clone, partial_sums, mPool, gridSize, s);
       }
+      split::tools::scan_add<<<gridSize, scanBlocksize, 0, s>>>(output, partial_sums, scanElements, input_size);
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   }
+}
 
-      template <typename T, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=32>
-      uint32_t copy_if_raw(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
-                   T* output,
-                   Rule rule,
-                   cudaStream_t s=0)
-      {
-         
-         //Figure out Blocks to use
-         size_t nBlocks=input.size()/BLOCKSIZE; 
-         if (nBlocks==0){nBlocks+=1;}
-         
-         //Allocate with Mempool
-         const size_t memory_for_pool = 8*nBlocks*sizeof(uint32_t) ;
-         Cuda_mempool mPool(memory_for_pool,s);
+/**
+ * @brief Same as copy_if but using raw memory
+ */
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+uint32_t
+copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& input,
+            T* output, Rule rule, split_gpuStream_t s = 0) {
 
-         uint32_t* d_counts;
-         uint32_t* d_offsets;
-         cudaStreamSynchronize(s);
-         d_counts=(uint32_t*)mPool.allocate(nBlocks*sizeof(uint32_t));
+   // Figure out Blocks to use
+   size_t nBlocks = input.size() / BLOCKSIZE;
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
 
-               
-         //Phase 1 -- Calculate per warp workload
-         split::tools::scan_reduce_raw<<<nBlocks,BLOCKSIZE,0,s>>>(input.data(),d_counts,rule,input.size());
-         d_offsets=(uint32_t*)mPool.allocate(nBlocks*sizeof(uint32_t));
-         cudaStreamSynchronize(s);
+   // Allocate with Mempool
+   const size_t memory_for_pool = 8 * nBlocks * sizeof(uint32_t);
+   Cuda_mempool mPool(memory_for_pool, s);
 
+   uint32_t* d_counts;
+   uint32_t* d_offsets;
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   d_counts = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
 
-         //Step 2 -- Exclusive Prefix Scan on offsets
-         if (nBlocks==1){
-            split_prefix_scan_raw<uint32_t,2,WARP>(d_counts,d_offsets,mPool,nBlocks,s);
-         }else{
-            split_prefix_scan_raw<uint32_t,BLOCKSIZE,WARP>(d_counts,d_offsets,mPool,nBlocks,s);
-         }
-         cudaStreamSynchronize(s);
+   // Phase 1 -- Calculate per warp workload
+   split::tools::scan_reduce_raw<<<nBlocks, BLOCKSIZE, 0, s>>>(input.data(), d_counts, rule, input.size());
+   d_offsets = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
 
+   // Step 2 -- Exclusive Prefix Scan on offsets
+   if (nBlocks == 1) {
+      split_prefix_scan_raw<uint32_t, 2, WARP>(d_counts, d_offsets, mPool, nBlocks, s);
+   } else {
+      split_prefix_scan_raw<uint32_t, BLOCKSIZE, WARP>(d_counts, d_offsets, mPool, nBlocks, s);
+   }
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
 
-         //Step 3 -- Compaction
-         uint32_t* retval=(uint32_t*)mPool.allocate(sizeof(uint32_t));
-         split::tools::split_compact_raw<T,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int),s>>>(input.data(),d_counts,d_offsets,output,rule,input.size(),nBlocks,retval);
-         cudaStreamSynchronize(s);
-         uint32_t numel;
-         cudaMemcpyAsync(&numel,retval,sizeof(uint32_t),cudaMemcpyDeviceToHost,s);
-         cudaStreamSynchronize(s);
-         return numel;
-      }
+   // Step 3 -- Compaction
+   uint32_t* retval = (uint32_t*)mPool.allocate(sizeof(uint32_t));
+   split::tools::split_compact_raw<T, Rule, BLOCKSIZE, WARP>
+       <<<nBlocks, BLOCKSIZE, 2 * (BLOCKSIZE / WARP) * sizeof(unsigned int), s>>>(
+           input.data(), d_counts, d_offsets, output, rule, input.size(), nBlocks, retval);
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   uint32_t numel;
+   SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&numel, retval, sizeof(uint32_t), split_gpuMemcpyDeviceToHost, s));
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   return numel;
+}
 
+/**
+ * @brief Same as copy_keys_if but using raw memory
+ */
+template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+size_t copy_keys_if_raw(
+    split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& input, U* output,
+    Rule rule, split_gpuStream_t s = 0) {
 
-      template <typename T,typename U, typename Rule,size_t BLOCKSIZE=1024,size_t WARP=32>
-      size_t copy_keys_if_raw(split::SplitVector<T,split::split_unified_allocator<T>,split::split_unified_allocator<size_t>>& input,
-                   U* output,
-                   Rule rule,
-                   cudaStream_t s=0)
-      {
+   // Figure out Blocks to use
+   size_t nBlocks = input.size() / BLOCKSIZE;
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
 
-         //Figure out Blocks to use
-         size_t nBlocks=input.size()/BLOCKSIZE; 
-         if (nBlocks==0){nBlocks+=1;}
-         
-         //Allocate with Mempool
-         const size_t memory_for_pool = 8*nBlocks*sizeof(uint32_t) ;
-         Cuda_mempool mPool(memory_for_pool,s);
+   // Allocate with Mempool
+   const size_t memory_for_pool = 8 * nBlocks * sizeof(uint32_t);
+   Cuda_mempool mPool(memory_for_pool, s);
 
-         uint32_t* d_counts;
-         uint32_t* d_offsets;
-         cudaStreamSynchronize(s);
-         d_counts=(uint32_t*)mPool.allocate(nBlocks*sizeof(uint32_t));
+   uint32_t* d_counts;
+   uint32_t* d_offsets;
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   d_counts = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
 
-               
-         //Phase 1 -- Calculate per warp workload
-         split::tools::scan_reduce_raw<<<nBlocks,BLOCKSIZE,0,s>>>(input.data(),d_counts,rule,input.size());
-         d_offsets=(uint32_t*)mPool.allocate(nBlocks*sizeof(uint32_t));
-         cudaStreamSynchronize(s);
+   // Phase 1 -- Calculate per warp workload
+   split::tools::scan_reduce_raw<<<nBlocks, BLOCKSIZE, 0, s>>>(input.data(), d_counts, rule, input.size());
+   d_offsets = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
 
+   // Step 2 -- Exclusive Prefix Scan on offsets
+   if (nBlocks == 1) {
+      split_prefix_scan_raw<uint32_t, 2, WARP>(d_counts, d_offsets, mPool, nBlocks, s);
+   } else {
+      split_prefix_scan_raw<uint32_t, BLOCKSIZE, WARP>(d_counts, d_offsets, mPool, nBlocks, s);
+   }
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
 
-         //Step 2 -- Exclusive Prefix Scan on offsets
-         if (nBlocks==1){
-            split_prefix_scan_raw<uint32_t,2,WARP>(d_counts,d_offsets,mPool,nBlocks,s);
-         }else{
-            split_prefix_scan_raw<uint32_t,BLOCKSIZE,WARP>(d_counts,d_offsets,mPool,nBlocks,s);
-         }
-         cudaStreamSynchronize(s);
+   // Step 3 -- Compaction
+   uint32_t* retval = (uint32_t*)mPool.allocate(sizeof(uint32_t));
+   split::tools::split_compact_keys_raw<T, U, Rule, BLOCKSIZE, WARP>
+       <<<nBlocks, BLOCKSIZE, 2 * (BLOCKSIZE / WARP) * sizeof(unsigned int), s>>>(
+           input.data(), d_counts, d_offsets, output, rule, input.size(), nBlocks, retval);
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   uint32_t numel;
+   SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&numel, retval, sizeof(uint32_t), split_gpuMemcpyDeviceToHost, s));
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   return numel;
+}
 
-
-         //Step 3 -- Compaction
-         uint32_t* retval=(uint32_t*)mPool.allocate(sizeof(uint32_t));
-         split::tools::split_compact_keys_raw<T,U,Rule,BLOCKSIZE,WARP><<<nBlocks,BLOCKSIZE,2*(BLOCKSIZE/WARP)*sizeof(unsigned int),s>>>(input.data(),d_counts,d_offsets,output,rule,input.size(),nBlocks,retval);
-         cudaStreamSynchronize(s);
-         uint32_t numel;
-         cudaMemcpyAsync(&numel,retval,sizeof(uint32_t),cudaMemcpyDeviceToHost,s);
-         cudaStreamSynchronize(s);
-         return numel;
-      }
-
-   }//namespace tools
-}//namespace split
+} // namespace tools
+} // namespace split
