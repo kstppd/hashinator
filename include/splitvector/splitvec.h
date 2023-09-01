@@ -75,7 +75,6 @@ typedef struct SplitVectorInfo {
  *
  * @tparam T Type of the elements in the vector.
  * @tparam Allocator The allocator type for managing memory.
- * @tparam Meta_Allocator The allocator type for managing metadata (size, capacity).
  */
 template <typename T, class Allocator = DefaultAllocator<T>>
 class SplitVector {
