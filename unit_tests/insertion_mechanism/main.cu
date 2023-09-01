@@ -13,7 +13,7 @@
 #define expect_eq EXPECT_EQ
 typedef uint32_t keyval_type;
 using namespace Hashinator;
-typedef split::SplitVector<keyval_type,split::split_unified_allocator<keyval_type>,split::split_unified_allocator<size_t>> vector ;
+typedef split::SplitVector<keyval_type> vector ;
 using namespace std::chrono;
 typedef Hashmap<keyval_type,keyval_type> hashmap;
 

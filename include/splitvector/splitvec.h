@@ -40,16 +40,12 @@
 #define HOSTDEVICE __host__ __device__
 template <typename T>
 using DefaultAllocator = split::split_unified_allocator<T>;
-template <typename T>
-using DefaultMetaAllocator = split::split_unified_allocator<size_t>;
 #else
 #define HOSTONLY
 #define DEVICEONLY
 #define HOSTDEVICE
 template <typename T>
 using DefaultAllocator = split::split_host_allocator<T>;
-template <typename T>
-using DefaultMetaAllocator = split::split_host_allocator<size_t>;
 #endif
 
 namespace split {
@@ -81,7 +77,7 @@ typedef struct SplitVectorInfo {
  * @tparam Allocator The allocator type for managing memory.
  * @tparam Meta_Allocator The allocator type for managing metadata (size, capacity).
  */
-template <typename T, class Allocator = DefaultAllocator<T>, class Meta_Allocator = DefaultMetaAllocator<size_t>>
+template <typename T, class Allocator = DefaultAllocator<T>>
 class SplitVector {
 
 private:
@@ -90,18 +86,13 @@ private:
    size_t* _capacity;              // number of allocated elements
    size_t _alloc_multiplier = 2;   // host variable; multiplier for  when reserving more space
    Allocator _allocator;           // Allocator used to allocate and deallocate memory;
-   Meta_Allocator _meta_allocator; // Allocator used to allocate and deallocate memory for metadata
-                                   //   (currently: _size, _capacity);
+                                   
    /**
     * @brief Checks if a pointer is valid and throws an exception if it's null.
-    *
     * @param ptr Pointer to be checked.
-    * @throws std::bad_alloc If the pointer is null.
     */
-   void _check_ptr(void* ptr) {
-      if (ptr == nullptr) {
-         throw std::bad_alloc();
-      }
+   inline void _check_ptr(void* ptr) {
+      assert(ptr);
    }
 
    /**
@@ -173,8 +164,9 @@ private:
     * @return Pointer to the allocated and constructed memory.
     */
    HOSTONLY size_t* _allocate_and_construct(const size_t& val) {
-      size_t* _ptr = _meta_allocator.allocate(1);
-      _meta_allocator.construct(_ptr, val);
+      size_t* _ptr = (size_t*)_allocator.allocate_raw(sizeof(size_t));
+      assert(_ptr);
+      *_ptr=val;
       return _ptr;
    }
 
@@ -196,7 +188,11 @@ private:
     *
     * @param ptr Pointer to the memory to be deallocated.
     */
-   HOSTONLY void _deallocate_and_destroy(size_t* ptr) { _meta_allocator.deallocate(ptr, 1); }
+   HOSTONLY void _deallocate_and_destroy(size_t* ptr) { 
+      if (ptr){
+         _allocator.deallocate(ptr, 1); 
+      }
+   }
 
 public:
    /* Available Constructors :
@@ -243,7 +239,7 @@ public:
     *
     * @param other The SplitVector to be copied.
     */
-   HOSTONLY explicit SplitVector(const SplitVector<T, Allocator, Meta_Allocator>& other) {
+   HOSTONLY explicit SplitVector(const SplitVector<T, Allocator>& other) {
       const size_t size_to_allocate = other.size();
       this->_allocate(size_to_allocate);
       for (size_t i = 0; i < size_to_allocate; i++) {
@@ -256,7 +252,7 @@ public:
     *
     * @param other The SplitVector to be moved from.
     */
-   HOSTONLY SplitVector(SplitVector<T, Allocator, Meta_Allocator>&& other) noexcept {
+   HOSTONLY SplitVector(SplitVector<T, Allocator>&& other) noexcept {
       _data = other._data;
       *_size = other.size();
       *_capacity = other.capacity();
@@ -300,8 +296,8 @@ public:
     * @param other The SplitVector to assign from.
     * @return Reference to the assigned SplitVector.
     */
-   HOSTONLY SplitVector<T, Allocator, Meta_Allocator>&
-   operator=(const SplitVector<T, Allocator, Meta_Allocator>& other) {
+   HOSTONLY SplitVector<T, Allocator>&
+   operator=(const SplitVector<T, Allocator>& other) {
       // Match other's size prior to copying
       resize(other.size());
       for (size_t i = 0; i < other.size(); i++) {
@@ -316,8 +312,8 @@ public:
     * @param other The SplitVector to move from.
     * @return Reference to the moved SplitVector.
     */
-   HOSTONLY SplitVector<T, Allocator, Meta_Allocator>&
-   operator=(SplitVector<T, Allocator, Meta_Allocator>&& other) noexcept {
+   HOSTONLY SplitVector<T, Allocator>&
+   operator=(SplitVector<T, Allocator>&& other) noexcept {
       if (this == &other) {
          return *this;
       }
@@ -381,7 +377,7 @@ public:
     * Has to be split_gpuFree'd after use otherwise memleak (small one but still)!
     */
    HOSTONLY
-   SplitVector<T, Allocator, Meta_Allocator>* upload(split_gpuStream_t stream = 0) {
+   SplitVector<T, Allocator>* upload(split_gpuStream_t stream = 0) {
       SplitVector* d_vec;
       optimizeGPU(stream);
       SPLIT_CHECK_ERR(split_gpuMallocAsync((void**)&d_vec, sizeof(SplitVector), stream));
@@ -472,7 +468,7 @@ public:
     * Pointers outside of splitvector's source
     * are invalidated after swap is called.
     */
-   void swap(SplitVector<T, Allocator, Meta_Allocator>& other) noexcept {
+   void swap(SplitVector<T, Allocator>& other) noexcept {
       if (*this == other) { // no need to do any work
          return;
       }
@@ -769,7 +765,7 @@ public:
       // If we have no allocated memory because the default ctor was used then
       // allocate one element, set it and return
       if (_data == nullptr) {
-         *this = SplitVector<T, Allocator, Meta_Allocator>(1, val);
+         *this = SplitVector<T, Allocator>(1, val);
          return;
       }
       resize(size() + 1);
@@ -788,7 +784,7 @@ public:
       // If we have no allocated memory because the default ctor was used then
       // allocate one element, set it and return
       if (_data == nullptr) {
-         *this = SplitVector<T, Allocator, Meta_Allocator>(1, std::move(val));
+         *this = SplitVector<T, Allocator>(1, std::move(val));
          return;
       }
       resize(size() + 1);
@@ -1300,9 +1296,9 @@ public:
 }; // SplitVector
 
 /*Equal operator*/
-template <typename T, class Allocator, class Meta_Allocator>
-static inline HOSTDEVICE bool operator==(const SplitVector<T, Allocator, Meta_Allocator>& lhs,
-                                         const SplitVector<T, Allocator, Meta_Allocator>& rhs) noexcept {
+template <typename T, class Allocator>
+static inline HOSTDEVICE bool operator==(const SplitVector<T, Allocator>& lhs,
+                                         const SplitVector<T, Allocator>& rhs) noexcept {
    if (lhs.size() != rhs.size()) {
       return false;
    }
@@ -1316,9 +1312,9 @@ static inline HOSTDEVICE bool operator==(const SplitVector<T, Allocator, Meta_Al
 }
 
 /*Not-Equal operator*/
-template <typename T, class Allocator, class Meta_Allocator>
-static inline HOSTDEVICE bool operator!=(const SplitVector<T, Allocator, Meta_Allocator>& lhs,
-                                         const SplitVector<T, Allocator, Meta_Allocator>& rhs) noexcept {
+template <typename T, class Allocator>
+static inline HOSTDEVICE bool operator!=(const SplitVector<T, Allocator>& lhs,
+                                         const SplitVector<T, Allocator>& rhs) noexcept {
    return !(rhs == lhs);
 }
 } // namespace split

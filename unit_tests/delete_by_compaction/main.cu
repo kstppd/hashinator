@@ -11,7 +11,7 @@
 #define expect_eq EXPECT_EQ
 typedef uint32_t val_type;
 using namespace Hashinator;
-typedef split::SplitVector<hash_pair<val_type,val_type>,split::split_unified_allocator<hash_pair<val_type,val_type>>,split::split_unified_allocator<size_t>> vector ;
+typedef split::SplitVector<hash_pair<val_type,val_type>> vector ;
 using namespace std::chrono;
 typedef Hashmap<val_type,val_type> hashmap;
 

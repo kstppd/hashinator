@@ -20,8 +20,8 @@ using namespace std::chrono;
 using namespace Hashinator;
 typedef uint32_t val_type;
 typedef uint32_t key_type;
-typedef split::SplitVector<hash_pair<key_type,val_type>,split::split_unified_allocator<hash_pair<val_type,val_type>>,split::split_unified_allocator<size_t>> vector ;
-typedef split::SplitVector<key_type,split::split_unified_allocator<key_type>,split::split_unified_allocator<size_t>> ivector ;
+typedef split::SplitVector<hash_pair<key_type,val_type>> vector ;
+typedef split::SplitVector<key_type> ivector ;
 typedef Hashmap<key_type,val_type> hashmap;
 
 

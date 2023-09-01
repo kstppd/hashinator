@@ -98,9 +98,8 @@ __global__ void scan_add(T* input, T* partial_sums, size_t blockSize, size_t len
  */
 template <typename T, typename Rule>
 __global__ void
-scan_reduce(split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>* input,
-            split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>,
-                               split::split_unified_allocator<size_t>>* output,
+scan_reduce(split::SplitVector<T, split::split_unified_allocator<T>>* input,
+            split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>>* output,
             Rule rule) {
 
    size_t size = input->size();
@@ -212,12 +211,12 @@ __global__ void split_prescan(T* input, T* output, T* partial_sums, int n, size_
  */
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 __global__ void split_compact(
-    split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>* input,
-    split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>, split::split_unified_allocator<size_t>>*
+    split::SplitVector<T, split::split_unified_allocator<T>>* input,
+    split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>>*
         counts,
-    split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>, split::split_unified_allocator<size_t>>*
+    split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>>*
         offsets,
-    split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>* output,
+    split::SplitVector<T, split::split_unified_allocator<T>>* output,
     Rule rule) {
    extern __shared__ uint32_t buffer[];
    const size_t size = input->size();
@@ -267,12 +266,12 @@ __global__ void split_compact(
  */
 template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 __global__ void split_compact_keys(
-    split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>* input,
-    split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>, split::split_unified_allocator<size_t>>*
+    split::SplitVector<T, split::split_unified_allocator<T>>* input,
+    split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>>*
         counts,
-    split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>, split::split_unified_allocator<size_t>>*
+    split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>>*
         offsets,
-    split::SplitVector<U, split::split_unified_allocator<U>, split::split_unified_allocator<size_t>>* output,
+    split::SplitVector<U, split::split_unified_allocator<U>>* output,
     Rule rule) {
    extern __shared__ uint32_t buffer[];
    const size_t size = input->size();
@@ -381,12 +380,12 @@ __global__ void split_compact_keys_raw(T* input, uint32_t* counts, uint32_t* off
  */
 template <typename T, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 void split_prefix_scan(
-    split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& input,
-    split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& output,
+    split::SplitVector<T, split::split_unified_allocator<T>>& input,
+    split::SplitVector<T, split::split_unified_allocator<T>>& output,
     split_gpuStream_t s = 0)
 
 {
-   using vector = split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>;
+   using vector = split::SplitVector<T, split::split_unified_allocator<T>>;
 
    // Input size
    const size_t input_size = input.size();
@@ -454,13 +453,13 @@ void split_prefix_scan(
  * @param s The split_gpuStream_t stream for GPU execution (default is 0).
  */
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
-void copy_if(split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& input,
-             split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& output,
+void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
+             split::SplitVector<T, split::split_unified_allocator<T>>& output,
              Rule rule, split_gpuStream_t s = 0) {
 
-   using vector = split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>;
+   using vector = split::SplitVector<T, split::split_unified_allocator<T>>;
    using vector_int =
-       split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>, split::split_unified_allocator<size_t>>;
+       split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>>;
 
    // Figure out Blocks to use
    size_t nBlocks = input.size() / BLOCKSIZE;
@@ -508,14 +507,14 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>, split::spl
  */
 template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 size_t
-copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& input,
-             split::SplitVector<U, split::split_unified_allocator<U>, split::split_unified_allocator<size_t>>& output,
+copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
+             split::SplitVector<U, split::split_unified_allocator<U>>& output,
              Rule rule, split_gpuStream_t s = 0) {
 
-   using vector = split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>;
-   using keyvector = split::SplitVector<U, split::split_unified_allocator<U>, split::split_unified_allocator<size_t>>;
+   using vector = split::SplitVector<T, split::split_unified_allocator<T>>;
+   using keyvector = split::SplitVector<U, split::split_unified_allocator<U>>;
    using vector_int =
-       split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>, split::split_unified_allocator<size_t>>;
+       split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>>;
 
    // Figure out Blocks to use
    size_t nBlocks = input.size() / BLOCKSIZE;
@@ -719,7 +718,7 @@ void split_prefix_scan_raw(T* input, T* output, Cuda_mempool& mPool, const size_
  */
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 uint32_t
-copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& input,
+copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& input,
             T* output, Rule rule, split_gpuStream_t s = 0) {
 
    // Figure out Blocks to use
@@ -767,7 +766,7 @@ copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>, split::spli
  */
 template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 size_t copy_keys_if_raw(
-    split::SplitVector<T, split::split_unified_allocator<T>, split::split_unified_allocator<size_t>>& input, U* output,
+    split::SplitVector<T, split::split_unified_allocator<T>>& input, U* output,
     Rule rule, split_gpuStream_t s = 0) {
 
    // Figure out Blocks to use

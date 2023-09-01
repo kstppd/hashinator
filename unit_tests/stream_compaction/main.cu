@@ -14,7 +14,7 @@
 #define BLOCKSIZE 32
 
 typedef uint32_t val_type;
-typedef split::SplitVector<val_type,split::split_unified_allocator<val_type>,split::split_unified_allocator<size_t>> vec ;
+typedef split::SplitVector<val_type> vec ;
 
 
 

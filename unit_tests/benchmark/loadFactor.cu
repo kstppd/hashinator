@@ -10,9 +10,9 @@ using namespace std::chrono;
 using namespace Hashinator;
 typedef uint32_t val_type;
 typedef uint32_t key_type;
-typedef split::SplitVector<hash_pair<key_type,val_type>,split::split_unified_allocator<hash_pair<val_type,val_type>>,split::split_unified_allocator<size_t>> vector ;
-typedef split::SplitVector<key_type,split::split_unified_allocator<key_type>,split::split_unified_allocator<size_t>> key_vec;
-typedef split::SplitVector<val_type,split::split_unified_allocator<val_type>,split::split_unified_allocator<size_t>> val_vec;
+typedef split::SplitVector<hash_pair<key_type,val_type>> vector ;
+typedef split::SplitVector<key_type> key_vec;
+typedef split::SplitVector<val_type> val_vec;
 using hashmap= Hashmap<key_type,val_type>;
 
 auto generateNonDuplicatePairs(vector& src,const size_t size)->void {

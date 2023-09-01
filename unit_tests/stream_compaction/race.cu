@@ -12,7 +12,7 @@
 
 
 typedef uint32_t val_type;
-typedef split::SplitVector<val_type,split::split_unified_allocator<val_type>,split::split_unified_allocator<size_t>> split_vector; 
+typedef split::SplitVector<val_type> split_vector; 
 
 using namespace std::chrono;
 
