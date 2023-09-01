@@ -80,19 +80,17 @@ template <typename T, class Allocator = DefaultAllocator<T>>
 class SplitVector {
 
 private:
-   T* _data = nullptr;             // actual pointer to our data
-   size_t* _size;                  // number of elements in vector.
-   size_t* _capacity;              // number of allocated elements
-   size_t _alloc_multiplier = 2;   // host variable; multiplier for  when reserving more space
-   Allocator _allocator;           // Allocator used to allocate and deallocate memory;
-                                   
+   T* _data = nullptr;           // actual pointer to our data
+   size_t* _size;                // number of elements in vector.
+   size_t* _capacity;            // number of allocated elements
+   size_t _alloc_multiplier = 2; // host variable; multiplier for  when reserving more space
+   Allocator _allocator;         // Allocator used to allocate and deallocate memory;
+
    /**
     * @brief Checks if a pointer is valid and throws an exception if it's null.
     * @param ptr Pointer to be checked.
     */
-   inline void _check_ptr(void* ptr) {
-      assert(ptr);
-   }
+   inline void _check_ptr(void* ptr) { assert(ptr); }
 
    /**
     * @brief Internal range check used in the .at() method.
@@ -165,7 +163,7 @@ private:
    HOSTONLY size_t* _allocate_and_construct(const size_t& val) {
       size_t* _ptr = (size_t*)_allocator.allocate_raw(sizeof(size_t));
       assert(_ptr);
-      *_ptr=val;
+      *_ptr = val;
       return _ptr;
    }
 
@@ -187,9 +185,9 @@ private:
     *
     * @param ptr Pointer to the memory to be deallocated.
     */
-   HOSTONLY void _deallocate_and_destroy(size_t* ptr) { 
-      if (ptr){
-         _allocator.deallocate(ptr, 1); 
+   HOSTONLY void _deallocate_and_destroy(size_t* ptr) {
+      if (ptr) {
+         _allocator.deallocate(ptr, 1);
       }
    }
 
@@ -295,8 +293,7 @@ public:
     * @param other The SplitVector to assign from.
     * @return Reference to the assigned SplitVector.
     */
-   HOSTONLY SplitVector<T, Allocator>&
-   operator=(const SplitVector<T, Allocator>& other) {
+   HOSTONLY SplitVector<T, Allocator>& operator=(const SplitVector<T, Allocator>& other) {
       // Match other's size prior to copying
       resize(other.size());
       for (size_t i = 0; i < other.size(); i++) {
@@ -311,8 +308,7 @@ public:
     * @param other The SplitVector to move from.
     * @return Reference to the moved SplitVector.
     */
-   HOSTONLY SplitVector<T, Allocator>&
-   operator=(SplitVector<T, Allocator>&& other) noexcept {
+   HOSTONLY SplitVector<T, Allocator>& operator=(SplitVector<T, Allocator>&& other) noexcept {
       if (this == &other) {
          return *this;
       }
