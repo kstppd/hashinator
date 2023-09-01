@@ -808,7 +808,6 @@ public:
       if (old >= capacity()) {
          assert(0 && "Splitvector has a catastrophic failure trying to pushback on device because the vector has no "
                      "space available.");
-         asm("trap;");
       }
       atomicCAS(&(_data[old]), _data[old], val);
       return;
@@ -828,7 +827,6 @@ public:
       if (old >= capacity()) {
          assert(0 && "Splitvector has a catastrophic failure trying to pushback on device because the vector has no "
                      "space available.");
-         asm("trap;");
       }
       atomicCAS(&(_data[old]), _data[old], std::move(val));
       return;
