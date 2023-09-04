@@ -22,6 +22,7 @@
  * */
 #pragma once
 #include "archMacros.h"
+#include <cassert>
 namespace split {
 
 #ifndef SPLIT_CPU_ONLY_MODE
