@@ -712,19 +712,18 @@ public:
 
 #ifndef HASHINATOR_CPU_ONLY_MODE
 
-
    HASHINATOR_DEVICEONLY
-   void warpInsert(const KEY_TYPE& candidateKey, VAL_TYPE& candidateVal, const size_t w_tid)noexcept{
+   void warpInsert(const KEY_TYPE& candidateKey, VAL_TYPE& candidateVal, const size_t w_tid) noexcept {
 
       const int sizePower = _mapInfo->sizePower;
-      const int bitMask = (1<< (sizePower)) - 1;
+      const int bitMask = (1 << (sizePower)) - 1;
       const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
       const size_t optimalindex = (hashIndex)&bitMask;
       const auto submask = SPLIT_VOTING_MASK;
       bool warpDone = false;
       uint64_t threadOverflow = 1;
 
-      for (size_t i = 0; i < (1 << sizePower); i +=defaults::WARPSIZE) {
+      for (size_t i = 0; i < (1 << sizePower); i += defaults::WARPSIZE) {
          // Check if this virtual warp is done.
          if (warpDone) {
             break;
@@ -760,9 +759,10 @@ public:
                   threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex);
                   split::s_atomicExch(&buckets[probingindex].second, candidateVal);
                   warpDone = 1;
-                  split::s_atomicAdd(&_mapInfo->fill,1);
+                  split::s_atomicAdd(&_mapInfo->fill, 1);
                   if (threadOverflow > _mapInfo->currentMaxBucketOverflow) {
-                     split::s_atomicExch((unsigned long long*)(&_mapInfo->currentMaxBucketOverflow), (unsigned long long)nextPow2(threadOverflow));
+                     split::s_atomicExch((unsigned long long*)(&_mapInfo->currentMaxBucketOverflow),
+                                         (unsigned long long)nextPow2(threadOverflow));
                   }
                } else if (old == candidateKey) {
                   // Parallel stuff are fun. Major edge case!
@@ -779,18 +779,18 @@ public:
    }
 
    HASHINATOR_DEVICEONLY
-   bool warpInsert_V(const KEY_TYPE& candidateKey, VAL_TYPE& candidateVal, const size_t w_tid)noexcept{
+   bool warpInsert_V(const KEY_TYPE& candidateKey, VAL_TYPE& candidateVal, const size_t w_tid) noexcept {
 
       const int sizePower = _mapInfo->sizePower;
-      const int bitMask = (1<< (sizePower)) - 1;
+      const int bitMask = (1 << (sizePower)) - 1;
       const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
       const size_t optimalindex = (hashIndex)&bitMask;
       const auto submask = SPLIT_VOTING_MASK;
       bool warpDone = false;
       uint64_t threadOverflow = 1;
-      int localCount=0;
+      int localCount = 0;
 
-      for (size_t i = 0; i < (1 << sizePower); i +=defaults::WARPSIZE) {
+      for (size_t i = 0; i < (1 << sizePower); i += defaults::WARPSIZE) {
          // Check if this virtual warp is done.
          if (warpDone) {
             break;
@@ -826,10 +826,11 @@ public:
                   threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex);
                   split::s_atomicExch(&buckets[probingindex].second, candidateVal);
                   warpDone = 1;
-                  localCount=1;
-                  split::s_atomicAdd(&_mapInfo->fill,1);
+                  localCount = 1;
+                  split::s_atomicAdd(&_mapInfo->fill, 1);
                   if (threadOverflow > _mapInfo->currentMaxBucketOverflow) {
-                     split::s_atomicExch((unsigned long long*)(&_mapInfo->currentMaxBucketOverflow), (unsigned long long)nextPow2(threadOverflow));
+                     split::s_atomicExch((unsigned long long*)(&_mapInfo->currentMaxBucketOverflow),
+                                         (unsigned long long)nextPow2(threadOverflow));
                   }
                } else if (old == candidateKey) {
                   // Parallel stuff are fun. Major edge case!
@@ -845,23 +846,23 @@ public:
       }
 
       auto res = split::s_warpVote(localCount > 0, submask);
-      return ( res>0 );
+      return (res > 0);
    }
 
    HASHINATOR_DEVICEONLY
-   void warpFind(const KEY_TYPE& candidateKey, VAL_TYPE& candidateVal, const size_t w_tid)noexcept{
+   void warpFind(const KEY_TYPE& candidateKey, VAL_TYPE& candidateVal, const size_t w_tid) noexcept {
 
       const int sizePower = _mapInfo->sizePower;
       const size_t maxoverflow = _mapInfo->currentMaxBucketOverflow;
-      const int bitMask = (1<< (sizePower)) - 1;
+      const int bitMask = (1 << (sizePower)) - 1;
       const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
       const auto submask = SPLIT_VOTING_MASK;
       bool warpDone = false;
-      int winner = 0 ;
+      int winner = 0;
 
       for (size_t i = 0; i < maxoverflow; i += defaults::WARPSIZE) {
 
-         if (warpDone){
+         if (warpDone) {
             break;
          }
 
@@ -878,29 +879,30 @@ public:
          if (maskExists) {
             winner = split::s_findFirstSig(maskExists) - 1;
             if (w_tid == winner) {
-               candidateVal= buckets[probingindex].second;
-               warpDone = true;;
+               candidateVal = buckets[probingindex].second;
+               warpDone = true;
+               ;
             }
          }
       }
-      candidateVal = split::s_shuffle(candidateVal, winner, SPLIT_VOTING_MASK);  
+      candidateVal = split::s_shuffle(candidateVal, winner, SPLIT_VOTING_MASK);
       return;
    }
 
    HASHINATOR_DEVICEONLY
-   void warpErase(const KEY_TYPE& candidateKey, const size_t w_tid)noexcept{
+   void warpErase(const KEY_TYPE& candidateKey, const size_t w_tid) noexcept {
 
       const int sizePower = _mapInfo->sizePower;
       const size_t maxoverflow = _mapInfo->currentMaxBucketOverflow;
-      const int bitMask = (1<< (sizePower)) - 1;
+      const int bitMask = (1 << (sizePower)) - 1;
       const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
       const auto submask = SPLIT_VOTING_MASK;
       bool warpDone = false;
-      int winner = 0 ;
+      int winner = 0;
 
       for (size_t i = 0; i < maxoverflow; i += defaults::WARPSIZE) {
 
-         if (warpDone){
+         if (warpDone) {
             break;
          }
 
@@ -917,8 +919,9 @@ public:
          if (maskExists) {
             winner = split::s_findFirstSig(maskExists) - 1;
             if (w_tid == winner) {
-               buckets[probingindex].first=TOMBSTONE;
-               warpDone = true;;
+               buckets[probingindex].first = TOMBSTONE;
+               warpDone = true;
+               ;
             }
          }
       }
