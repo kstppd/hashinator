@@ -778,6 +778,75 @@ public:
       }
    }
 
+   HASHINATOR_DEVICEONLY
+   bool warpInsert_V(const KEY_TYPE& candidateKey, VAL_TYPE& candidateVal, const size_t w_tid)noexcept{
+
+      const int sizePower = _mapInfo->sizePower;
+      const int bitMask = (1<< (sizePower)) - 1;
+      const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
+      const size_t optimalindex = (hashIndex)&bitMask;
+      const auto submask = SPLIT_VOTING_MASK;
+      bool warpDone = false;
+      uint64_t threadOverflow = 1;
+      int localCount=0;
+
+      for (size_t i = 0; i < (1 << sizePower); i +=defaults::WARPSIZE) {
+         // Check if this virtual warp is done.
+         if (warpDone) {
+            break;
+         }
+
+         // Get the position we should be looking into
+         size_t probingindex = ((hashIndex + i + w_tid) & bitMask);
+         auto target = buckets[probingindex];
+
+         // vote for available emptybuckets in warp region
+         // Note that this has to be done before voting for already existing elements (below)
+         auto mask = split::s_warpVote(target.first == EMPTYBUCKET, submask);
+
+         // Check if this elements already exists
+         auto already_exists = split::s_warpVote(target.first == candidateKey, submask);
+         if (already_exists) {
+            int winner = split::s_findFirstSig(already_exists) - 1;
+            if (w_tid == winner) {
+               split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+               // This virtual warp is now done.
+               warpDone = 1;
+            }
+         }
+
+         // If any duplicate was there now is the time for the whole Virtual warp to find out!
+         warpDone = split::s_warpVote(warpDone > 0, submask) & submask;
+
+         while (mask && !warpDone) {
+            int winner = split::s_findFirstSig(mask) - 1;
+            if (w_tid == winner) {
+               KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
+               if (old == EMPTYBUCKET) {
+                  threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex);
+                  split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+                  warpDone = 1;
+                  localCount=1;
+                  split::s_atomicAdd(&_mapInfo->fill,1);
+                  if (threadOverflow > _mapInfo->currentMaxBucketOverflow) {
+                     split::s_atomicExch((unsigned long long*)(&_mapInfo->currentMaxBucketOverflow), (unsigned long long)nextPow2(threadOverflow));
+                  }
+               } else if (old == candidateKey) {
+                  // Parallel stuff are fun. Major edge case!
+                  split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+                  warpDone = 1;
+               }
+            }
+            // If any of the virtual warp threads are done the the whole
+            // Virtual warp is done
+            warpDone = split::s_warpVote(warpDone > 0, submask);
+            mask ^= (1UL << winner);
+         }
+      }
+
+      auto res = split::s_warpVote(localCount > 0, submask);
+      return ( res>0 );
+   }
 
    HASHINATOR_DEVICEONLY
    void warpFind(const KEY_TYPE& candidateKey, VAL_TYPE& candidateVal, const size_t w_tid)noexcept{
@@ -818,6 +887,43 @@ public:
       return;
    }
 
+   HASHINATOR_DEVICEONLY
+   void warpErase(const KEY_TYPE& candidateKey, const size_t w_tid)noexcept{
+
+      const int sizePower = _mapInfo->sizePower;
+      const size_t maxoverflow = _mapInfo->currentMaxBucketOverflow;
+      const int bitMask = (1<< (sizePower)) - 1;
+      const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
+      const auto submask = SPLIT_VOTING_MASK;
+      bool warpDone = false;
+      int winner = 0 ;
+
+      for (size_t i = 0; i < maxoverflow; i += defaults::WARPSIZE) {
+
+         if (warpDone){
+            break;
+         }
+
+         // Get the position we should be looking into
+         size_t probingindex = ((hashIndex + i + w_tid) & bitMask);
+         const auto maskExists =
+             split::s_warpVote(buckets[probingindex].first == candidateKey, SPLIT_VOTING_MASK) & submask;
+         const auto emptyFound =
+             split::s_warpVote(buckets[probingindex].first == EMPTYBUCKET, SPLIT_VOTING_MASK) & submask;
+         // If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
+         if (!maskExists && emptyFound) {
+            warpDone = true;
+         }
+         if (maskExists) {
+            winner = split::s_findFirstSig(maskExists) - 1;
+            if (w_tid == winner) {
+               buckets[probingindex].first=TOMBSTONE;
+               warpDone = true;;
+            }
+         }
+      }
+      return;
+   }
 
    // Pass memAdvice to hashinator and the underlying splitvector
    HOSTONLY void memAdvise(split_gpuMemoryAdvise advice, int device, split_gpuStream_t stream = 0) {
