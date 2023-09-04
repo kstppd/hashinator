@@ -803,14 +803,14 @@ public:
     * @param val The value to push to the back.
     */
    DEVICEONLY
-   void device_push_back(const T& val) {
+   bool device_push_back(const T& val) {
       size_t old = atomicAdd((unsigned int*)_size, 1);
-      if (old >= capacity()) {
-         assert(0 && "Splitvector has a catastrophic failure trying to pushback on device because the vector has no "
-                     "space available.");
+      if (old >= capacity()-1) {
+         atomicSub((unsigned int*)_size,1);
+         return false;
       }
       atomicCAS(&(_data[old]), _data[old], val);
-      return;
+      return true;
    }
 
    /**
@@ -819,17 +819,17 @@ public:
     * @param val The value to push to the back.
     */
    DEVICEONLY
-   void device_push_back(const T&& val) {
+   bool device_push_back(const T&& val) {
 
       // We need at least capacity=size+1 otherwise this
       // pushback cannot be done
       size_t old = atomicAdd((unsigned int*)_size, 1);
-      if (old >= capacity()) {
-         assert(0 && "Splitvector has a catastrophic failure trying to pushback on device because the vector has no "
-                     "space available.");
+      if (old >= capacity()-1) {
+         atomicSub((unsigned int*)_size,1);
+         return false;
       }
       atomicCAS(&(_data[old]), _data[old], std::move(val));
-      return;
+      return true;
    }
 #endif
 
