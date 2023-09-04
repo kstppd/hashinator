@@ -880,9 +880,8 @@ public:
             winner = split::s_findFirstSig(maskExists) - 1;
             if (w_tid == winner) {
                candidateVal = buckets[probingindex].second;
-               warpDone = true;
-               ;
             }
+            warpDone = true;
          }
       }
       candidateVal = split::s_shuffle(candidateVal, winner, SPLIT_VOTING_MASK);
@@ -923,8 +922,8 @@ public:
                _mapInfo->tombstoneCounter++;
                split::s_atomicAdd(&_mapInfo->tombstoneCounter,1);
                split::s_atomicSub((unsigned int*)&_mapInfo->fill,1);
-               warpDone = true;
             }
+            warpDone = true;
          }
       }
       return;
