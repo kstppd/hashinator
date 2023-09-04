@@ -221,6 +221,27 @@ __device__ __forceinline__ uint32_t s_pop_count(T mask) noexcept {
 }
 
 /**
+ * @brief Wrapper for performing a broadcast shuffle operation.
+ *
+ * @tparam T The data type of the variable.
+ * @tparam U The data type of the mask.
+ * @param variable The variable to shuffle.
+ * @param  source the lane source to broadcast from.
+ * @param mask Voting mask.
+ * @return The shuffled variable.
+ */
+template <typename T, typename U>
+__device__ __forceinline__ T s_shuffle(T variable, unsigned int source, U mask = 0) noexcept {
+   static_assert(std::is_integral<T>::value && "Only integers supported");
+#ifdef __NVCC__
+   return __shfl_sync(mask, variable, source);
+#endif
+#ifdef __HIP_PLATFORM_HCC___
+   return __shfl(variable, source);
+#endif
+}
+
+/**
  * @brief Wrapper for performing a down register shuffle operation.
  *
  * @tparam T The data type of the variable.

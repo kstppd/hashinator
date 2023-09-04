@@ -711,6 +711,49 @@ public:
    }
 
 #ifndef HASHINATOR_CPU_ONLY_MODE
+
+
+   HASHINATOR_HOSTDEVICE
+   void warpFind(const KEY_TYPE& candidateKey, VAL_TYPE& candidateVal, const size_t w_tid)noexcept{
+
+      const int sizePower = _mapInfo->sizePower;
+      const size_t maxoverflow = _mapInfo->currentMaxBucketOverflow;
+      const int bitMask = (1<< (sizePower)) - 1;
+      const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
+      const auto submask = SPLIT_VOTING_MASK;
+      bool warpDone = false;
+      int winner = 0 ;
+
+      // Check for duplicates
+      for (size_t i = 0; i < maxoverflow; i += defaults::WARPSIZE) {
+
+         if (warpDone){
+            break;
+         }
+
+         // Get the position we should be looking into
+         size_t probingindex = ((hashIndex + i + w_tid) & bitMask);
+         const auto maskExists =
+             split::s_warpVote(buckets[probingindex].first == candidateKey, SPLIT_VOTING_MASK) & submask;
+         const auto emptyFound =
+             split::s_warpVote(buckets[probingindex].first == EMPTYBUCKET, SPLIT_VOTING_MASK) & submask;
+         // If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
+         if (!maskExists && emptyFound) {
+            warpDone = true;
+         }
+         if (maskExists) {
+            winner = split::s_findFirstSig(maskExists) - 1;
+            if (w_tid == winner) {
+               candidateVal= buckets[probingindex].second;
+               warpDone = true;;
+            }
+         }
+      }
+      candidateVal = split::s_shuffle(candidateVal, winner, SPLIT_VOTING_MASK);  
+      return;
+   }
+
+
    // Pass memAdvice to hashinator and the underlying splitvector
    HOSTONLY void memAdvise(split_gpuMemoryAdvise advice, int device, split_gpuStream_t stream = 0) {
       buckets.memAdvise(advice, device, stream);

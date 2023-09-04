@@ -105,23 +105,6 @@ void gpu_delete_even(hashmap* hmap, hash_pair<key_type,val_type>*src,size_t N){
    return;
 }
 
-__global__
-void gpu_recover_all_elements(hashmap* hmap,hash_pair<key_type,val_type>* src,size_t N  ){
-   size_t index = blockIdx.x * blockDim.x + threadIdx.x;
-   if (index < N ){
-      key_type key= src[index].first;
-      val_type val= src[index].second;
-      auto it=hmap->device_find(key);
-      if (it==hmap->device_end()){
-         printf("END FOUND DEVICE\n");
-         assert( 0 && "Failed in GPU RECOVER ALL ");
-      }
-      if (it->first!=key || it->second!=val){
-         assert( 0 && "Failed in GPU RECOVER ALL ");
-      }
-   }
-   return;
-}
 
 
 __global__
@@ -212,6 +195,73 @@ bool recover_all_elements(hashmap* hmap, vector& src){
       }
    }
    return true;
+}
+
+__global__
+void gpu_recover_all_elements(hashmap* hmap,hash_pair<key_type,val_type>* src,size_t N  ){
+   size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+   if (index < N ){
+      key_type key= src[index].first;
+      val_type val= src[index].second;
+      auto it=hmap->device_find(key);
+      if (it==hmap->device_end()){
+         printf("END FOUND DEVICE\n");
+         assert( 0 && "Failed in GPU RECOVER ALL ");
+      }
+      if (it->first!=key || it->second!=val){
+         assert( 0 && "Failed in GPU RECOVER ALL ");
+      }
+   }
+   return;
+}
+__global__
+void gpu_recover_warpWide(hashmap* hmap,hash_pair<key_type,val_type>* src,size_t N  ){
+
+   size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+   const size_t wid = index / Hashinator::defaults::WARPSIZE;
+   const size_t w_tid = index % defaults::WARPSIZE;
+   if (wid < N ){
+      key_type key= src[wid].first;
+      val_type retval;;
+      val_type val= src[wid].second;
+      hmap->warpFind(key,retval,w_tid);
+      assert(retval==val);
+   }
+}
+
+
+bool testWarpFind(int power){
+   size_t N = 1<<power;
+   size_t blocksize=BLOCKSIZE;
+   size_t blocks=N/blocksize;
+
+   bool cpuOK=true;
+
+   //Create some input data
+   vector src(N);
+   create_input(src);
+   hashmap* hmap=new hashmap;
+   hmap->resize(power+1);
+
+   //Upload to device and insert input
+   gpu_write<<<blocks,blocksize>>>(hmap,src.data(),src.size());
+   split_gpuDeviceSynchronize();
+
+   //Verify all elements
+   cpuOK=recover_all_elements(*hmap,src);
+   gpu_recover_all_elements<<<blocks,blocksize>>>(hmap,src.data(),src.size());
+   split_gpuDeviceSynchronize();
+   if (!cpuOK){
+      return false;
+   }
+   
+   size_t warpsize     =  Hashinator::defaults::WARPSIZE;
+   size_t threadsNeeded  =  N*warpsize; 
+   blocks = threadsNeeded/1024;
+   gpu_recover_warpWide<<<blocks,blocksize>>>(hmap,src.data(),src.size());
+   split_gpuDeviceSynchronize();
+   return true;
+
 }
 
 bool test_hashmap_1(int power){
@@ -485,6 +535,15 @@ TEST(HashmapUnitTets , Test1_HostDevice_UploadDownload){
    }
 }
 
+
+TEST(HashmapUnitTets , Test1_HostDevice_WarpFind){
+   for (int power=MINPOWER; power<MAXPOWER; ++power){
+      std::string name= "Power= "+std::to_string(power);
+      bool retval = execute_and_time(name.c_str(),testWarpFind ,power);
+      expect_true(retval);
+   }
+}
+
 TEST(HashmapUnitTets , Test2_HostDevice_New_Unified_Ptr){
    for (int power=MINPOWER; power<MAXPOWER; ++power){
       std::string name= "Power= "+std::to_string(power);
@@ -693,7 +752,6 @@ TEST(HashmapUnitTets ,Test_Duplicate_Insertion){
       expect_true(hmap.size()==((1<<sz)));
    }
 }
-
 
 
 
