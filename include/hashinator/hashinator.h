@@ -713,7 +713,7 @@ public:
 #ifndef HASHINATOR_CPU_ONLY_MODE
 
    HASHINATOR_DEVICEONLY
-   void warpInsert(const KEY_TYPE& candidateKey, VAL_TYPE& candidateVal, const size_t w_tid) noexcept {
+   void warpInsert(const KEY_TYPE& candidateKey, const VAL_TYPE& candidateVal, const size_t w_tid) noexcept {
 
       const int sizePower = _mapInfo->sizePower;
       const int bitMask = (1 << (sizePower)) - 1;
@@ -779,7 +779,7 @@ public:
    }
 
    HASHINATOR_DEVICEONLY
-   bool warpInsert_V(const KEY_TYPE& candidateKey, VAL_TYPE& candidateVal, const size_t w_tid) noexcept {
+   bool warpInsert_V(const KEY_TYPE& candidateKey, const VAL_TYPE& candidateVal, const size_t w_tid) noexcept {
 
       const int sizePower = _mapInfo->sizePower;
       const int bitMask = (1 << (sizePower)) - 1;
@@ -850,7 +850,7 @@ public:
    }
 
    HASHINATOR_DEVICEONLY
-   void warpFind(const KEY_TYPE& candidateKey, VAL_TYPE& candidateVal, const size_t w_tid) noexcept {
+   void warpFind(const KEY_TYPE& candidateKey, VAL_TYPE& candidateVal, const size_t w_tid) const noexcept {
 
       const int sizePower = _mapInfo->sizePower;
       const size_t maxoverflow = _mapInfo->currentMaxBucketOverflow;
