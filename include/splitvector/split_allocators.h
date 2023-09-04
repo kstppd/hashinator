@@ -32,7 +32,7 @@ namespace split {
 static void cuda_error(cudaError_t err, const char* file, int line) {
    if (err != cudaSuccess) {
       printf("\n\n%s in %s at line %d\n", cudaGetErrorString(err), file, line);
-      exit(1);
+      abort();
    }
 }
 #endif
@@ -42,7 +42,7 @@ static void cuda_error(cudaError_t err, const char* file, int line) {
 static void hip_error(hipError_t err, const char* file, int line) {
    if (err != hipSuccess) {
       printf("\n\n%s in %s at line %d\n", hipGetErrorString(err), file, line);
-      exit(1);
+      abort();
    }
 }
 #endif
@@ -90,6 +90,7 @@ public:
 
    pointer allocate(size_type n, const void* /*hint*/ = 0) {
       T* ret;
+      assert(n && "allocate 0");
       SPLIT_CHECK_ERR(split_gpuMallocManaged((void**)&ret, n * sizeof(value_type)));
       if (ret == nullptr) {
          throw std::bad_alloc();

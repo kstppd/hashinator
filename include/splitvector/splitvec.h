@@ -540,6 +540,15 @@ public:
     * @param requested_space The size of the requested space.
     */
    HOSTONLY void reallocate(size_t requested_space) {
+      if (requested_space==0) {
+         if (_data != nullptr) {
+            _deallocate_and_destroy(capacity(), _data);
+         }
+         _data = nullptr;
+         *_capacity = 0;
+         *_size = 0;
+         return;
+      }
       T* _new_data;
       _new_data = _allocate_and_construct(requested_space, T());
       if (_new_data == nullptr) {
