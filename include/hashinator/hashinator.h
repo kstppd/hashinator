@@ -779,7 +779,7 @@ public:
    }
 
 
-   HASHINATOR_HOSTDEVICE
+   HASHINATOR_DEVICEONLY
    void warpFind(const KEY_TYPE& candidateKey, VAL_TYPE& candidateVal, const size_t w_tid)noexcept{
 
       const int sizePower = _mapInfo->sizePower;
