@@ -8,12 +8,12 @@
 #include <algorithm>
 #include <limits.h>
 
-#define BLOCKSIZE 32
+#define BLOCKSIZE 1024
 #define expect_true EXPECT_TRUE
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
-constexpr int MINPOWER = 6;
-constexpr int MAXPOWER = 10;
+constexpr int MINPOWER = 14;
+constexpr int MAXPOWER = 16;
 
 
 using namespace std::chrono;
@@ -229,6 +229,46 @@ void gpu_recover_warpWide(hashmap* hmap,hash_pair<key_type,val_type>* src,size_t
    }
 }
 
+__global__
+void gpu_write_warpWide(hashmap* hmap,hash_pair<key_type,val_type>* src,size_t N  ){
+
+   size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+   const size_t wid = index / Hashinator::defaults::WARPSIZE;
+   const size_t w_tid = index % defaults::WARPSIZE;
+   if (wid < N ){
+      key_type key= src[wid].first;
+      val_type val= src[wid].second;
+      hmap->warpInsert(key,val,w_tid);
+   }
+}
+
+bool testWarpInsert(int power){
+   size_t N = 1<<power;
+   size_t blocksize=BLOCKSIZE;
+   size_t blocks=N/blocksize;
+   size_t warpsize     =  Hashinator::defaults::WARPSIZE;
+   size_t threadsNeeded  =  N*warpsize; 
+   blocks = threadsNeeded/BLOCKSIZE;
+ 
+   bool cpuOK=true;
+
+   //Create some input data
+   vector src(N);
+   create_input(src);
+   hashmap* hmap=new hashmap;
+   hmap->resize(power+1);
+
+   //Upload to device and insert input
+   gpu_write_warpWide<<<blocks,blocksize>>>(hmap,src.data(),src.size());
+   split_gpuDeviceSynchronize();
+
+   //Verify all elements
+   cpuOK=recover_all_elements(*hmap,src);
+   if (!cpuOK){
+      return false;
+   }
+   return true;
+}
 
 bool testWarpFind(int power){
    size_t N = 1<<power;
@@ -257,7 +297,7 @@ bool testWarpFind(int power){
    
    size_t warpsize     =  Hashinator::defaults::WARPSIZE;
    size_t threadsNeeded  =  N*warpsize; 
-   blocks = threadsNeeded/1024;
+   blocks = threadsNeeded/BLOCKSIZE;
    gpu_recover_warpWide<<<blocks,blocksize>>>(hmap,src.data(),src.size());
    split_gpuDeviceSynchronize();
    return true;
@@ -540,6 +580,14 @@ TEST(HashmapUnitTets , Test1_HostDevice_WarpFind){
    for (int power=MINPOWER; power<MAXPOWER; ++power){
       std::string name= "Power= "+std::to_string(power);
       bool retval = execute_and_time(name.c_str(),testWarpFind ,power);
+      expect_true(retval);
+   }
+}
+
+TEST(HashmapUnitTets , Test1_HostDevice_WarpInsert){
+   for (int power=MINPOWER; power<MAXPOWER; ++power){
+      std::string name= "Power= "+std::to_string(power);
+      bool retval = execute_and_time(name.c_str(),testWarpInsert ,power);
       expect_true(retval);
    }
 }

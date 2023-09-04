@@ -713,6 +713,72 @@ public:
 #ifndef HASHINATOR_CPU_ONLY_MODE
 
 
+   HASHINATOR_DEVICEONLY
+   void warpInsert(const KEY_TYPE& candidateKey, VAL_TYPE& candidateVal, const size_t w_tid)noexcept{
+
+      const int sizePower = _mapInfo->sizePower;
+      const int bitMask = (1<< (sizePower)) - 1;
+      const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
+      const size_t optimalindex = (hashIndex)&bitMask;
+      const auto submask = SPLIT_VOTING_MASK;
+      bool warpDone = false;
+      uint64_t threadOverflow = 1;
+
+      for (size_t i = 0; i < (1 << sizePower); i +=defaults::WARPSIZE) {
+         // Check if this virtual warp is done.
+         if (warpDone) {
+            break;
+         }
+
+         // Get the position we should be looking into
+         size_t probingindex = ((hashIndex + i + w_tid) & bitMask);
+         auto target = buckets[probingindex];
+
+         // vote for available emptybuckets in warp region
+         // Note that this has to be done before voting for already existing elements (below)
+         auto mask = split::s_warpVote(target.first == EMPTYBUCKET, submask);
+
+         // Check if this elements already exists
+         auto already_exists = split::s_warpVote(target.first == candidateKey, submask);
+         if (already_exists) {
+            int winner = split::s_findFirstSig(already_exists) - 1;
+            if (w_tid == winner) {
+               split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+               // This virtual warp is now done.
+               warpDone = 1;
+            }
+         }
+
+         // If any duplicate was there now is the time for the whole Virtual warp to find out!
+         warpDone = split::s_warpVote(warpDone > 0, submask) & submask;
+
+         while (mask && !warpDone) {
+            int winner = split::s_findFirstSig(mask) - 1;
+            if (w_tid == winner) {
+               KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
+               if (old == EMPTYBUCKET) {
+                  threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex);
+                  split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+                  warpDone = 1;
+                  split::s_atomicAdd(&_mapInfo->fill,1);
+                  if (threadOverflow > _mapInfo->currentMaxBucketOverflow) {
+                     split::s_atomicExch((unsigned long long*)(&_mapInfo->currentMaxBucketOverflow), (unsigned long long)nextPow2(threadOverflow));
+                  }
+               } else if (old == candidateKey) {
+                  // Parallel stuff are fun. Major edge case!
+                  split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+                  warpDone = 1;
+               }
+            }
+            // If any of the virtual warp threads are done the the whole
+            // Virtual warp is done
+            warpDone = split::s_warpVote(warpDone > 0, submask);
+            mask ^= (1UL << winner);
+         }
+      }
+   }
+
+
    HASHINATOR_HOSTDEVICE
    void warpFind(const KEY_TYPE& candidateKey, VAL_TYPE& candidateVal, const size_t w_tid)noexcept{
 
@@ -724,7 +790,6 @@ public:
       bool warpDone = false;
       int winner = 0 ;
 
-      // Check for duplicates
       for (size_t i = 0; i < maxoverflow; i += defaults::WARPSIZE) {
 
          if (warpDone){
