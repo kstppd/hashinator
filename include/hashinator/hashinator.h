@@ -1084,6 +1084,28 @@ public:
       return;
    }
 
+   // Uses Hasher's insert_index_kernel to insert all elements, with the index as the value
+   void insertIndex(KEY_TYPE* keys, size_t len, float targetLF = 0.5, split_gpuStream_t s = 0,
+               bool prefetches = true) {
+      // Here we do some calculations to estimate how much if any we need to grow our buckets
+      // TODO fix these if paths or at least annotate them .
+      if (len == 0) {
+         set_status(status::success);
+         return;
+      }
+      if (prefetches) {
+         buckets.optimizeGPU(s);
+      }
+      size_t neededPowerSize = std::ceil(std::log2((_mapInfo->fill + len) * (1.0 / targetLF)));
+      if (neededPowerSize > _mapInfo->sizePower) {
+         resize(neededPowerSize, targets::device, s);
+      }
+      _mapInfo->currentMaxBucketOverflow = _mapInfo->currentMaxBucketOverflow;
+      DeviceHasher::insertIndex(keys, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
+                           &_mapInfo->currentMaxBucketOverflow, &_mapInfo->fill, len, &_mapInfo->err, s);
+      return;
+   }
+
    // Uses Hasher's insert_kernel to insert all elements
    void insert(hash_pair<KEY_TYPE, VAL_TYPE>* src, size_t len, float targetLF = 0.5, split_gpuStream_t s = 0,
                bool prefetches = true) {
