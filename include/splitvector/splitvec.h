@@ -67,6 +67,11 @@ typedef struct SplitVectorInfo {
    size_t capacity;
 } SplitInfo;
 
+enum class Residency{
+   host,
+   device
+};
+
 /**
  * @brief A lightweight vector implementation with unified memory support.
  *
@@ -85,6 +90,7 @@ private:
    size_t* _capacity;            // number of allocated elements
    size_t _alloc_multiplier = 2; // host variable; multiplier for  when reserving more space
    Allocator _allocator;         // Allocator used to allocate and deallocate memory;
+   Residency _location;          // Flags that describes the current residency of our data
 
    /**
     * @brief Checks if a pointer is valid and throws an exception if it's null.
@@ -207,7 +213,7 @@ public:
    /**
     * @brief Default constructor. Creates an empty SplitVector.
     */
-   HOSTONLY explicit SplitVector() {
+   HOSTONLY explicit SplitVector() :_location(Residency::host){
       this->_allocate(0); // seems counter-intuitive based on stl but it is not!
    }
 
@@ -216,7 +222,7 @@ public:
     *
     * @param size The size of the SplitVector to be created.
     */
-   HOSTONLY explicit SplitVector(size_t size) { this->_allocate(size); }
+   HOSTONLY explicit SplitVector(size_t size):_location(Residency::host){ this->_allocate(size); }
 
    /**
     * @brief Constructor to create a SplitVector of a specified size with initial values.
@@ -224,7 +230,7 @@ public:
     * @param size The size of the SplitVector to be created.
     * @param val The initial value to be assigned to each element.
     */
-   HOSTONLY explicit SplitVector(size_t size, const T& val) {
+   HOSTONLY explicit SplitVector(size_t size, const T& val):_location(Residency::host){
       this->_allocate(size);
       for (size_t i = 0; i < size; i++) {
          _data[i] = val;
@@ -236,6 +242,7 @@ public:
     *
     * @param other The SplitVector to be copied.
     */
+#ifdef SPLIT_CPU_ONLY_MODE
    HOSTONLY explicit SplitVector(const SplitVector<T, Allocator>& other) {
       const size_t size_to_allocate = other.size();
       this->_allocate(size_to_allocate);
@@ -243,7 +250,27 @@ public:
          _data[i] = other._data[i];
       }
    }
+#else
 
+   HOSTONLY explicit SplitVector(const SplitVector<T, Allocator>& other) {
+      const size_t size_to_allocate = other.size();
+      auto copySafe=[&]()->void {
+         for (size_t i = 0; i < size_to_allocate; i++) {
+            _data[i] = other._data[i];
+         }
+      };
+      this->_allocate(size_to_allocate);
+      if constexpr (std::is_pod<T>::value) {
+         if (other._location==Residency::device){
+            optimizeGPU();
+            SPLIT_CHECK_ERR(split_gpuMemcpy(_data,other._data ,size_to_allocate * sizeof(T),split_gpuMemcpyDeviceToDevice));
+            return;
+         }
+      }
+      copySafe();
+      _location=Residency::host;
+   }
+#endif
    /**
     * @brief Move constructor to move from another SplitVector.
     *
@@ -256,6 +283,7 @@ public:
       *(other._capacity) = 0;
       *(other._size) = 0;
       other._data = nullptr;
+      _location=other._location;
    }
 
    /**
@@ -263,7 +291,7 @@ public:
     *
     * @param init_list The initializer list to initialize the SplitVector with.
     */
-   HOSTONLY explicit SplitVector(std::initializer_list<T> init_list) {
+   HOSTONLY explicit SplitVector(std::initializer_list<T> init_list):_location(Residency::host){
       this->_allocate(init_list.size());
       for (size_t i = 0; i < size(); i++) {
          _data[i] = init_list.begin()[i];
@@ -275,7 +303,7 @@ public:
     *
     * @param other The std::vector to initialize the SplitVector with.
     */
-   HOSTONLY explicit SplitVector(const std::vector<T>& other) {
+   HOSTONLY explicit SplitVector(const std::vector<T>& other):_location(Residency::host) {
       this->_allocate(other.size());
       for (size_t i = 0; i < size(); i++) {
          _data[i] = other[i];
@@ -293,6 +321,7 @@ public:
     * @param other The SplitVector to assign from.
     * @return Reference to the assigned SplitVector.
     */
+   #ifdef SPLIT_CPU_ONLY_MODE
    HOSTONLY SplitVector<T, Allocator>& operator=(const SplitVector<T, Allocator>& other) {
       // Match other's size prior to copying
       resize(other.size());
@@ -301,6 +330,29 @@ public:
       }
       return *this;
    }
+#else
+
+   HOSTONLY SplitVector<T, Allocator>& operator=(const SplitVector<T, Allocator>& other) {
+      // Match other's size prior to copying
+      resize(other.size());
+      auto copySafe=[&]()->void {
+         for (size_t i = 0; i < size(); i++) {
+            _data[i] = other._data[i];
+         }
+      };
+
+      if constexpr (std::is_pod<T>::value) {
+         if (other._location==Residency::device){
+            optimizeGPU();
+            SPLIT_CHECK_ERR(split_gpuMemcpy(_data,other._data ,size() * sizeof(T),split_gpuMemcpyDeviceToDevice));
+            return *this;
+         }
+      }
+      copySafe();
+      _location=Residency::host;
+      return *this;
+   }
+#endif
 
    /**
     * @brief Move assignment operator to move from another SplitVector.
@@ -320,6 +372,7 @@ public:
       *(other._capacity) = 0;
       *(other._size) = 0;
       other._data = nullptr;
+      _location=other._location;
       return *this;
    }
 
@@ -386,6 +439,10 @@ public:
     * @param stream The GPU stream to perform the prefetch on.
     */
    HOSTONLY void optimizeGPU(split_gpuStream_t stream = 0) noexcept {
+      if (_location==Residency::device){
+         return;
+      }
+      _location=Residency::device;
       int device;
       SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
 
@@ -406,6 +463,10 @@ public:
     * @param stream The GPU stream to perform the prefetch on.
     */
    HOSTONLY void optimizeCPU(split_gpuStream_t stream = 0) noexcept {
+      if (_location==Residency::host){
+         return;
+      }
+      _location=Residency::host;
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), split_gpuCpuDeviceId, stream));
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_size, sizeof(size_t), split_gpuCpuDeviceId, stream));
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
