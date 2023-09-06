@@ -149,4 +149,4 @@ Hashinator and SplitVector include a suite of unit tests using [googletest](http
 
 ## Credits for people who contributed but do not appear in the contribution list.
 + Special thanks to [Urs Ganse](https://github.com/ursg) for the initial CPU version of Hashinator.
-+ Thanks to [Jaro Hokkanen](https://github.com/hokkanen). Hashinator's arch agnostic feauture was inspired by his work.
++ Thanks to [Jaro Hokkanen](https://github.com/hokkanen). Hashinator's arch agnostic feature was inspired by his work.
