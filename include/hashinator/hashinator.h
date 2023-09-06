@@ -920,8 +920,8 @@ public:
             if (w_tid == winner) {
                buckets[probingindex].first = TOMBSTONE;
                _mapInfo->tombstoneCounter++;
-               split::s_atomicAdd(&_mapInfo->tombstoneCounter,1);
-               split::s_atomicSub((unsigned int*)&_mapInfo->fill,1);
+               split::s_atomicAdd(&_mapInfo->tombstoneCounter, 1);
+               split::s_atomicSub((unsigned int*)&_mapInfo->fill, 1);
             }
             warpDone = true;
          }

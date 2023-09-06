@@ -67,10 +67,7 @@ typedef struct SplitVectorInfo {
    size_t capacity;
 } SplitInfo;
 
-enum class Residency{
-   host,
-   device
-};
+enum class Residency { host, device };
 
 /**
  * @brief A lightweight vector implementation with unified memory support.
@@ -213,7 +210,7 @@ public:
    /**
     * @brief Default constructor. Creates an empty SplitVector.
     */
-   HOSTONLY explicit SplitVector() :_location(Residency::host){
+   HOSTONLY explicit SplitVector() : _location(Residency::host) {
       this->_allocate(0); // seems counter-intuitive based on stl but it is not!
    }
 
@@ -222,7 +219,7 @@ public:
     *
     * @param size The size of the SplitVector to be created.
     */
-   HOSTONLY explicit SplitVector(size_t size):_location(Residency::host){ this->_allocate(size); }
+   HOSTONLY explicit SplitVector(size_t size) : _location(Residency::host) { this->_allocate(size); }
 
    /**
     * @brief Constructor to create a SplitVector of a specified size with initial values.
@@ -230,7 +227,7 @@ public:
     * @param size The size of the SplitVector to be created.
     * @param val The initial value to be assigned to each element.
     */
-   HOSTONLY explicit SplitVector(size_t size, const T& val):_location(Residency::host){
+   HOSTONLY explicit SplitVector(size_t size, const T& val) : _location(Residency::host) {
       this->_allocate(size);
       for (size_t i = 0; i < size; i++) {
          _data[i] = val;
@@ -254,21 +251,22 @@ public:
 
    HOSTONLY explicit SplitVector(const SplitVector<T, Allocator>& other) {
       const size_t size_to_allocate = other.size();
-      auto copySafe=[&]()->void {
+      auto copySafe = [&]() -> void {
          for (size_t i = 0; i < size_to_allocate; i++) {
             _data[i] = other._data[i];
          }
       };
       this->_allocate(size_to_allocate);
       if constexpr (std::is_pod<T>::value) {
-         if (other._location==Residency::device){
+         if (other._location == Residency::device) {
             optimizeGPU();
-            SPLIT_CHECK_ERR(split_gpuMemcpy(_data,other._data ,size_to_allocate * sizeof(T),split_gpuMemcpyDeviceToDevice));
+            SPLIT_CHECK_ERR(
+                split_gpuMemcpy(_data, other._data, size_to_allocate * sizeof(T), split_gpuMemcpyDeviceToDevice));
             return;
          }
       }
       copySafe();
-      _location=Residency::host;
+      _location = Residency::host;
    }
 #endif
    /**
@@ -283,7 +281,7 @@ public:
       *(other._capacity) = 0;
       *(other._size) = 0;
       other._data = nullptr;
-      _location=other._location;
+      _location = other._location;
    }
 
    /**
@@ -291,7 +289,7 @@ public:
     *
     * @param init_list The initializer list to initialize the SplitVector with.
     */
-   HOSTONLY explicit SplitVector(std::initializer_list<T> init_list):_location(Residency::host){
+   HOSTONLY explicit SplitVector(std::initializer_list<T> init_list) : _location(Residency::host) {
       this->_allocate(init_list.size());
       for (size_t i = 0; i < size(); i++) {
          _data[i] = init_list.begin()[i];
@@ -303,7 +301,7 @@ public:
     *
     * @param other The std::vector to initialize the SplitVector with.
     */
-   HOSTONLY explicit SplitVector(const std::vector<T>& other):_location(Residency::host) {
+   HOSTONLY explicit SplitVector(const std::vector<T>& other) : _location(Residency::host) {
       this->_allocate(other.size());
       for (size_t i = 0; i < size(); i++) {
          _data[i] = other[i];
@@ -315,13 +313,13 @@ public:
     */
    HOSTONLY ~SplitVector() { _deallocate(); }
 
-   /**
-    * @brief Custom assignment operator to assign the content of another SplitVector.
-    *
-    * @param other The SplitVector to assign from.
-    * @return Reference to the assigned SplitVector.
-    */
-   #ifdef SPLIT_CPU_ONLY_MODE
+/**
+ * @brief Custom assignment operator to assign the content of another SplitVector.
+ *
+ * @param other The SplitVector to assign from.
+ * @return Reference to the assigned SplitVector.
+ */
+#ifdef SPLIT_CPU_ONLY_MODE
    HOSTONLY SplitVector<T, Allocator>& operator=(const SplitVector<T, Allocator>& other) {
       // Match other's size prior to copying
       resize(other.size());
@@ -335,21 +333,21 @@ public:
    HOSTONLY SplitVector<T, Allocator>& operator=(const SplitVector<T, Allocator>& other) {
       // Match other's size prior to copying
       resize(other.size());
-      auto copySafe=[&]()->void {
+      auto copySafe = [&]() -> void {
          for (size_t i = 0; i < size(); i++) {
             _data[i] = other._data[i];
          }
       };
 
       if constexpr (std::is_pod<T>::value) {
-         if (other._location==Residency::device){
+         if (other._location == Residency::device) {
             optimizeGPU();
-            SPLIT_CHECK_ERR(split_gpuMemcpy(_data,other._data ,size() * sizeof(T),split_gpuMemcpyDeviceToDevice));
+            SPLIT_CHECK_ERR(split_gpuMemcpy(_data, other._data, size() * sizeof(T), split_gpuMemcpyDeviceToDevice));
             return *this;
          }
       }
       copySafe();
-      _location=Residency::host;
+      _location = Residency::host;
       return *this;
    }
 #endif
@@ -372,7 +370,7 @@ public:
       *(other._capacity) = 0;
       *(other._size) = 0;
       other._data = nullptr;
-      _location=other._location;
+      _location = other._location;
       return *this;
    }
 
@@ -439,10 +437,10 @@ public:
     * @param stream The GPU stream to perform the prefetch on.
     */
    HOSTONLY void optimizeGPU(split_gpuStream_t stream = 0) noexcept {
-      if (_location==Residency::device){
+      if (_location == Residency::device) {
          return;
       }
-      _location=Residency::device;
+      _location = Residency::device;
       int device;
       SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
 
@@ -463,10 +461,10 @@ public:
     * @param stream The GPU stream to perform the prefetch on.
     */
    HOSTONLY void optimizeCPU(split_gpuStream_t stream = 0) noexcept {
-      if (_location==Residency::host){
+      if (_location == Residency::host) {
          return;
       }
-      _location=Residency::host;
+      _location = Residency::host;
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), split_gpuCpuDeviceId, stream));
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_size, sizeof(size_t), split_gpuCpuDeviceId, stream));
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
@@ -866,8 +864,8 @@ public:
    DEVICEONLY
    bool device_push_back(const T& val) {
       size_t old = atomicAdd((unsigned int*)_size, 1);
-      if (old >= capacity()-1) {
-         atomicSub((unsigned int*)_size,1);
+      if (old >= capacity() - 1) {
+         atomicSub((unsigned int*)_size, 1);
          return false;
       }
       atomicCAS(&(_data[old]), _data[old], val);
@@ -885,8 +883,8 @@ public:
       // We need at least capacity=size+1 otherwise this
       // pushback cannot be done
       size_t old = atomicAdd((unsigned int*)_size, 1);
-      if (old >= capacity()-1) {
-         atomicSub((unsigned int*)_size,1);
+      if (old >= capacity() - 1) {
+         atomicSub((unsigned int*)_size, 1);
          return false;
       }
       atomicCAS(&(_data[old]), _data[old], std::move(val));
