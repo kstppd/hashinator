@@ -723,6 +723,16 @@ public:
       bool warpDone = false;
       uint64_t threadOverflow = 1;
 
+// Safety check: make sure everyone has the same key/val and all threads are here.
+#ifdef __CUDACC__
+      assert(__activemask() == SPLIT_VOTING_MASK && "Tried to warpInsert with part of warp predicated off");
+#endif
+      KEY_TYPE storeKey = split::s_shuffle(candidateKey, 0, SPLIT_VOTING_MASK);
+      KEY_TYPE storeVal = split::s_shuffle(candidateVal, 0, SPLIT_VOTING_MASK);
+      bool isSafe = (split::s_warpVote(candidateKey == storeKey, SPLIT_VOTING_MASK) &
+                     split::s_warpVote(candidateVal == storeVal, SPLIT_VOTING_MASK)) == SPLIT_VOTING_MASK;
+      assert(isSafe && "Tried to warpInsert with different keys/vals in the same warp");
+
       for (size_t i = 0; i < (1 << sizePower); i += defaults::WARPSIZE) {
          // Check if this virtual warp is done.
          if (warpDone) {
@@ -789,6 +799,16 @@ public:
       bool warpDone = false;
       uint64_t threadOverflow = 1;
       int localCount = 0;
+
+// Safety check: make sure everyone has the same key/val and all threads are here.
+#ifdef __CUDACC__
+      assert(__activemask() == SPLIT_VOTING_MASK && "Tried to warpInsert_V with part of warp predicated off");
+#endif
+      KEY_TYPE storeKey = split::s_shuffle(candidateKey, 0, SPLIT_VOTING_MASK);
+      KEY_TYPE storeVal = split::s_shuffle(candidateVal, 0, SPLIT_VOTING_MASK);
+      bool isSafe = (split::s_warpVote(candidateKey == storeKey, SPLIT_VOTING_MASK) &
+                     split::s_warpVote(candidateVal == storeVal, SPLIT_VOTING_MASK)) == SPLIT_VOTING_MASK;
+      assert(isSafe && "Tried to warpInsert_V with different keys/vals in the same warp");
 
       for (size_t i = 0; i < (1 << sizePower); i += defaults::WARPSIZE) {
          // Check if this virtual warp is done.
@@ -859,6 +879,14 @@ public:
       const auto submask = SPLIT_VOTING_MASK;
       bool warpDone = false;
       int winner = 0;
+
+// Safety check: make sure everyone has the same key/val and all threads are here.
+#ifdef __CUDACC__
+      assert(__activemask() == SPLIT_VOTING_MASK && "Tried to warpFind with part of warp predicated off");
+#endif
+      KEY_TYPE storeKey = split::s_shuffle(candidateKey, 0, SPLIT_VOTING_MASK);
+      bool isSafe = split::s_warpVote(candidateKey == storeKey, SPLIT_VOTING_MASK) == SPLIT_VOTING_MASK;
+      assert(isSafe && "Tried to warpFind with different keys/vals in the same warp");
 
       for (size_t i = 0; i < maxoverflow; i += defaults::WARPSIZE) {
 
@@ -1085,8 +1113,7 @@ public:
    }
 
    // Uses Hasher's insert_index_kernel to insert all elements, with the index as the value
-   void insertIndex(KEY_TYPE* keys, size_t len, float targetLF = 0.5, split_gpuStream_t s = 0,
-               bool prefetches = true) {
+   void insertIndex(KEY_TYPE* keys, size_t len, float targetLF = 0.5, split_gpuStream_t s = 0, bool prefetches = true) {
       // Here we do some calculations to estimate how much if any we need to grow our buckets
       // TODO fix these if paths or at least annotate them .
       if (len == 0) {
@@ -1102,7 +1129,7 @@ public:
       }
       _mapInfo->currentMaxBucketOverflow = _mapInfo->currentMaxBucketOverflow;
       DeviceHasher::insertIndex(keys, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
-                           &_mapInfo->currentMaxBucketOverflow, &_mapInfo->fill, len, &_mapInfo->err, s);
+                                &_mapInfo->currentMaxBucketOverflow, &_mapInfo->fill, len, &_mapInfo->err, s);
       return;
    }
 

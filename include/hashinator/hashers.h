@@ -289,7 +289,6 @@ __global__ void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_
    return;
 }
 
-
 /*Warp Synchronous hashing kernel for hashinator's internal use:
  * This method uses 32-thread Warps to hash an element from src.
  * Threads in a given warp simultaneously try to hash an element
@@ -473,7 +472,7 @@ template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::nume
           class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>, int WARPSIZE = defaults::WARPSIZE,
           int elementsPerWarp>
 __global__ void insert_index_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, int sizePower,
-                              size_t maxoverflow, size_t* d_overflow, size_t* d_fill, size_t len, status* err) {
+                                    size_t maxoverflow, size_t* d_overflow, size_t* d_fill, size_t len, status* err) {
 
    __shared__ uint32_t addMask[WARPSIZE];
    __shared__ uint64_t warpOverflow[WARPSIZE];
@@ -950,7 +949,7 @@ template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::nume
           class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>, int WARPSIZE = defaults::WARPSIZE,
           int elementsPerWarp>
 __global__ void insert_index_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, int sizePower,
-                              size_t maxoverflow, size_t* d_overflow, size_t* d_fill, size_t len, status* err) {
+                                    size_t maxoverflow, size_t* d_overflow, size_t* d_fill, size_t len, status* err) {
 
    const int VIRTUALWARP = WARPSIZE / elementsPerWarp;
    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
@@ -1311,9 +1310,8 @@ public:
    }
 
    // Overload with input for keys only, using the index as the value
-   static void insertIndex(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, int sizePower,
-                      size_t maxoverflow, size_t* d_overflow, size_t* d_fill, size_t len, status* err,
-                      split_gpuStream_t s = 0) {
+   static void insertIndex(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, int sizePower, size_t maxoverflow,
+                           size_t* d_overflow, size_t* d_fill, size_t len, status* err, split_gpuStream_t s = 0) {
       size_t blocks, blockSize;
       *err = status::success;
       launchParams(len, blocks, blockSize);
@@ -1330,7 +1328,7 @@ public:
       }
 #endif
    }
-   
+
    // Overload with hash_pair<key,val> (k,v) inputs
    // Used by the tombstone cleaning method.
    static void insert(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, int sizePower,
