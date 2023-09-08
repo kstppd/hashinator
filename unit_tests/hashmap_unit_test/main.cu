@@ -257,6 +257,19 @@ void gpu_write_warpWide(hashmap* hmap,hash_pair<key_type,val_type>* src,size_t N
 }
 
 __global__
+void gpu_write_warpWide_UnorderedSet(hashmap* hmap,hash_pair<key_type,val_type>* src,size_t N  ){
+
+   size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+   const size_t wid = index / Hashinator::defaults::WARPSIZE;
+   const size_t w_tid = index % defaults::WARPSIZE;
+   if (wid < N ){
+      key_type key= src[wid].first;
+      val_type val= src[wid].second;
+      hmap->warpInsert<1>(key,val,w_tid);
+   }
+}
+
+__global__
 void gpu_write_warpWide_Duplicate(hashmap* hmap,hash_pair<key_type,val_type>* src,size_t N  ){
 
    size_t index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -313,6 +326,73 @@ bool testWarpInsert(int power){
 
    //Upload to device and insert input
    gpu_write_warpWide<<<blocks,blocksize>>>(hmap,src.data(),src.size());
+   split_gpuDeviceSynchronize();
+
+   //Verify all elements
+   cpuOK=recover_all_elements(*hmap,src);
+   if (!cpuOK){
+      return false;
+   }
+
+   //duplicate test
+   {
+      size_t N = 1<<power;
+      size_t blocksize=BLOCKSIZE;
+      size_t blocks=N/blocksize;
+      size_t warpsize     =  Hashinator::defaults::WARPSIZE;
+      size_t threadsNeeded  =  N*warpsize; 
+      blocks = threadsNeeded/BLOCKSIZE;
+      //Create some input data
+      vector src(N);
+      create_input(src);
+      hashmap* hmap=new hashmap;
+      hmap->resize(power+1);
+      //Upload to device and insert input
+      gpu_write_warpWide_Duplicate<<<1,1024>>>(hmap,src.data(),1);
+      split_gpuDeviceSynchronize();
+      if (hmap->size()!=1){
+         return false;
+      }
+   }
+
+   return true;
+}
+
+bool testWarpInsertUnorderedSet(int power){
+   size_t N = 1<<power;
+   size_t blocksize=BLOCKSIZE;
+   size_t blocks=N/blocksize;
+   size_t warpsize     =  Hashinator::defaults::WARPSIZE;
+   size_t threadsNeeded  =  N*warpsize; 
+   blocks = threadsNeeded/BLOCKSIZE;
+ 
+   bool cpuOK=true;
+
+   //Create some input data
+   vector src(N);
+   create_input(src);
+   hashmap* hmap=new hashmap;
+   hmap->resize(power+1);
+
+   //Upload to device and insert input
+   gpu_write_warpWide_UnorderedSet<<<blocks,blocksize>>>(hmap,src.data(),src.size());
+   split_gpuDeviceSynchronize();
+
+   //Verify all elements
+   cpuOK=recover_all_elements(*hmap,src);
+   if (!cpuOK){
+      return false;
+   }
+
+   
+   //Now we change the key values and increment them by 1 and we expect the same keys back because we are not supposed to overwrite
+   vector src2(src);
+   for (auto& i:src2){
+      i.second++;
+   }
+
+   //Upload to device and insert input
+   gpu_write_warpWide_UnorderedSet<<<blocks,blocksize>>>(hmap,src.data(),src.size());
    split_gpuDeviceSynchronize();
 
    //Verify all elements
@@ -733,6 +813,13 @@ TEST(HashmapUnitTets , Test1_HostDevice_WarpInsert){
    }
 }
 
+TEST(HashmapUnitTets , Test1_HostDevice_WarpInsertUnorderedSet){
+   for (int power=MINPOWER; power<MAXPOWER; ++power){
+      std::string name= "Power= "+std::to_string(power);
+      bool retval = execute_and_time(name.c_str(),testWarpInsertUnorderedSet ,power);
+      expect_true(retval);
+   }
+}
 
 TEST(HashmapUnitTets , Test1_HostDevice_WarpInsert_V){
    for (int power=MINPOWER; power<MAXPOWER; ++power){
