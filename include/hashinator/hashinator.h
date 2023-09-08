@@ -711,7 +711,7 @@ public:
    }
 
 #ifndef HASHINATOR_CPU_ONLY_MODE
-
+   template <bool skipOverWrites=false>
    HASHINATOR_DEVICEONLY
    void warpInsert(const KEY_TYPE& candidateKey, const VAL_TYPE& candidateVal, const size_t w_tid) noexcept {
 
@@ -723,6 +723,7 @@ public:
       bool warpDone = false;
       uint64_t threadOverflow = 1;
 
+#ifdef HASHINATOR_DEBUG
 // Safety check: make sure everyone has the same key/val and all threads are here.
 #ifdef __CUDACC__
       assert(__activemask() == SPLIT_VOTING_MASK && "Tried to warpInsert with part of warp predicated off");
@@ -732,6 +733,7 @@ public:
       bool isSafe = (split::s_warpVote(candidateKey == storeKey, SPLIT_VOTING_MASK) &
                      split::s_warpVote(candidateVal == storeVal, SPLIT_VOTING_MASK)) == SPLIT_VOTING_MASK;
       assert(isSafe && "Tried to warpInsert with different keys/vals in the same warp");
+#endif
 
       for (size_t i = 0; i < (1 << sizePower); i += defaults::WARPSIZE) {
          // Check if this virtual warp is done.
@@ -752,7 +754,9 @@ public:
          if (already_exists) {
             int winner = split::s_findFirstSig(already_exists) - 1;
             if (w_tid == winner) {
-               split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+               if constexpr(!skipOverWrites){
+                  split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+               }
                // This virtual warp is now done.
                warpDone = 1;
             }
@@ -776,7 +780,9 @@ public:
                   }
                } else if (old == candidateKey) {
                   // Parallel stuff are fun. Major edge case!
-                  split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+                  if constexpr(!skipOverWrites){
+                     split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+                  }
                   warpDone = 1;
                }
             }
@@ -788,6 +794,7 @@ public:
       }
    }
 
+   template <bool skipOverWrites=false>
    HASHINATOR_DEVICEONLY
    bool warpInsert_V(const KEY_TYPE& candidateKey, const VAL_TYPE& candidateVal, const size_t w_tid) noexcept {
 
@@ -800,6 +807,7 @@ public:
       uint64_t threadOverflow = 1;
       int localCount = 0;
 
+#ifdef HASHINATOR_DEBUG
 // Safety check: make sure everyone has the same key/val and all threads are here.
 #ifdef __CUDACC__
       assert(__activemask() == SPLIT_VOTING_MASK && "Tried to warpInsert_V with part of warp predicated off");
@@ -809,6 +817,7 @@ public:
       bool isSafe = (split::s_warpVote(candidateKey == storeKey, SPLIT_VOTING_MASK) &
                      split::s_warpVote(candidateVal == storeVal, SPLIT_VOTING_MASK)) == SPLIT_VOTING_MASK;
       assert(isSafe && "Tried to warpInsert_V with different keys/vals in the same warp");
+#endif
 
       for (size_t i = 0; i < (1 << sizePower); i += defaults::WARPSIZE) {
          // Check if this virtual warp is done.
@@ -829,7 +838,9 @@ public:
          if (already_exists) {
             int winner = split::s_findFirstSig(already_exists) - 1;
             if (w_tid == winner) {
-               split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+               if constexpr(!skipOverWrites){
+                  split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+               }
                // This virtual warp is now done.
                warpDone = 1;
             }
@@ -854,7 +865,9 @@ public:
                   }
                } else if (old == candidateKey) {
                   // Parallel stuff are fun. Major edge case!
-                  split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+                  if constexpr(!skipOverWrites){
+                     split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+                  }
                   warpDone = 1;
                }
             }
@@ -880,6 +893,7 @@ public:
       bool warpDone = false;
       int winner = 0;
 
+#ifdef HASHINATOR_DEBUG
 // Safety check: make sure everyone has the same key/val and all threads are here.
 #ifdef __CUDACC__
       assert(__activemask() == SPLIT_VOTING_MASK && "Tried to warpFind with part of warp predicated off");
@@ -887,6 +901,7 @@ public:
       KEY_TYPE storeKey = split::s_shuffle(candidateKey, 0, SPLIT_VOTING_MASK);
       bool isSafe = split::s_warpVote(candidateKey == storeKey, SPLIT_VOTING_MASK) == SPLIT_VOTING_MASK;
       assert(isSafe && "Tried to warpFind with different keys/vals in the same warp");
+#endif
 
       for (size_t i = 0; i < maxoverflow; i += defaults::WARPSIZE) {
 
@@ -926,6 +941,18 @@ public:
       const auto submask = SPLIT_VOTING_MASK;
       bool warpDone = false;
       int winner = 0;
+
+
+#ifdef HASHINATOR_DEBUG
+// Safety check: make sure everyone has the same key/val and all threads are here.
+#ifdef __CUDACC__
+      assert(__activemask() == SPLIT_VOTING_MASK && "Tried to warpFind with part of warp predicated off");
+#endif
+      KEY_TYPE storeKey = split::s_shuffle(candidateKey, 0, SPLIT_VOTING_MASK);
+      bool isSafe = split::s_warpVote(candidateKey == storeKey, SPLIT_VOTING_MASK) == SPLIT_VOTING_MASK;
+      assert(isSafe && "Tried to warpFind with different keys/vals in the same warp");
+#endif
+
 
       for (size_t i = 0; i < maxoverflow; i += defaults::WARPSIZE) {
 
