@@ -246,6 +246,14 @@ public:
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
       assert(nValidElements == _mapInfo->fill && "Something really bad happened during rehashing! Ask Kostis!");
       // We can now clear our buckets
+      //Easy optimization: If our bucket had no valid elements and the same size was requested
+      //we can just clear it
+      if (newSizePower==_mapInfo->sizePower && nValidElements==0){
+         clear(targets::device,s,true);
+         set_status((priorFill == _mapInfo->fill) ? status::success : status::fail);
+         split_gpuFreeAsync(validElements, s);
+         return;
+      }
       optimizeCPU(s);
       buckets = std::move(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>(
           1 << newSizePower, hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())));
@@ -255,6 +263,7 @@ public:
       insert(validElements, nValidElements, 1, s);
       set_status((priorFill == _mapInfo->fill) ? status::success : status::fail);
       split_gpuFreeAsync(validElements, s);
+      return;
    }
 #endif
 
