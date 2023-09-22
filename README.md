@@ -145,4 +145,8 @@ int main()
 You can have a look in the Doxygen for a more feature-rich explanation of the methods and tools included!   
 
 ## Test Coverage
-Hashinator and SplitVector include a suite of unit tests using [googletest](https://github.com/google/googletest) which live under the ```unit_tests``` directory. These tests try to cover as many features as possible to avoid the silent introduction of bugs! The units tests automatically trigger for pushes to the dev and master branches. 
+Hashinator and SplitVector include a suite of unit tests using [googletest](https://github.com/google/googletest) which live under the ```unit_tests``` directory. These tests try to cover as many features as possible to avoid the silent introduction of bugs! The units tests automatically trigger for pushes to the dev and master branches.
+
+## Credits for people who contributed but do not appear in the contribution list.
++ Special thanks to [Urs Ganse](https://github.com/ursg) for the initial CPU version of Hashinator.
++ Thanks to [Jaro Hokkanen](https://github.com/hokkanen). Hashinator's arch agnostic approach was inspired by his work.

@@ -59,7 +59,7 @@ void benchInsert2(hashmap& hmap, hash_pair<key_type,val_type>*src,key_type* keys
 
 int main(int argc, char* argv[]){
 
-   int sz= 24;
+   int sz= 10;
    if (argc>=2){
       sz=atoi(argv[1]);
    }

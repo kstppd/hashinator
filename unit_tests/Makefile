@@ -6,7 +6,7 @@ EXTRA= -g3  --std=c++17
 EXTRA+= -gencode arch=compute_60,code=sm_60  -L /usr/lib/x86_64-linux-gnu
 EXTRA+=  -DHASHMAPDEBUG --expt-relaxed-constexpr  --expt-extended-lambda
 GTEST=-lgtest -lgtest_main -lpthread
-OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o delete_mechanism.o insertion_mechanism.o hybrid_cpu.o hybrid_gpu.o pointer_test.o benchmark.o benchmarkLF.o tbPerf.o realistic.o
+OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o stream_compaction2.o delete_mechanism.o insertion_mechanism.o hybrid_cpu.o hybrid_gpu.o pointer_test.o benchmark.o benchmarkLF.o tbPerf.o realistic.o 
 
 
 default: tests
@@ -20,6 +20,7 @@ allclean:
 	rm gtestvecdevice &
 	rm gtest_hashmap & 
 	rm compaction &
+	rm compaction2 &
 	rm delete_mechanism &
 	rm hybrid_cpu & 
 	rm hybrid_gpu &
@@ -53,6 +54,9 @@ gtest_vec_device.o: gtest_vec_device/vec_test.cu
 
 stream_compaction.o: stream_compaction/race.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o compaction stream_compaction/race.cu
+
+stream_compaction2.o: stream_compaction/unit.cu
+	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o compaction2 stream_compaction/unit.cu
 
 delete_mechanism.o: delete_by_compaction/main.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o delete_mechanism delete_by_compaction/main.cu
