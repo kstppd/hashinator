@@ -426,6 +426,26 @@ void split_prefix_scan(split::SplitVector<T, split::split_unified_allocator<T>>&
 }
 
 /**
+ * @brief Computes the next power of 2 greater than or equal to a given value.
+ *
+ * @param v The value for which to compute the next power of 2.
+ * @return The next power of 2 greater than or equal to the input value.
+ * Modified from (http://www-graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2) to support 64-bit uints
+ * Included here as well for standalone use of splitvec outside of hashintor
+ */
+constexpr inline size_t nextPow2(size_t v) noexcept {
+   v--;
+   v |= v >> 1;
+   v |= v >> 2;
+   v |= v >> 4;
+   v |= v >> 8;
+   v |= v >> 16;
+   v |= v >> 32;
+   v++;
+   return v;
+}
+
+/**
  * @brief Perform element compaction based on a rule.
  *
  * This function performs element compaction on the given input SplitVector based on a specified rule.
@@ -448,7 +468,8 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
    using vector_int = split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>>;
 
    // Figure out Blocks to use
-   size_t nBlocks = input.size() / BLOCKSIZE;
+   size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
    if (nBlocks == 0) {
       nBlocks += 1;
    }
@@ -501,7 +522,8 @@ size_t copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& in
    using vector_int = split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>>;
 
    // Figure out Blocks to use
-   size_t nBlocks = input.size() / BLOCKSIZE;
+   size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
    if (nBlocks == 0) {
       nBlocks += 1;
    }
@@ -705,7 +727,8 @@ uint32_t copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& i
                      split_gpuStream_t s = 0) {
 
    // Figure out Blocks to use
-   size_t nBlocks = input.size() / BLOCKSIZE;
+   size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
    if (nBlocks == 0) {
       nBlocks += 1;
    }
@@ -752,7 +775,8 @@ size_t copy_keys_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>
                         split_gpuStream_t s = 0) {
 
    // Figure out Blocks to use
-   size_t nBlocks = input.size() / BLOCKSIZE;
+   size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
    if (nBlocks == 0) {
       nBlocks += 1;
    }
