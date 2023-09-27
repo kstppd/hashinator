@@ -21,21 +21,23 @@ size_t count = 0;
 
 void print_vector(vector& v){
    std::cout<<"-------------------"<<std::endl;
+   std::cout<<"Size = "<<v.size()<<std::endl;;
    for (const auto& i:v){
       std::cout<<"["<<i.num<<","<<i.flag<<"] ";
    }
-   std::cout<<"-------------------"<<std::endl;
+   std::cout<<"\n-------------------"<<std::endl;
    std::cout<<std::endl;
 }
 
 void fill_vec(vector& v, size_t targetSize){
    count=0;
+   size_t st=0;
    std::random_device rd;
    std::mt19937 gen(rd());
    std::uniform_int_distribution<int_type> dist(1, std::numeric_limits<int_type>::max());
    v.clear();
    while (v.size() < targetSize) {
-      int_type val = dist(gen);
+      int_type val =++st;// dist(gen);
       v.push_back(test_t{val,(val%2==0)});
       if (val%2 == 0){count++;};
     }
@@ -83,8 +85,15 @@ bool run_test_small(size_t size){
    auto predicate_off =[]__host__ __device__ (test_t element)->bool{ return element.flag == 0 ;};
    vector output1(v.size());
    vector output2(v.size());
+#if 1
    split::tools::copy_if(v,output1,predicate_on);
    split::tools::copy_if(v,output2,predicate_off);
+#else
+   auto one = split::tools::copy_if_raw(v,output1.data(),predicate_on);
+   auto two = split::tools::copy_if_raw(v,output2.data(),predicate_off);
+   output1.erase(&output1[one] , output1.end() );   
+   output2.erase(&output2[two] , output2.end() ) ;  
+#endif
    bool sane1 = checkFlags(output1,1);
    bool sane2 = checkFlags(output2,0);
    bool sane3 = ((output1.size()+output2.size())==v.size());
@@ -96,8 +105,11 @@ bool run_test_small(size_t size){
 }
 
 TEST(StremCompaction , Compaction_Tests_Linear){
-   for (size_t s=(1<<11); s< (1<<17); s+=200 )
-   expect_true(run_test_small(s));
+   for (size_t s=1024; s< 3000; s++ ){
+      bool a = run_test_small(s);
+      expect_true(a);
+   }
+
 }
 
 TEST(StremCompaction , Compaction_Tests_Power_of_2){

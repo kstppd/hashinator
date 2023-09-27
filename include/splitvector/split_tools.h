@@ -473,8 +473,8 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
    if (nBlocks == 0) {
       nBlocks += 1;
    }
-   vector_int counts(nBlocks);
-   vector_int offsets(nBlocks);
+   vector_int counts(nBlocks,0);
+   vector_int offsets(nBlocks,0);
 
    // Phase 1 -- Calculate per warp workload
    vector* d_input = input.upload(s);
@@ -484,6 +484,7 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
    SPLIT_CHECK_ERR(split_gpuFreeAsync(d_input, s));
    SPLIT_CHECK_ERR(split_gpuFreeAsync(d_counts, s));
 
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    // Step 2 -- Exclusive Prefix Scan on offsets
    if (nBlocks == 1) {
       split_prefix_scan<uint32_t, 2, WARP>(counts, offsets, s);
@@ -497,6 +498,7 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
    vector_int* d_offsets = offsets.upload(s);
    d_input = input.upload(s);
    d_counts = counts.upload(s);
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    split::tools::split_compact<T, Rule, BLOCKSIZE, WARP>
        <<<nBlocks, BLOCKSIZE, 2 * (BLOCKSIZE / WARP) * sizeof(unsigned int), s>>>(d_input, d_counts, d_offsets,
                                                                                   d_output, rule);
@@ -527,8 +529,8 @@ size_t copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& in
    if (nBlocks == 0) {
       nBlocks += 1;
    }
-   vector_int counts(nBlocks);
-   vector_int offsets(nBlocks);
+   vector_int counts(nBlocks,0);
+   vector_int offsets(nBlocks,0);
 
    // Phase 1 -- Calculate per warp workload
    vector* d_input = input.upload(s);
@@ -551,6 +553,7 @@ size_t copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& in
    vector_int* d_offsets = offsets.upload(s);
    d_input = input.upload(s);
    d_counts = counts.upload(s);
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    split::tools::split_compact_keys<T, U, Rule, BLOCKSIZE, WARP>
        <<<nBlocks, BLOCKSIZE, 2 * (BLOCKSIZE / WARP) * sizeof(unsigned int), s>>>(d_input, d_counts, d_offsets,
                                                                                   d_output, rule);
@@ -739,13 +742,15 @@ uint32_t copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& i
 
    uint32_t* d_counts;
    uint32_t* d_offsets;
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    d_counts = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   SPLIT_CHECK_ERR(  cudaMemset ( d_counts, 0 , nBlocks * sizeof(uint32_t))  );
 
    // Phase 1 -- Calculate per warp workload
    split::tools::scan_reduce_raw<<<nBlocks, BLOCKSIZE, 0, s>>>(input.data(), d_counts, rule, input.size());
    d_offsets = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   SPLIT_CHECK_ERR(  cudaMemset ( d_offsets, 0 , nBlocks * sizeof(uint32_t))  );
 
    // Step 2 -- Exclusive Prefix Scan on offsets
    if (nBlocks == 1) {
@@ -789,11 +794,14 @@ size_t copy_keys_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>
    uint32_t* d_offsets;
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    d_counts = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   SPLIT_CHECK_ERR(  cudaMemset ( d_counts, 0 , nBlocks * sizeof(uint32_t))  );
 
    // Phase 1 -- Calculate per warp workload
    split::tools::scan_reduce_raw<<<nBlocks, BLOCKSIZE, 0, s>>>(input.data(), d_counts, rule, input.size());
    d_offsets = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   SPLIT_CHECK_ERR(  cudaMemset ( d_offsets, 0 , nBlocks * sizeof(uint32_t))  );
 
    // Step 2 -- Exclusive Prefix Scan on offsets
    if (nBlocks == 1) {
