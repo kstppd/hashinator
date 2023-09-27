@@ -246,10 +246,10 @@ public:
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
       assert(nValidElements == _mapInfo->fill && "Something really bad happened during rehashing! Ask Kostis!");
       // We can now clear our buckets
-      //Easy optimization: If our bucket had no valid elements and the same size was requested
-      //we can just clear it
-      if (newSizePower==_mapInfo->sizePower && nValidElements==0){
-         clear(targets::device,s,true);
+      // Easy optimization: If our bucket had no valid elements and the same size was requested
+      // we can just clear it
+      if (newSizePower == _mapInfo->sizePower && nValidElements == 0) {
+         clear(targets::device, s, true);
          set_status((priorFill == _mapInfo->fill) ? status::success : status::fail);
          split_gpuFreeAsync(validElements, s);
          return;
@@ -720,9 +720,9 @@ public:
    }
 
 #ifndef HASHINATOR_CPU_ONLY_MODE
-   template <bool skipOverWrites=false>
-   HASHINATOR_DEVICEONLY
-   void warpInsert(const KEY_TYPE& candidateKey, const VAL_TYPE& candidateVal, const size_t w_tid) noexcept {
+   template <bool skipOverWrites = false>
+   HASHINATOR_DEVICEONLY void warpInsert(const KEY_TYPE& candidateKey, const VAL_TYPE& candidateVal,
+                                         const size_t w_tid) noexcept {
 
       const int sizePower = _mapInfo->sizePower;
       const int bitMask = (1 << (sizePower)) - 1;
@@ -763,7 +763,7 @@ public:
          if (already_exists) {
             int winner = split::s_findFirstSig(already_exists) - 1;
             if (w_tid == winner) {
-               if constexpr(!skipOverWrites){
+               if constexpr (!skipOverWrites) {
                   split::s_atomicExch(&buckets[probingindex].second, candidateVal);
                }
                // This virtual warp is now done.
@@ -789,7 +789,7 @@ public:
                   }
                } else if (old == candidateKey) {
                   // Parallel stuff are fun. Major edge case!
-                  if constexpr(!skipOverWrites){
+                  if constexpr (!skipOverWrites) {
                      split::s_atomicExch(&buckets[probingindex].second, candidateVal);
                   }
                   warpDone = 1;
@@ -803,9 +803,9 @@ public:
       }
    }
 
-   template <bool skipOverWrites=false>
-   HASHINATOR_DEVICEONLY
-   bool warpInsert_V(const KEY_TYPE& candidateKey, const VAL_TYPE& candidateVal, const size_t w_tid) noexcept {
+   template <bool skipOverWrites = false>
+   HASHINATOR_DEVICEONLY bool warpInsert_V(const KEY_TYPE& candidateKey, const VAL_TYPE& candidateVal,
+                                           const size_t w_tid) noexcept {
 
       const int sizePower = _mapInfo->sizePower;
       const int bitMask = (1 << (sizePower)) - 1;
@@ -847,7 +847,7 @@ public:
          if (already_exists) {
             int winner = split::s_findFirstSig(already_exists) - 1;
             if (w_tid == winner) {
-               if constexpr(!skipOverWrites){
+               if constexpr (!skipOverWrites) {
                   split::s_atomicExch(&buckets[probingindex].second, candidateVal);
                }
                // This virtual warp is now done.
@@ -874,7 +874,7 @@ public:
                   }
                } else if (old == candidateKey) {
                   // Parallel stuff are fun. Major edge case!
-                  if constexpr(!skipOverWrites){
+                  if constexpr (!skipOverWrites) {
                      split::s_atomicExch(&buckets[probingindex].second, candidateVal);
                   }
                   warpDone = 1;
@@ -951,7 +951,6 @@ public:
       bool warpDone = false;
       int winner = 0;
 
-
 #ifdef HASHINATOR_DEBUG
 // Safety check: make sure everyone has the same key/val and all threads are here.
 #ifdef __CUDACC__
@@ -961,7 +960,6 @@ public:
       bool isSafe = split::s_warpVote(candidateKey == storeKey, SPLIT_VOTING_MASK) == SPLIT_VOTING_MASK;
       assert(isSafe && "Tried to warpFind with different keys/vals in the same warp");
 #endif
-
 
       for (size_t i = 0; i < maxoverflow; i += defaults::WARPSIZE) {
 

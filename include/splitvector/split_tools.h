@@ -446,129 +446,6 @@ constexpr inline size_t nextPow2(size_t v) noexcept {
 }
 
 /**
- * @brief Perform element compaction based on a rule.
- *
- * This function performs element compaction on the given input SplitVector based on a specified rule.
- * It generates compacted output, updates counts and offsets SplitVectors, and returns compacted count.
- *
- * @tparam T Type of the array elements.
- * @tparam Rule The rule functor for element compaction.
- * @tparam BLOCKSIZE The size of each thread block.
- * @tparam WARP The size of each warp.
- * @param input The input SplitVector.
- * @param output The output SplitVector for storing the compacted elements.
- * @param rule The rule functor object.
- * @param s The split_gpuStream_t stream for GPU execution (default is 0).
- */
-template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
-void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
-             split::SplitVector<T, split::split_unified_allocator<T>>& output, Rule rule, split_gpuStream_t s = 0) {
-
-   using vector = split::SplitVector<T, split::split_unified_allocator<T>>;
-   using vector_int = split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>>;
-
-   // Figure out Blocks to use
-   size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
-   size_t nBlocks = nextPow2(_s);
-   if (nBlocks == 0) {
-      nBlocks += 1;
-   }
-   vector_int counts(nBlocks,0);
-   vector_int offsets(nBlocks,0);
-
-   // Phase 1 -- Calculate per warp workload
-   vector* d_input = input.upload(s);
-   vector_int* d_counts = counts.upload(s);
-   split::tools::scan_reduce<<<nBlocks, BLOCKSIZE, 0, s>>>(d_input, d_counts, rule);
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_input, s));
-   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_counts, s));
-
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   // Step 2 -- Exclusive Prefix Scan on offsets
-   if (nBlocks == 1) {
-      split_prefix_scan<uint32_t, 2, WARP>(counts, offsets, s);
-   } else {
-      split_prefix_scan<uint32_t, BLOCKSIZE, WARP>(counts, offsets, s);
-   }
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-
-   // Step 3 -- Compaction
-   vector* d_output = output.upload(s);
-   vector_int* d_offsets = offsets.upload(s);
-   d_input = input.upload(s);
-   d_counts = counts.upload(s);
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   split::tools::split_compact<T, Rule, BLOCKSIZE, WARP>
-       <<<nBlocks, BLOCKSIZE, 2 * (BLOCKSIZE / WARP) * sizeof(unsigned int), s>>>(d_input, d_counts, d_offsets,
-                                                                                  d_output, rule);
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   // Deallocate the handle pointers
-
-   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_input, s));
-   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_counts, s));
-   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_output, s));
-   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_offsets, s));
-}
-
-/**
- * @brief Same copy_if but only for Hashinator keys
- */
-template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
-size_t copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
-                    split::SplitVector<U, split::split_unified_allocator<U>>& output, Rule rule,
-                    split_gpuStream_t s = 0) {
-
-   using vector = split::SplitVector<T, split::split_unified_allocator<T>>;
-   using keyvector = split::SplitVector<U, split::split_unified_allocator<U>>;
-   using vector_int = split::SplitVector<uint32_t, split::split_unified_allocator<uint32_t>>;
-
-   // Figure out Blocks to use
-   size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
-   size_t nBlocks = nextPow2(_s);
-   if (nBlocks == 0) {
-      nBlocks += 1;
-   }
-   vector_int counts(nBlocks,0);
-   vector_int offsets(nBlocks,0);
-
-   // Phase 1 -- Calculate per warp workload
-   vector* d_input = input.upload(s);
-   vector_int* d_counts = counts.upload(s);
-   split::tools::scan_reduce<<<nBlocks, BLOCKSIZE, 0, s>>>(d_input, d_counts, rule);
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_input, s));
-   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_counts, s));
-
-   // Step 2 -- Exclusive Prefix Scan on offsets
-   if (nBlocks == 1) {
-      split_prefix_scan<uint32_t, 2, WARP>(counts, offsets, s);
-   } else {
-      split_prefix_scan<uint32_t, BLOCKSIZE, WARP>(counts, offsets, s);
-   }
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-
-   // Step 3 -- Compaction
-   keyvector* d_output = output.upload(s);
-   vector_int* d_offsets = offsets.upload(s);
-   d_input = input.upload(s);
-   d_counts = counts.upload(s);
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   split::tools::split_compact_keys<T, U, Rule, BLOCKSIZE, WARP>
-       <<<nBlocks, BLOCKSIZE, 2 * (BLOCKSIZE / WARP) * sizeof(unsigned int), s>>>(d_input, d_counts, d_offsets,
-                                                                                  d_output, rule);
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   size_t retval = output.size();
-   // Deallocate the handle pointers
-
-   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_input, s));
-   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_counts, s));
-   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_output, s));
-   SPLIT_CHECK_ERR(split_gpuFreeAsync(d_offsets, s));
-   return retval;
-}
-
-/**
  * @brief Same as split_compact but with raw memory
  */
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
@@ -744,13 +621,13 @@ uint32_t copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& i
    uint32_t* d_offsets;
    d_counts = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   SPLIT_CHECK_ERR(  cudaMemset ( d_counts, 0 , nBlocks * sizeof(uint32_t))  );
+   SPLIT_CHECK_ERR(split_gpuMemset(d_counts, 0, nBlocks * sizeof(uint32_t)));
 
    // Phase 1 -- Calculate per warp workload
    split::tools::scan_reduce_raw<<<nBlocks, BLOCKSIZE, 0, s>>>(input.data(), d_counts, rule, input.size());
    d_offsets = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   SPLIT_CHECK_ERR(  cudaMemset ( d_offsets, 0 , nBlocks * sizeof(uint32_t))  );
+   SPLIT_CHECK_ERR(split_gpuMemset(d_offsets, 0, nBlocks * sizeof(uint32_t)));
 
    // Step 2 -- Exclusive Prefix Scan on offsets
    if (nBlocks == 1) {
@@ -770,6 +647,29 @@ uint32_t copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& i
    SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&numel, retval, sizeof(uint32_t), split_gpuMemcpyDeviceToHost, s));
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    return numel;
+}
+
+/**
+ * @brief Perform element compaction based on a rule.
+ *
+ * This function performs element compaction on the given input SplitVector based on a specified rule.
+ * It generates compacted output, updates counts and offsets SplitVectors, and returns compacted count.
+ *
+ * @tparam T Type of the array elements.
+ * @tparam Rule The rule functor for element compaction.
+ * @tparam BLOCKSIZE The size of each thread block.
+ * @tparam WARP The size of each warp.
+ * @param input The input SplitVector.
+ * @param output The output SplitVector for storing the compacted elements.
+ * @param rule The rule functor object.
+ * @param s The split_gpuStream_t stream for GPU execution (default is 0).
+ */
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
+             split::SplitVector<T, split::split_unified_allocator<T>>& output, Rule rule, split_gpuStream_t s = 0) {
+
+   auto len = copy_if_raw(input, output.data(), rule, s);
+   output.erase(&output[len], output.end());
 }
 
 /**
@@ -795,13 +695,13 @@ size_t copy_keys_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    d_counts = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   SPLIT_CHECK_ERR(  cudaMemset ( d_counts, 0 , nBlocks * sizeof(uint32_t))  );
+   SPLIT_CHECK_ERR(split_gpuMemset(d_counts, 0, nBlocks * sizeof(uint32_t)));
 
    // Phase 1 -- Calculate per warp workload
    split::tools::scan_reduce_raw<<<nBlocks, BLOCKSIZE, 0, s>>>(input.data(), d_counts, rule, input.size());
    d_offsets = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   SPLIT_CHECK_ERR(  cudaMemset ( d_offsets, 0 , nBlocks * sizeof(uint32_t))  );
+   SPLIT_CHECK_ERR(split_gpuMemset(d_offsets, 0, nBlocks * sizeof(uint32_t)));
 
    // Step 2 -- Exclusive Prefix Scan on offsets
    if (nBlocks == 1) {
@@ -821,6 +721,18 @@ size_t copy_keys_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>
    SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&numel, retval, sizeof(uint32_t), split_gpuMemcpyDeviceToHost, s));
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    return numel;
+}
+
+/**
+ * @brief Same as copy_if but only for Hashinator keys
+ */
+template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+size_t copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
+                    split::SplitVector<U, split::split_unified_allocator<U>>& output, Rule rule,
+                    split_gpuStream_t s = 0) {
+
+   auto len = copy_keys_if_raw(input, output.data, rule, s);
+   output.erase(&output[len], output.end());
 }
 
 } // namespace tools
