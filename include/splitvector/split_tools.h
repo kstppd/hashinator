@@ -727,7 +727,7 @@ size_t copy_keys_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>
  * @brief Same as copy_if but only for Hashinator keys
  */
 template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
-size_t copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
+void copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
                     split::SplitVector<U, split::split_unified_allocator<U>>& output, Rule rule,
                     split_gpuStream_t s = 0) {
 
