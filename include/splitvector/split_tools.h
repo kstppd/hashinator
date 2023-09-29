@@ -38,7 +38,7 @@
 #define SPLIT_VOTING_MASK 0xFFFFFFFF // 32-bit wide for split_gpu warps
 #define WARPLENGTH 32
 #endif
-#ifdef __HIP_PLATFORM_HCC___
+#ifdef __HIP__
 #define SPLIT_VOTING_MASK 0xFFFFFFFFFFFFFFFFull // 64-bit wide for amd warps
 #define WARPLENGTH 64
 

@@ -92,7 +92,7 @@
 #define split_gpuMemoryAdvise cudaMemoryAdvise
 #define split_gpuMemAdvise cudaMemAdvise
 
-#elif __HIP_PLATFORM_HCC___
+#elif __HIP__
 
 #define split_gpuGetLastError hipGetLastError
 #define split_gpuGetErrorString hipGetErrorString

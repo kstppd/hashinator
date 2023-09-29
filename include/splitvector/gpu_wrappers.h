@@ -23,7 +23,7 @@
 
 #ifdef __NVCC__
 #include <cuda_runtime_api.h>
-#else
+#elifdef __HIP__
 #include <hip/hip_runtime.h>
 #include <hip/hip_runtime_api.h>
 #endif
@@ -154,7 +154,7 @@ __device__ __forceinline__ T s_warpVote(bool predicate, T votingMask = T(-1)) no
    return __ballot_sync(votingMask, predicate);
 #endif
 
-#ifdef __HIP_PLATFORM_HCC___
+#ifdef __HIP__
    return __ballot(predicate);
 #endif
 }
@@ -172,7 +172,7 @@ __device__ __forceinline__ int s_findFirstSig(T mask) noexcept {
    return __ffs(mask);
 #endif
 
-#ifdef __HIP_PLATFORM_HCC___
+#ifdef __HIP__
    return __ffsll((unsigned long long)mask);
 #endif
 }
@@ -191,7 +191,7 @@ __device__ __forceinline__ int s_warpVoteAny(bool predicate, T votingMask = T(-1
    return __any_sync(votingMask, predicate);
 #endif
 
-#ifdef __HIP_PLATFORM_HCC___
+#ifdef __HIP__
    return __any(predicate);
 #endif
 }
@@ -208,7 +208,7 @@ __device__ __forceinline__ uint32_t s_pop_count(T mask) noexcept {
 #ifdef __NVCC__
    return __popc(mask);
 #endif
-#ifdef __HIP_PLATFORM_HCC___
+#ifdef __HIP__
    if constexpr (sizeof(T) == 4) {
       return __popc(mask);
    } else if constexpr (sizeof(mask) == 8) {
@@ -236,7 +236,7 @@ __device__ __forceinline__ T s_shuffle(T variable, unsigned int source, U mask =
 #ifdef __NVCC__
    return __shfl_sync(mask, variable, source);
 #endif
-#ifdef __HIP_PLATFORM_HCC___
+#ifdef __HIP__
    return __shfl(variable, source);
 #endif
 }
@@ -257,7 +257,7 @@ __device__ __forceinline__ T s_shuffle_down(T variable, unsigned int delta, U ma
 #ifdef __NVCC__
    return __shfl_down_sync(mask, variable, delta);
 #endif
-#ifdef __HIP_PLATFORM_HCC___
+#ifdef __HIP__
    return __shfl_down(variable, delta);
 #endif
 }
