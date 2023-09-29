@@ -257,7 +257,7 @@ public:
          }
       };
       this->_allocate(size_to_allocate);
-      if constexpr (std::is_pod<T>::value) {
+      if constexpr (std::is_trivially_copyable<T>::value) {
          if (other._location == Residency::device) {
             optimizeGPU();
             SPLIT_CHECK_ERR(
@@ -339,7 +339,7 @@ public:
          }
       };
 
-      if constexpr (std::is_pod<T>::value) {
+      if constexpr (std::is_trivially_copyable<T>::value) {
          if (other._location == Residency::device) {
             optimizeGPU();
             SPLIT_CHECK_ERR(split_gpuMemcpy(_data, other._data, size() * sizeof(T), split_gpuMemcpyDeviceToDevice));
@@ -748,7 +748,7 @@ public:
    HOSTDEVICE
    void remove_from_back(size_t n) noexcept {
       const size_t end = size() - n;
-      if constexpr (!std::is_pod<T>::value) {
+      if constexpr (std::is_nothrow_destructible<T>::value) {
          for (auto i = size(); i > end;) {
             (_data + --i)->~T();
          }
@@ -761,7 +761,7 @@ public:
     */
    HOSTDEVICE
    void clear() noexcept {
-      if constexpr (!std::is_pod<T>::value) {
+      if constexpr (std::is_nothrow_destructible<T>::value) {
          for (size_t i = 0; i < size(); i++) {
             _data[i].~T();
          }
@@ -1274,7 +1274,7 @@ public:
    HOSTDEVICE
    iterator erase(iterator it) noexcept {
       const int64_t index = it.data() - begin().data();
-      if constexpr (!std::is_pod<T>::value) {
+      if constexpr (std::is_nothrow_destructible<T>::value) {
          _data[index].~T();
          for (auto i = index; i < size() - 1; i++) {
             new (&_data[i]) T(_data[i + 1]);
@@ -1303,7 +1303,7 @@ public:
       const int64_t end = p1.data() - begin().data();
       const int64_t offset = end - start;
 
-      if constexpr (!std::is_pod<T>::value) {
+      if constexpr (std::is_nothrow_destructible<T>::value) {
          for (int64_t i = 0; i < offset; i++) {
             _data[i].~T();
          }
