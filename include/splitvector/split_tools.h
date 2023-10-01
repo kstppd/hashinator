@@ -731,7 +731,7 @@ void copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& inpu
                     split::SplitVector<U, split::split_unified_allocator<U>>& output, Rule rule,
                     split_gpuStream_t s = 0) {
 
-   auto len = copy_keys_if_raw(input, output.data, rule, s);
+   auto len = copy_keys_if_raw(input, output.data(), rule, s);
    output.erase(&output[len], output.end());
 }
 
