@@ -38,7 +38,7 @@ int main()
    vec.clear();
 }
 ```
-`g++   main.cpp  -std=c++17 -o example`
+`g++   main.cpp -DSPLIT_CPU_ONLY_MODE  -std=c++17 -o example`
 
 ### SplitVector: Basic Usage on device
 ```
@@ -88,7 +88,7 @@ int main()
    std::cout<<std::endl;
 }
 ```
-`g++   main.cpp  -std=c++17 -o example`
+`g++   main.cpp  -DHASHINATOR_CPU_ONLY_MODE -std=c++17 -o example`
 ### Hashinator: Basic usage on device
 
 ```c++
