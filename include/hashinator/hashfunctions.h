@@ -56,6 +56,17 @@ struct Fibonacci {
    }
 
    /**
+    * @brief Computes a 32-bit hash value using the Fibonacci hash algorithm.
+    *
+    * @param key The input key to be hashed.
+    * @param sizePower The size power for mixing the key.
+    * @return uint32_t The computed hash value.
+    */
+   [[nodiscard]] HOSTDEVICE inline static constexpr uint32_t fibhash(int key, const int sizePower) {
+      return fibhash(static_cast<uint32_t>(key), sizePower);
+   }
+
+   /**
     * @brief Computes a hash value using the Fibonacci hash algorithm.
     *
     * This function is a template wrapper that calls the appropriate fibhash
@@ -66,6 +77,7 @@ struct Fibonacci {
     * @return T The computed hash value.
     */
    [[nodiscard]] HOSTDEVICE inline static constexpr T _hash(T key, const int sizePower) {
+      static_assert(std::is_integral<T>::value, "Hashinator only works for integral types");
       return fibhash(key, sizePower);
    }
 };
