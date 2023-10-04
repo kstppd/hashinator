@@ -22,6 +22,7 @@
  * */
 #pragma once
 #include "archMacros.h"
+#include "gpu_wrappers.h"
 #include <cassert>
 namespace split {
 
@@ -37,7 +38,7 @@ static void cuda_error(cudaError_t err, const char* file, int line) {
    }
 }
 #endif
-#ifdef __HIP_PLATFORM_HCC___
+#ifdef __HIP__
 /* Define the HIP error checking macro */
 #define SPLIT_CHECK_ERR(err) (split::hip_error(err, __FILE__, __LINE__))
 static void hip_error(hipError_t err, const char* file, int line) {

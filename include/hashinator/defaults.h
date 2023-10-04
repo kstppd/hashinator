@@ -25,9 +25,12 @@ namespace defaults {
 #ifdef __NVCC__
 constexpr int WARPSIZE = 32;
 constexpr int BUCKET_OVERFLOW = 32;
+#elif (__HIP__ && __AMDGCN_WAVEFRONT_SIZE)
+// AMDs GPU warp size depends on the GPU architecture
+constexpr int WARPSIZE = __AMDGCN_WAVEFRONT_SIZE;
+constexpr int BUCKET_OVERFLOW = __AMDGCN_WAVEFRONT_SIZE;
 #else
-constexpr int WARPSIZE = 64;
-constexpr int BUCKET_OVERFLOW = 64;
+#error "Warp size not known, please use a CUDA or HIP compiler."
 #endif
 constexpr int elementsPerWarp = 1;
 constexpr int MAX_BLOCKSIZE = 1024;

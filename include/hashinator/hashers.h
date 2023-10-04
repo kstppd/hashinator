@@ -612,7 +612,7 @@ __global__ void insert_index_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE
 }
 
 #endif
-#ifdef __HIP_PLATFORM_HCC___
+#ifdef __HIP__
 
 /*
  * Resets all elements pointed by src to EMPTY in dst
@@ -1103,7 +1103,7 @@ __global__ void retrieve_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TY
                                              VIRTUALWARP * subwarp_relative_index + VIRTUALWARP);
    }
 #endif
-#ifdef __HIP_PLATFORM_HCC___
+#ifdef __HIP__
    uint64_t subwarp_relative_index = (wid) % (WARPSIZE / VIRTUALWARP);
    uint64_t submask;
    if constexpr (elementsPerWarp == 1) {
@@ -1168,7 +1168,7 @@ __global__ void retrieve_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KE
                                              VIRTUALWARP * subwarp_relative_index + VIRTUALWARP);
    }
 #endif
-#ifdef __HIP_PLATFORM_HCC___
+#ifdef __HIP__
    uint64_t subwarp_relative_index = (wid) % (WARPSIZE / VIRTUALWARP);
    uint64_t submask;
    if constexpr (elementsPerWarp == 1) {
@@ -1239,7 +1239,7 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
                                              VIRTUALWARP * subwarp_relative_index + VIRTUALWARP);
    }
 #endif
-#ifdef __HIP_PLATFORM_HCC___
+#ifdef __HIP__
    uint64_t subwarp_relative_index = (wid) % (WARPSIZE / VIRTUALWARP);
    uint64_t submask;
    if constexpr (elementsPerWarp == 1) {
