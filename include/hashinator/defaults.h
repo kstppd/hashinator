@@ -30,7 +30,10 @@ constexpr int BUCKET_OVERFLOW = 32;
 constexpr int WARPSIZE = __AMDGCN_WAVEFRONT_SIZE;
 constexpr int BUCKET_OVERFLOW = __AMDGCN_WAVEFRONT_SIZE;
 #else
+constexpr int BUCKET_OVERFLOW = 32; //to allow cpu only mode
+#ifndef HASHINATOR_CPU_ONLY_MODE
 #error "Warp size not known, please use a CUDA or HIP compiler."
+#endif
 #endif
 constexpr int elementsPerWarp = 1;
 constexpr int MAX_BLOCKSIZE = 1024;

@@ -23,7 +23,7 @@
 
 #ifdef __NVCC__
 #include <cuda_runtime_api.h>
-#elifdef __HIP__
+#elif def __HIP__
 #include <hip/hip_runtime.h>
 #include <hip/hip_runtime_api.h>
 #endif
