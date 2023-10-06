@@ -411,6 +411,14 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
       return;
    }
 
+   // Zero out shared count;
+   if (proper_w_tid == 0 && blockWid == 0) {
+      for (int i = 0; i < WARPSIZE; i++) {
+         deleteMask[i] = 0;
+      }
+   }
+   __syncthreads();
+
    uint64_t subwarp_relative_index = (wid) % (WARPSIZE / VIRTUALWARP);
    uint64_t submask;
    if constexpr (elementsPerWarp == 1) {
@@ -421,7 +429,7 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
                                             VIRTUALWARP * subwarp_relative_index + VIRTUALWARP);
    }
 
-   KEY_TYPE& candidateKey = keys[wid];
+   KEY_TYPE candidateKey = keys[wid];
    const int bitMask = (1 << (sizePower)) - 1;
    const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
    uint32_t localCount = 0;

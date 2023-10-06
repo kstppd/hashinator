@@ -589,6 +589,79 @@ __global__ void insert_index_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE
    return;
 }
 
+#if 0
+/*
+ * In a similar way to the insert and retrieve kernels we
+ * delete keys in "keys" if they do exist in the hasmap.
+ * If the keys do not exist we do nothing.
+ * */
+template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(),
+          KEY_TYPE TOMBSTONE = EMPTYBUCKET - 1, class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>,
+          int WARPSIZE = defaults::WARPSIZE, int elementsPerWarp>
+__global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, size_t* d_tombstoneCounter,
+                              int sizePower, size_t maxoverflow, size_t len) {
+
+   const int VIRTUALWARP = WARPSIZE / elementsPerWarp;
+   const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
+   const size_t wid = tid / VIRTUALWARP;
+   const size_t w_tid = tid % VIRTUALWARP;
+
+   // Early quit if we have more warps than elements to handle
+   if (wid >= len) {
+      return;
+   }
+
+#ifdef __NVCC__
+   uint32_t subwarp_relative_index = (wid) % (WARPSIZE / VIRTUALWARP);
+   uint32_t submask;
+   if constexpr (elementsPerWarp == 1) {
+      // TODO mind AMD 64 thread wavefronts
+      submask = SPLIT_VOTING_MASK;
+   } else {
+      submask = split::getIntraWarpMask_CUDA(0, VIRTUALWARP * subwarp_relative_index + 1,
+                                             VIRTUALWARP * subwarp_relative_index + VIRTUALWARP);
+   }
+#endif
+#ifdef __HIP__
+   uint64_t subwarp_relative_index = (wid) % (WARPSIZE / VIRTUALWARP);
+   uint64_t submask;
+   if constexpr (elementsPerWarp == 1) {
+      // TODO mind AMD 64 thread wavefronts
+      submask = SPLIT_VOTING_MASK;
+   } else {
+      submask = split::getIntraWarpMask_AMD(0, VIRTUALWARP * subwarp_relative_index + 1,
+                                            VIRTUALWARP * subwarp_relative_index + VIRTUALWARP);
+   }
+#endif
+
+   KEY_TYPE& candidateKey = keys[wid];
+   const int bitMask = (1 << (sizePower)) - 1;
+   const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
+
+   for (size_t i = 0; i < maxoverflow; i += VIRTUALWARP) {
+
+      // Get the position we should be looking into
+      size_t probingindex = ((hashIndex + i + w_tid) & bitMask);
+      const auto maskExists =
+          split::s_warpVote(buckets[probingindex].first == candidateKey, SPLIT_VOTING_MASK) & submask;
+      const auto emptyFound =
+          split::s_warpVote(buckets[probingindex].first == EMPTYBUCKET, SPLIT_VOTING_MASK) & submask;
+      // If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
+      if (!maskExists && emptyFound) {
+         return;
+      }
+      if (maskExists) {
+         int winner = split::s_findFirstSig(maskExists) - 1;
+         winner -= (subwarp_relative_index)*VIRTUALWARP;
+         if (w_tid == winner) {
+            split::s_atomicExch(&buckets[probingindex].first, TOMBSTONE);
+            split::s_atomicAdd(d_tombstoneCounter, 1);
+         }
+         return;
+      }
+   }
+}
+#else
 /*
  * In a similar way to the insert and retrieve kernels we
  * delete keys in "keys" if they do exist in the hasmap.
@@ -614,6 +687,15 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
       return;
    }
 
+   // Zero out shmem;
+   if (proper_w_tid == 0 && blockWid == 0) {
+      for (int i = 0; i < WARPSIZE; i++) {
+         deleteMask[i] = 0;
+      }
+   }
+   __syncthreads();
+
+
    uint32_t subwarp_relative_index = (wid) % (WARPSIZE / VIRTUALWARP);
    uint32_t submask;
    if constexpr (elementsPerWarp == 1) {
@@ -624,12 +706,16 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
                                              VIRTUALWARP * subwarp_relative_index + VIRTUALWARP);
    }
 
-   KEY_TYPE& candidateKey = keys[wid];
+   KEY_TYPE candidateKey = keys[wid];
    const int bitMask = (1 << (sizePower)) - 1;
    const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
    uint32_t localCount = 0;
+   uint32_t vWarpDone = 0; // state of virtual warp
 
    for (size_t i = 0; i < maxoverflow; i += VIRTUALWARP) {
+      if (vWarpDone){
+         break;
+      }
 
       // Get the position we should be looking into
       size_t probingindex = ((hashIndex + i + w_tid) & bitMask);
@@ -639,7 +725,7 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
           split::s_warpVote(buckets[probingindex].first == EMPTYBUCKET, SPLIT_VOTING_MASK) & submask;
       // If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
       if (!maskExists && emptyFound) {
-         return;
+         vWarpDone=1;
       }
       if (maskExists) {
          int winner = split::s_findFirstSig(maskExists) - 1;
@@ -647,10 +733,11 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
          if (w_tid == winner) {
             split::s_atomicExch(&buckets[probingindex].first, TOMBSTONE);
             localCount++;
-            // split::s_atomicAdd(d_tombstoneCounter, 1);
+            //split::s_atomicAdd(d_tombstoneCounter, 1);
+            vWarpDone=1;
          }
-         break;
       }
+      vWarpDone = split::s_warpVoteAny(vWarpDone, submask);
    }
 
    /*
@@ -681,6 +768,7 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
    }
    return;
 }
+#endif
 
 /*
  * Similarly to the insert_kernel we examine elements in keys and return their value in vals,
