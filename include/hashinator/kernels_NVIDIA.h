@@ -720,9 +720,9 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
       // Get the position we should be looking into
       size_t probingindex = ((hashIndex + i + w_tid) & bitMask);
       const auto maskExists =
-          split::s_warpVote(buckets[probingindex].first == candidateKey, SPLIT_VOTING_MASK) & submask;
+          split::s_warpVote(buckets[probingindex].first == candidateKey,submask);
       const auto emptyFound =
-          split::s_warpVote(buckets[probingindex].first == EMPTYBUCKET, SPLIT_VOTING_MASK) & submask;
+          split::s_warpVote(buckets[probingindex].first == EMPTYBUCKET, submask) ;
       // If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
       if (!maskExists && emptyFound) {
          vWarpDone=1;
