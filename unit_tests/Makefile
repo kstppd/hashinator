@@ -1,11 +1,12 @@
 CC=nvcc  
+CCC=clang++
 LNK=nvcc 
 OPT= -O3 -Xcompiler 
 CXXFLAGS= 
 EXTRA= -g3  --std=c++17
 EXTRA+= -gencode arch=compute_60,code=sm_60  
 EXTRA+=  -DHASHMAPDEBUG --expt-relaxed-constexpr  --expt-extended-lambda -lpthread
-GTEST= -L//home/kstppd/libs/googletest/build/lib  -I/home/kstppd/libs/googletest/googletest/include -lgtest -lgtest_main -lpthread
+GTEST= -L/home/kstppd/libs/googletest/build/lib  -I/home/kstppd/libs/googletest/googletest/include -lgtest -lgtest_main -lpthread
 OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o stream_compaction2.o delete_mechanism.o insertion_mechanism.o hybrid_cpu.o hybrid_gpu.o pointer_test.o benchmark.o benchmarkLF.o tbPerf.o realistic.o 
 
 
@@ -71,4 +72,4 @@ hybrid_gpu.o: hybrid/main.cpp
 	${CC} -x cu  ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o hybrid_gpu hybrid/main.cpp
 
 hybrid_cpu.o: hybrid/main.cpp
-	g++ -fsanitize=address -fno-omit-frame-pointer ${CXXFLAGS} -O3  -std=c++17 -DHASHINATOR_CPU_ONLY_MODE  -o hybrid_cpu hybrid/main.cpp -I/usr/local/cuda/include/ -L/usr/local/cuda/lib64 -lcudart -lcuda  -lgtest -lgtest_main -lpthread  -Wall  -Wpedantic -Werror -static-libasan
+	${CCC} -L//home/kstppd/libs/googletest/build/lib  -I/home/kstppd/libs/googletest/googletest/include   -DHASHINATOR_CPU_ONLY_MODE  ${CXXFLAGS}    -std=c++17 -o hybrid_cpu hybrid/main.cpp   -lgtest -lgtest_main
