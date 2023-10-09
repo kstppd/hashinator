@@ -542,7 +542,7 @@ public:
    }
 
    // Iterator type. Iterates through all non-empty buckets.
-   class iterator : public std::iterator<std::random_access_iterator_tag, hash_pair<KEY_TYPE, VAL_TYPE>> {
+   class iterator {
       Hashmap<KEY_TYPE, VAL_TYPE>* hashtable;
       size_t index;
 
@@ -577,7 +577,7 @@ public:
    };
 
    // Const iterator.
-   class const_iterator : public std::iterator<std::random_access_iterator_tag, hash_pair<KEY_TYPE, VAL_TYPE>> {
+   class const_iterator {
       const Hashmap<KEY_TYPE, VAL_TYPE>* hashtable;
       size_t index;
 
