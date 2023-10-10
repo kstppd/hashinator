@@ -3,11 +3,10 @@
 #include <chrono>
 #include <vector>
 #include <gtest/gtest.h>
-#ifndef SPLIT_HOST_ONLY
-#define  SPLIT_HOST_ONLY
+#ifndef SPLIT_CPU_ONLY_MODE
+#define  SPLIT_CPU_ONLY_MODE
 #endif
 #include "../../include/splitvector/splitvec.h"
-#include <cuda_profiler_api.h>
 
 #define expect_true EXPECT_TRUE
 #define expect_false EXPECT_FALSE
@@ -402,6 +401,40 @@ TEST(Vector_Functionality , Emplace_Back_2){
    expect_true(11==a[a.size()-1]);
    a.emplace_back(12);
    expect_true(12==a[a.size()-1]);
+}
+
+TEST(Vector_Functionality , Iterator_Arithmetics){
+   vec a{1,2,3,4,5,6,7,8,9,10};
+   vec b{1,2,3,4,5,6,7,8,9,10};
+
+   {
+      vec::iterator it_a(&a[0]);
+      vec::iterator it_b(&b[5]);
+      expect_true( *( it_a +5 ) ==*it_b      );
+      expect_true(  *it_a   ==*( it_b-5 )      );
+      expect_false(  *it_a   == *( it_b-4 )      );
+   }
+
+   
+   {
+      vec::iterator it_a(&a[0]);
+         
+      for (int i=0 ;i< a.size(); i++){
+         auto val=*(it_a+i);
+         expect_true(  val==a.at(i) );
+      }
+   }
+
+   {
+      vec::iterator it_a(&a.back());
+         
+      for (int i=a.size()-1 ;i>=0; i--){
+         auto val=*(it_a);
+         it_a=it_a-1;
+         expect_true(  val==a.at(i) );
+      }
+   }
+
 }
 
 

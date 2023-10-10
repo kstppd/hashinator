@@ -1,6 +1,6 @@
 /* File:    defaults.h
  * Authors: Kostis Papadakis, Urs Ganse and Markus Battarbee (2023)
- * Description: A hybrid hashmap that can operate on both 
+ * Description: A hybrid hashmap that can operate on both
  *              CPUs and GPUs using CUDA unified memory.
  *
  * This program is free software; you can redistribute it and/or
@@ -20,13 +20,24 @@
 #pragma once
 #include "hashfunctions.h"
 
-namespace Hashinator{
-   namespace defaults{
-      constexpr int WARPSIZE = 32;
-      constexpr int MAX_BLOCKSIZE = 1024;
-      constexpr int BUCKET_OVERFLOW = 32;
-      constexpr int elementsPerWarp =  1;
-      template <typename T >
-      using  DefaultHashFunction=HashFunctions::Murmur<T>;
-   } //namespace defaults;
-} //namespace Hashinator
+namespace Hashinator {
+namespace defaults {
+#ifdef __NVCC__
+constexpr int WARPSIZE = 32;
+constexpr int BUCKET_OVERFLOW = 32;
+#elif (__HIP__ && __AMDGCN_WAVEFRONT_SIZE)
+// AMDs GPU warp size depends on the GPU architecture
+constexpr int WARPSIZE = __AMDGCN_WAVEFRONT_SIZE;
+constexpr int BUCKET_OVERFLOW = __AMDGCN_WAVEFRONT_SIZE;
+#else
+constexpr int BUCKET_OVERFLOW = 32; //to allow cpu only mode
+#ifndef HASHINATOR_CPU_ONLY_MODE
+#error "Warp size not known, please use a CUDA or HIP compiler."
+#endif
+#endif
+constexpr int elementsPerWarp = 1;
+constexpr int MAX_BLOCKSIZE = 1024;
+template <typename T>
+using DefaultHashFunction = HashFunctions::Fibonacci<T>;
+} // namespace defaults
+} // namespace Hashinator

@@ -1,8 +1,8 @@
 CC=nvcc  
 LNK=nvcc 
 OPT=  -Xptxas -O3 
-EXTRA= -g  --std=c++17
-EXTRA+= -gencode arch=compute_60,code=sm_60  -L /usr/lib/x86_64-linux-gnu
+EXTRA= -g  --std=c++17 --expt-relaxed-constexpr --expt-extended-lambda
+EXTRA+= -gencode arch=compute_60,code=sm_60 
 OBJ= hashmap.o splitvector.o
 
 default: examples

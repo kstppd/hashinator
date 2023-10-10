@@ -11,3 +11,5 @@ tags
 tests/*tags
 storage/*
 manuscript/*
+compile_commands.json
+doc/

@@ -13,7 +13,7 @@
 #define expect_eq EXPECT_EQ
 typedef uint32_t keyval_type;
 using namespace Hashinator;
-typedef split::SplitVector<keyval_type,split::split_unified_allocator<keyval_type>,split::split_unified_allocator<size_t>> vector ;
+typedef split::SplitVector<keyval_type> vector ;
 using namespace std::chrono;
 typedef Hashmap<keyval_type,keyval_type> hashmap;
 
@@ -40,7 +40,7 @@ void fill_input(keyval_type* keys , keyval_type* vals, size_t size){
 
 bool recover_elements(const hashmap& hmap, keyval_type* keys, keyval_type* vals,size_t size){
    for (size_t i=0; i<size; ++i){
-      const cuda::std::pair<keyval_type,keyval_type> kval(keys[i],vals[i]);
+      const hash_pair<keyval_type,keyval_type> kval(keys[i],vals[i]);
       auto retval=hmap.find(kval.first);
       if (retval==hmap.end()){assert(0&& "END FOUND");}
       bool sane=retval->first==kval.first  &&  retval->second== kval.second ;
@@ -66,16 +66,16 @@ bool test_hashmap_insertionDM(keyval_type power){
 
    keyval_type* dkeys;
    keyval_type* dvals;
-   cudaMalloc(&dkeys, N*sizeof(keyval_type)); 
-   cudaMalloc(&dvals, N*sizeof(keyval_type)); 
-   cudaMemcpy(dkeys,keys.data(),N*sizeof(keyval_type),cudaMemcpyHostToDevice);
-   cudaMemcpy(dvals,vals.data(),N*sizeof(keyval_type),cudaMemcpyHostToDevice);
+   split_gpuMalloc(&dkeys, N*sizeof(keyval_type)); 
+   split_gpuMalloc(&dvals, N*sizeof(keyval_type)); 
+   split_gpuMemcpy(dkeys,keys.data(),N*sizeof(keyval_type),split_gpuMemcpyHostToDevice);
+   split_gpuMemcpy(dvals,vals.data(),N*sizeof(keyval_type),split_gpuMemcpyHostToDevice);
 
    hashmap hmap;
    hmap.insert(dkeys,dvals,N); 
    assert(recover_elements(hmap,keys.data(),vals.data(),N) && "Hashmap is illformed!");
-   cudaFree(dkeys);
-   cudaFree(dvals);
+   split_gpuFree(dkeys);
+   split_gpuFree(dvals);
    return true;
 }
 
@@ -95,7 +95,7 @@ bool test_hashmap_retrievalUM(keyval_type power){
    keys.optimizeGPU();
    vals.optimizeGPU();
    vals2.optimizeGPU();
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
    hmap.retrieve(keys.data(),vals2.data(),N);
    assert(recover_elements(hmap,keys.data(),vals2.data(),N) && "Hashmap is illformed!");
    return true;

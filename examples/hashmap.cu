@@ -18,9 +18,9 @@ void gpu_write(Hashmap<val_type,val_type>* hmap, hash_pair<val_type,val_type>*sr
 __global__ 
 void gpu_read_and_delete(Hashmap<val_type,val_type>* hmap){
    val_type index = blockIdx.x * blockDim.x + threadIdx.x;
-   auto kval= hmap->find(index);
-   if (kval!=hmap->end()){
-      hmap->erase(kval);
+   auto kval= hmap->device_find(index);
+   if (kval!=hmap->device_end()){
+      hmap->device_erase(kval);
    }
 }
 
@@ -45,20 +45,18 @@ void basic_device_usage()
 {
    std::cout<<"\nDevice Usage\n"<<std::endl;
    vector src(64);
-   Hashmap<val_type,val_type> hmap;
-   hmap.resize(7);
+   Hashmap<val_type,val_type>* hmap=new Hashmap<val_type,val_type>;
+   hmap->resize(7);
    //Create Input
    for (uint32_t i=0 ; i<64; ++i){
       src[i]=hash_pair<val_type,val_type>{i,(val_type)rand()%10000};
    }
 
-   auto d_hmap=hmap.upload();
-   gpu_write<<<1,64>>>(d_hmap, src.data(), src.size());
+   gpu_write<<<1,64>>>(hmap, src.data(), src.size());
    cudaDeviceSynchronize();
-   hmap.download();
 
    //Read
-   for (const auto& i:hmap){
+   for (const auto& i:*hmap){
       std::cout<<"["<<i.first<<" "<<i.second<<"] ";
    }
    std::cout<<std::endl;
@@ -114,11 +112,42 @@ void basic_hybrid_usage()
    std::cout<<"Load factor should be zero and is LF= "<<hmap.load_factor()<<std::endl;
 }
 
+
+void basic_hybrid_usage_with_new()
+{
+
+   std::cout<<"\nHybrid Usage with New\n"<<std::endl;
+   vector src(64);
+   Hashmap<val_type,val_type>* hmap= new Hashmap<val_type,val_type>();
+   hmap->resize(7);
+   //Create Input
+   for (uint32_t i=0 ; i<64; ++i){
+      src[i]=hash_pair<val_type,val_type>{i,(val_type)rand()%10000};
+   }
+
+   gpu_write<<<1,64>>>(hmap, src.data(), src.size());
+   cudaDeviceSynchronize();
+
+   //Read
+   for (const auto& i:*hmap){
+      std::cout<<"["<<i.first<<" "<<i.second<<"] ";
+   }
+   std::cout<<std::endl;
+
+   gpu_read_and_delete<<<1,64>>>(hmap);
+   cudaDeviceSynchronize();
+   hmap->stats();
+   hmap->clean_tombstones();
+   hmap->stats();
+   delete hmap;
+}
+
 int main()
 {
    basic_host_usage();
    basic_device_usage();
    advanced_device_usage();
    basic_hybrid_usage();
+   basic_hybrid_usage_with_new();
    return 0;
 }

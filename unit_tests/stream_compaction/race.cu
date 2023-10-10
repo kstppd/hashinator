@@ -5,7 +5,6 @@
 #include <random>
 #include <gtest/gtest.h>
 #include "../../include/splitvector/splitvec.h"
-#include <cuda_profiler_api.h>
 #include "../../include/splitvector/split_tools.h"
 #include <thrust/device_vector.h>
 #include <thrust/execution_policy.h>
@@ -13,7 +12,7 @@
 
 
 typedef uint32_t val_type;
-typedef split::SplitVector<val_type,split::split_unified_allocator<val_type>,split::split_unified_allocator<size_t>> split_vector; 
+typedef split::SplitVector<val_type> split_vector; 
 
 using namespace std::chrono;
 
@@ -73,20 +72,20 @@ void split_test_prefix(split_vector& input_split,split_vector& output_split,size
 
    input_split.optimizeGPU();
    output_split.optimizeGPU();
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
    split::tools::split_prefix_scan(input_split,output_split);
 
 
  /*  val_type* in; */
    /*val_type* out; */
-   /*cudaMalloc( (void**)&in , size*sizeof(val_type));*/
-   /*cudaMalloc( (void**)&out, size*sizeof(val_type));*/
-   /*cudaMemcpy(in,input_split.data(),size*sizeof(val_type),cudaMemcpyDeviceToDevice);*/
-   /*cudaMemset(out, 0, size*sizeof(val_type));*/
+   /*split_gpuMalloc( (void**)&in , size*sizeof(val_type));*/
+   /*split_gpuMalloc( (void**)&out, size*sizeof(val_type));*/
+   /*split_gpuMemcpy(in,input_split.data(),size*sizeof(val_type),split_gpuMemcpyDeviceToDevice);*/
+   /*split_gpuMemset(out, 0, size*sizeof(val_type));*/
    /*split::tools::split_prefix_scan_raw<val_type,1024,32>(in,out,mPool,input_split.size());*/
-   /*cudaMemcpy(output_split.data(),out,size*sizeof(val_type),cudaMemcpyDeviceToHost);*/
-   /*cudaFree(in);*/
-      /*cudaFree(out);*/
+   /*split_gpuMemcpy(output_split.data(),out,size*sizeof(val_type),split_gpuMemcpyDeviceToHost);*/
+   /*split_gpuFree(in);*/
+      /*split_gpuFree(out);*/
 }
 
 void split_test_compaction(split_vector& input_split,split_vector& output_split,size_t size){

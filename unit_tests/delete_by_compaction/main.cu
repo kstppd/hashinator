@@ -11,7 +11,7 @@
 #define expect_eq EXPECT_EQ
 typedef uint32_t val_type;
 using namespace Hashinator;
-typedef split::SplitVector<cuda::std::pair<val_type,val_type>,split::split_unified_allocator<cuda::std::pair<val_type,val_type>>,split::split_unified_allocator<size_t>> vector ;
+typedef split::SplitVector<hash_pair<val_type,val_type>> vector ;
 using namespace std::chrono;
 typedef Hashmap<val_type,val_type> hashmap;
 
@@ -33,7 +33,7 @@ auto execute_and_time(const char* name,Fn fn, Args && ... args) ->bool{
 
 void create_input(vector& src, uint32_t bias=0){
    for (size_t i=0; i<src.size(); ++i){
-      cuda::std::pair<val_type,val_type>& kval=src.at(i);
+      hash_pair<val_type,val_type>& kval=src.at(i);
       kval.first=i + bias;
       kval.second=rand()%1000000;
    }
@@ -41,13 +41,13 @@ void create_input(vector& src, uint32_t bias=0){
 
 void cpu_write(hashmap& hmap, vector& src){
    for (size_t i=0; i<src.size(); ++i){
-      const cuda::std::pair<val_type,val_type>& kval=src.at(i);
+      const hash_pair<val_type,val_type>& kval=src.at(i);
       hmap.at(kval.first)=kval.second;
    }
 }
 
 __global__ 
-void gpu_write(hashmap* hmap, cuda::std::pair<val_type,val_type>*src, size_t N){
+void gpu_write(hashmap* hmap, hash_pair<val_type,val_type>*src, size_t N){
    size_t index = blockIdx.x * blockDim.x + threadIdx.x;
    if (index < N ){
       hmap->set_element(src[index].first, src[index].second);
@@ -55,7 +55,7 @@ void gpu_write(hashmap* hmap, cuda::std::pair<val_type,val_type>*src, size_t N){
 }
 
 __global__
-void gpu_delete_even(hashmap* hmap, cuda::std::pair<val_type,val_type>*src,size_t N){
+void gpu_delete_even(hashmap* hmap, hash_pair<val_type,val_type>*src,size_t N){
    size_t index = blockIdx.x * blockDim.x + threadIdx.x;
    if (index<N ){
       auto kpos=hmap->device_find(src[index].first);
@@ -69,7 +69,7 @@ void gpu_delete_even(hashmap* hmap, cuda::std::pair<val_type,val_type>*src,size_
 
 bool recover_elements(const hashmap& hmap, vector& src){
    for (size_t i=0; i<src.size(); ++i){
-      const cuda::std::pair<val_type,val_type>& kval=src.at(i);
+      const hash_pair<val_type,val_type>& kval=src.at(i);
       auto retval=hmap.find(kval.first);
       if (retval==hmap.end()){assert(0&& "END FOUND");}
       bool sane=retval->first==kval.first  &&  retval->second== kval.second ;
@@ -99,7 +99,7 @@ bool test_hashmap_1(val_type power){
    d_hmap=hmap.upload();
    auto start = std::chrono::high_resolution_clock::now();
    gpu_write<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
    auto stop = std::chrono::high_resolution_clock::now();
    auto duration = duration_cast<microseconds>(stop- start).count();
    ////std::cout<<"Write Time (us)= "<<duration<<std::endl;
@@ -112,7 +112,7 @@ bool test_hashmap_1(val_type power){
    //Delete some selection if the source data
    d_hmap=hmap.upload();
    gpu_delete_even<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
 
    //Download
    start = std::chrono::high_resolution_clock::now();
@@ -130,7 +130,7 @@ bool test_hashmap_1(val_type power){
    //Reinsert so that we can also test duplicate insertion
    d_hmap=hmap.upload();
    gpu_write<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   cudaDeviceSynchronize();
+   split_gpuDeviceSynchronize();
    //Download
    hmap.download();
 
