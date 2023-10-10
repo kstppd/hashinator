@@ -68,6 +68,8 @@ auto timeMe(Fn fn, Args && ... args){
 
 void benchInsert(hashmap& hmap,key_type* gpuKeys, val_type* gpuVals,int sz){
    hmap.insert(gpuKeys,gpuVals,1<<sz,1);
+   hmap.retrieve(gpuKeys,gpuVals,1<<sz);
+   hmap.erase(gpuKeys,1<<sz);
    hmap.stats();
    hmap.clear();
    return ;
