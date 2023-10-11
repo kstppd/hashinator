@@ -622,7 +622,6 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
    }
    __syncthreads();
 
-
    uint32_t subwarp_relative_index = (wid) % (WARPSIZE / VIRTUALWARP);
    uint32_t submask;
    if constexpr (elementsPerWarp == 1) {
@@ -640,19 +639,17 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
    uint32_t vWarpDone = 0; // state of virtual warp
 
    for (size_t i = 0; i < maxoverflow; i += VIRTUALWARP) {
-      if (vWarpDone){
+      if (vWarpDone) {
          break;
       }
 
       // Get the position we should be looking into
       size_t probingindex = ((hashIndex + i + w_tid) & bitMask);
-      const auto maskExists =
-          split::s_warpVote(buckets[probingindex].first == candidateKey,submask);
-      const auto emptyFound =
-          split::s_warpVote(buckets[probingindex].first == EMPTYBUCKET, submask) ;
+      const auto maskExists = split::s_warpVote(buckets[probingindex].first == candidateKey, submask);
+      const auto emptyFound = split::s_warpVote(buckets[probingindex].first == EMPTYBUCKET, submask);
       // If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
       if (!maskExists && emptyFound) {
-         vWarpDone=1;
+         vWarpDone = 1;
       }
       if (maskExists) {
          int winner = split::s_findFirstSig(maskExists) - 1;
@@ -660,8 +657,8 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
          if (w_tid == winner) {
             split::s_atomicExch(&buckets[probingindex].first, TOMBSTONE);
             localCount++;
-            //split::s_atomicAdd(d_tombstoneCounter, 1);
-            vWarpDone=1;
+            // split::s_atomicAdd(d_tombstoneCounter, 1);
+            vWarpDone = 1;
          }
       }
       vWarpDone = split::s_warpVoteAny(vWarpDone, submask);

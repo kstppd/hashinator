@@ -1026,14 +1026,14 @@ public:
       }
       // Extract elements matching the Pattern Rule(element)==true;
       split::tools::copy_if<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, defaults::MAX_BLOCKSIZE, defaults::WARPSIZE>(
-              buckets, elements, rule, s);
+          buckets, elements, rule, s);
       return elements.size();
    }
 
-   template <typename Rule,int BLOCKSIZE=1024>
+   template <typename Rule, int BLOCKSIZE = 1024>
    size_t extractPattern(hash_pair<KEY_TYPE, VAL_TYPE>* elements, Rule rule, split_gpuStream_t s = 0) {
       // Extract elements matching the Pattern Rule(element)==true;
-      
+
       // Figure out Blocks to use
       size_t _s = std::ceil((float(buckets.size())) / (float)BLOCKSIZE);
       size_t nBlocks = nextPow2(_s);
@@ -1046,7 +1046,7 @@ public:
       split::tools::Cuda_mempool mPool(memory_for_pool, s);
       size_t retval =
           split::tools::copy_if_raw<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, defaults::MAX_BLOCKSIZE, defaults::WARPSIZE>(
-              buckets, elements, rule,nBlocks,mPool, s);
+              buckets, elements, rule, nBlocks, mPool, s);
       return retval;
    }
 
@@ -1059,7 +1059,7 @@ public:
       }
       // Extract element **keys** matching the Pattern Rule(element)==true;
       split::tools::copy_keys_if<hash_pair<KEY_TYPE, VAL_TYPE>, KEY_TYPE, Rule, defaults::MAX_BLOCKSIZE,
-                                         defaults::WARPSIZE>(buckets, elements, rule, s);
+                                 defaults::WARPSIZE>(buckets, elements, rule, s);
       return elements.size();
    }
 
