@@ -698,7 +698,8 @@ size_t copy_keys_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>
  * @brief Estimates memory needed for compacting the input splitvector
  */
 template <typename T, int BLOCKSIZE=1024>
-size_t estimateMemoryForCompaction(split::SplitVector<T, split::split_unified_allocator<T>>& input){
+[[nodiscard]]
+size_t estimateMemoryForCompaction(const split::SplitVector<T, split::split_unified_allocator<T>>& input)noexcept{
    // Figure out Blocks to use
    size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
    size_t nBlocks = nextPow2(_s);
@@ -769,7 +770,7 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
 
 template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 void copy_keys_if_V2(split::SplitVector<T, split::split_unified_allocator<T>>& input,
-                    split::SplitVector<U, split::split_unified_allocator<U>>& output, Rule rule,Cuda_mempool& mPool,
+                    split::SplitVector<U, split::split_unified_allocator<U>>& output, Rule rule,Cuda_mempool&& mPool,
                     split_gpuStream_t s = 0) {
 
    // Figure out Blocks to use
@@ -778,13 +779,13 @@ void copy_keys_if_V2(split::SplitVector<T, split::split_unified_allocator<T>>& i
    if (nBlocks == 0) {
       nBlocks += 1;
    }
-   auto len = copy_keys_if_raw(input, output.data(), rule,nBlocks,mPool, s);
+   auto len = copy_keys_if_raw(input, output.data(), rule,nBlocks,std::forward<Cuda_mempool>(mPool), s);
    output.erase(&output[len], output.end());
 }
 
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 void copy_if_V2(split::SplitVector<T, split::split_unified_allocator<T>>& input,
-             split::SplitVector<T, split::split_unified_allocator<T>>& output, Rule rule, Cuda_mempool& mPool, split_gpuStream_t s = 0) {
+             split::SplitVector<T, split::split_unified_allocator<T>>& output, Rule rule, Cuda_mempool&& mPool, split_gpuStream_t s = 0) {
 
    // Figure out Blocks to use
    size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
