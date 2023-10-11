@@ -100,10 +100,10 @@ bool preallocated_compactions_basic(int power){
 
    //These mempools are now allocation free. They essentially just manage the buffer correclty!
    //Please !!ALWAYS!! forwarding here to preserve move semantics as the pool might change later on
-   split::tools::copy_if_V2(v,output1,predicate_on,
+   split::tools::copy_if(v,output1,predicate_on,
                            std::forward<split::tools::Cuda_mempool>(split::tools::Cuda_mempool{buffer,bytesNeeded}));
 
-   split::tools::copy_if_V2(v,output2,predicate_off,
+   split::tools::copy_if(v,output2,predicate_off,
                            std::forward<split::tools::Cuda_mempool>(split::tools::Cuda_mempool{buffer,bytesNeeded}));
    //Deallocate our good buffer
    SPLIT_CHECK_ERR (split_gpuFree(buffer));
@@ -153,7 +153,7 @@ bool preallocated_compactions_medium(int power){
    //Please !!ALWAYS!! forwarding here to preserve move semantics as the pool might change later on
    
    //This guy goes on stream 1
-   split::tools::copy_if_V2(v,output1,predicate_on,
+   split::tools::copy_if(v,output1,predicate_on,
                            std::forward<split::tools::Cuda_mempool>(split::tools::Cuda_mempool{buffer,bytesNeeded}),streams[0]);
 
    //This guy goes on stream 2
@@ -161,7 +161,7 @@ bool preallocated_compactions_medium(int power){
       NOTE: THE BUFFER HERE IS OFFSETED!!!
    */
    void* start = reinterpret_cast<void*> ( reinterpret_cast<char*>(buffer)+bytesNeeded);
-   split::tools::copy_if_V2(v,output2,predicate_off,
+   split::tools::copy_if(v,output2,predicate_off,
                            std::forward<split::tools::Cuda_mempool>(split::tools::Cuda_mempool{start,bytesNeeded}),streams[1]);
 
 
@@ -238,10 +238,10 @@ bool preallocated_compactions_HAM(int power){
       const auto tid=omp_get_thread_num();
       void* tidIndex_1 = reinterpret_cast<void*> ( reinterpret_cast<char*>(buffer)+tid*streamsPerThread*bytesNeeded);
       void* tidIndex_2 = reinterpret_cast<void*> ( reinterpret_cast<char*>(buffer)+tid*streamsPerThread*bytesNeeded+bytesNeeded);
-      split::tools::copy_if_V2(vecs[i],out1[i],predicate_on,
+      split::tools::copy_if(vecs[i],out1[i],predicate_on,
                               std::forward<split::tools::Cuda_mempool>(split::tools::Cuda_mempool{tidIndex_1,bytesNeeded}));
 
-      split::tools::copy_if_V2(vecs[i],out2[i],predicate_off,
+      split::tools::copy_if(vecs[i],out2[i],predicate_off,
                               std::forward<split::tools::Cuda_mempool>(split::tools::Cuda_mempool{tidIndex_2,bytesNeeded}));
    }
 
