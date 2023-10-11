@@ -191,6 +191,8 @@ bool preallocated_compactions_HAM(int power){
 
    constexpr size_t N =  512;
    constexpr size_t nThreads =  8;
+   constexpr size_t streamsPerThread =  2;
+   
    std::array<vector,N> vecs;
    std::array<vector,N> out1;
    std::array<vector,N> out2;
@@ -214,53 +216,40 @@ bool preallocated_compactions_HAM(int power){
    //Here we determine how much memory we need for one compactions.
    size_t bytesNeeded=split::tools::estimateMemoryForCompaction(vecs[0]);
    
-   //Here we allocate a buffer that can fit all the compactions at once so 8 since we have 8 threads
+   //Here we allocate a buffer that can fit all the compactions at once so streamsPerThread*nThreads
    void* buffer=nullptr;
-   SPLIT_CHECK_ERR (split_gpuMalloc( (void**)&buffer ,2*N*bytesNeeded));
+   SPLIT_CHECK_ERR (split_gpuMalloc( (void**)&buffer ,streamsPerThread*nThreads*bytesNeeded));
 
    
    //Just restrict to 8 threads and no dynamic teams to make this test the same every time!
    omp_set_dynamic(0);     
    omp_set_num_threads(nThreads);
-   const size_t streamsPerThread=2*N/nThreads;
 
-   //Now let's make 2*N streams
-   std::array<split_gpuStream_t,2*N> streams;
-   for (auto& s:streams){
-      SPLIT_CHECK_ERR( split_gpuStreamCreate( &s ));
+   for (size_t i =0 ; i<vecs.size();i++){
+       vecs[i].optimizeGPU();
+       out1[i].optimizeGPU();
+       out2[i].optimizeGPU();
    }
-
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize( ));
 
    //Compact away!!
    #pragma omp parallel for 
    for (size_t i =0 ; i<vecs.size();i++){
       const auto tid=omp_get_thread_num();
-      for (size_t s=streamsPerThread*tid;s<streamsPerThread*tid+streamsPerThread; s+=2){
-         size_t offset1=s*bytesNeeded;
-         size_t offset2=offset1+bytesNeeded;
-         void* tidIndex_1 = reinterpret_cast<void*> ( reinterpret_cast<char*>(buffer)+offset1);
-         void* tidIndex_2 = reinterpret_cast<void*> ( reinterpret_cast<char*>(buffer)+offset2);
-         split::tools::copy_if_V2(vecs[i],out1[i],predicate_on,
-                                 std::forward<split::tools::Cuda_mempool>(split::tools::Cuda_mempool{tidIndex_1,bytesNeeded}),streams[s]);
+      void* tidIndex_1 = reinterpret_cast<void*> ( reinterpret_cast<char*>(buffer)+tid*streamsPerThread*bytesNeeded);
+      void* tidIndex_2 = reinterpret_cast<void*> ( reinterpret_cast<char*>(buffer)+tid*streamsPerThread*bytesNeeded+bytesNeeded);
+      split::tools::copy_if_V2(vecs[i],out1[i],predicate_on,
+                              std::forward<split::tools::Cuda_mempool>(split::tools::Cuda_mempool{tidIndex_1,bytesNeeded}));
 
-         split::tools::copy_if_V2(vecs[i],out2[i],predicate_off,
-                                 std::forward<split::tools::Cuda_mempool>(split::tools::Cuda_mempool{tidIndex_2,bytesNeeded}),streams[s+1]);
-      }
+      split::tools::copy_if_V2(vecs[i],out2[i],predicate_off,
+                              std::forward<split::tools::Cuda_mempool>(split::tools::Cuda_mempool{tidIndex_2,bytesNeeded}));
    }
 
-   //Wait for them!
-   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize(  ));
 
-   //Destroy streams
-   for (auto& s:streams){
-      SPLIT_CHECK_ERR( split_gpuStreamDestroy( s ));
-   }
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize( ));
 
    //Deallocate our good buffer
    SPLIT_CHECK_ERR (split_gpuFree(buffer));
-   
-
-   
    
    //Now let's verify 
    bool sane1 =true;
@@ -277,7 +266,6 @@ bool preallocated_compactions_HAM(int power){
    }
    return sane1 && sane2 && sane3 ;
 }
-
 
 TEST(StremCompaction , Compaction_Simple){
    for (uint32_t i =5; i< 15; i++){

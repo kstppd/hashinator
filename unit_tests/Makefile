@@ -58,7 +58,7 @@ stream_compaction.o: stream_compaction/race.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o compaction stream_compaction/race.cu
 
 preallocated.o: stream_compaction/preallocated.cu
-	${CC}  ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o compaction3 stream_compaction/preallocated.cu
+	${CC} --default-stream per-thread  ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o compaction3 stream_compaction/preallocated.cu
 
 stream_compaction2.o: stream_compaction/unit.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o compaction2 stream_compaction/unit.cu
