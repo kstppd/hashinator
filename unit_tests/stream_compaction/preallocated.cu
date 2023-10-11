@@ -116,6 +116,41 @@ bool preallocated_compactions_basic(int power){
    return sane1 && sane2 && sane3 && sane4 && sane5;
 }
 
+//In this example we use the preallocated compaction one after the other in a serial fashion
+bool preallocated_compactions_basic_overload(int power){
+   vector v;
+   fill_vec(v,1<<power);
+   auto predicate_on =[]__host__ __device__ (test_t element)->bool{ return element.flag == 1 ;};
+   auto predicate_off =[]__host__ __device__ (test_t element)->bool{ return element.flag == 0 ;};
+   vector output1(v.size());
+   vector output2(v.size());
+   
+   //Here we determine how much memory we need for one compaction on v.
+   size_t bytesNeeded=split::tools::estimateMemoryForCompaction(v);
+   
+   /*
+     Since we now know the memory needed  let's allocate a buffer with that size. 
+     This can be done with mallocAsync, malloc, or managedMalloc but anyways let's 
+     do old good device memory for now
+    */
+
+   void* buffer=nullptr;
+   SPLIT_CHECK_ERR (split_gpuMalloc( (void**)&buffer , bytesNeeded));
+
+   //These mempools are now allocation free. They essentially just manage the buffer correclty!
+   //Please !!ALWAYS!! forwarding here to preserve move semantics as the pool might change later on
+   split::tools::copy_if(v,output1,predicate_on,buffer,bytesNeeded);
+   split::tools::copy_if(v,output2,predicate_off,buffer,bytesNeeded);
+   //Deallocate our good buffer
+   SPLIT_CHECK_ERR (split_gpuFree(buffer));
+   
+   bool sane1 = checkFlags(output1,1);
+   bool sane2 = checkFlags(output2,0);
+   bool sane3 = ((output1.size()+output2.size())==v.size());
+   bool sane4 =(  output1.size() ==count );
+   bool sane5 = ( output2.size() ==v.size()-count );
+   return sane1 && sane2 && sane3 && sane4 && sane5;
+}
 
 //In this example we use the preallocated compaction to perform two compaction in parallel using different streams
 bool preallocated_compactions_medium(int power){
@@ -276,6 +311,12 @@ TEST(StremCompaction , Compaction_Simple){
 TEST(StremCompaction , Compaction_Preallocated_Basic){
    for (uint32_t i =5; i< 15; i++){
       expect_true(preallocated_compactions_basic(i));
+   }
+}
+
+TEST(StremCompaction , Compaction_Preallocated_Basic_Overload){
+   for (uint32_t i =5; i< 15; i++){
+      expect_true(preallocated_compactions_basic_overload(i));
    }
 }
 

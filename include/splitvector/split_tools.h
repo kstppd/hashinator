@@ -765,8 +765,8 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
 
 template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 void copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
-                     split::SplitVector<U, split::split_unified_allocator<U>>& output, Rule rule, Cuda_mempool&& mPool,
-                     split_gpuStream_t s = 0) {
+                  split::SplitVector<U, split::split_unified_allocator<U>>& output, Rule rule, Cuda_mempool&& mPool,
+                  split_gpuStream_t s = 0) {
 
    // Figure out Blocks to use
    size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
@@ -780,8 +780,8 @@ void copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& inpu
 
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
-                split::SplitVector<T, split::split_unified_allocator<T>>& output, Rule rule, Cuda_mempool&& mPool,
-                split_gpuStream_t s = 0) {
+             split::SplitVector<T, split::split_unified_allocator<T>>& output, Rule rule, Cuda_mempool&& mPool,
+             split_gpuStream_t s = 0) {
 
    // Figure out Blocks to use
    size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
@@ -789,6 +789,40 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
    if (nBlocks == 0) {
       nBlocks += 1;
    }
+   auto len = copy_if_raw(input, output.data(), rule, nBlocks, mPool, s);
+   output.erase(&output[len], output.end());
+}
+
+template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+void copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
+                  split::SplitVector<U, split::split_unified_allocator<U>>& output, Rule rule, void* stack,
+                  size_t max_size, split_gpuStream_t s = 0) {
+
+   assert(stack && "Invalid stack!");
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+   Cuda_mempool mPool(stack, max_size);
+   auto len = copy_keys_if_raw(input, output.data(), rule, nBlocks, mPool, s);
+   output.erase(&output[len], output.end());
+}
+
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
+             split::SplitVector<T, split::split_unified_allocator<T>>& output, Rule rule, void* stack, size_t max_size,
+             split_gpuStream_t s = 0) {
+
+   assert(stack && "Invalid stack!");
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+   Cuda_mempool mPool(stack, max_size);
    auto len = copy_if_raw(input, output.data(), rule, nBlocks, mPool, s);
    output.erase(&output[len], output.end());
 }
