@@ -798,13 +798,13 @@ void copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& inpu
                   split::SplitVector<U, split::split_unified_allocator<U>>& output, Rule rule, void* stack,
                   size_t max_size, split_gpuStream_t s = 0) {
 
-   assert(stack && "Invalid stack!");
    // Figure out Blocks to use
    size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
    size_t nBlocks = nextPow2(_s);
    if (nBlocks == 0) {
       nBlocks += 1;
    }
+   assert(stack && "Invalid stack!");
    Cuda_mempool mPool(stack, max_size);
    auto len = copy_keys_if_raw(input, output.data(), rule, nBlocks, mPool, s);
    output.erase(&output[len], output.end());
@@ -815,13 +815,13 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
              split::SplitVector<T, split::split_unified_allocator<T>>& output, Rule rule, void* stack, size_t max_size,
              split_gpuStream_t s = 0) {
 
-   assert(stack && "Invalid stack!");
    // Figure out Blocks to use
    size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
    size_t nBlocks = nextPow2(_s);
    if (nBlocks == 0) {
       nBlocks += 1;
    }
+   assert(stack && "Invalid stack!");
    Cuda_mempool mPool(stack, max_size);
    auto len = copy_if_raw(input, output.data(), rule, nBlocks, mPool, s);
    output.erase(&output[len], output.end());
