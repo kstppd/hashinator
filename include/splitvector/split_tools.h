@@ -506,6 +506,7 @@ private:
    size_t bytes_used;
    void* _data;
    split_gpuStream_t s;
+   bool isOwner;
 
 public:
    explicit Cuda_mempool(size_t bytes, split_gpuStream_t str) {
@@ -513,10 +514,23 @@ public:
       SPLIT_CHECK_ERR(split_gpuMallocAsync(&_data, bytes, s));
       total_bytes = bytes;
       bytes_used = 0;
+      isOwner=true;
    }
+   explicit Cuda_mempool(void* ptr,size_t bytes) {
+      total_bytes = bytes;
+      bytes_used = 0;
+      isOwner=false;
+      _data=ptr;
+   }
+
+   Cuda_mempool()=delete;
    Cuda_mempool(const Cuda_mempool& other) = delete;
    Cuda_mempool(Cuda_mempool&& other) = delete;
-   ~Cuda_mempool() { SPLIT_CHECK_ERR(split_gpuFreeAsync(_data, s)); }
+   ~Cuda_mempool() { 
+      if (isOwner){
+         SPLIT_CHECK_ERR(split_gpuFreeAsync(_data, s));
+      }
+   }
 
    void* allocate(const size_t bytes) {
       assert(bytes_used + bytes < total_bytes && "Mempool run out of space and crashed!");
@@ -526,11 +540,10 @@ public:
    };
 
    void deallocate(const size_t bytes) { bytes_used -= bytes; };
-
    void reset() { bytes_used = 0; }
-
    const size_t& fill() const { return bytes_used; }
    const size_t& capacity() const { return total_bytes; }
+   size_t        free_space() const { return total_bytes-bytes_used; }
 };
 
 /**
@@ -603,19 +616,8 @@ void split_prefix_scan_raw(T* input, T* output, Cuda_mempool& mPool, const size_
  * @brief Same as copy_if but using raw memory
  */
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
-uint32_t copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& input, T* output, Rule rule,
+uint32_t copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& input, T* output, Rule rule,size_t nBlocks,Cuda_mempool& mPool,
                      split_gpuStream_t s = 0) {
-
-   // Figure out Blocks to use
-   size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
-   size_t nBlocks = nextPow2(_s);
-   if (nBlocks == 0) {
-      nBlocks += 1;
-   }
-
-   // Allocate with Mempool
-   const size_t memory_for_pool = 8 * nBlocks * sizeof(uint32_t);
-   Cuda_mempool mPool(memory_for_pool, s);
 
    uint32_t* d_counts;
    uint32_t* d_offsets;
@@ -649,46 +651,14 @@ uint32_t copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& i
    return numel;
 }
 
-/**
- * @brief Perform element compaction based on a rule.
- *
- * This function performs element compaction on the given input SplitVector based on a specified rule.
- * It generates compacted output, updates counts and offsets SplitVectors, and returns compacted count.
- *
- * @tparam T Type of the array elements.
- * @tparam Rule The rule functor for element compaction.
- * @tparam BLOCKSIZE The size of each thread block.
- * @tparam WARP The size of each warp.
- * @param input The input SplitVector.
- * @param output The output SplitVector for storing the compacted elements.
- * @param rule The rule functor object.
- * @param s The split_gpuStream_t stream for GPU execution (default is 0).
- */
-template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
-void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
-             split::SplitVector<T, split::split_unified_allocator<T>>& output, Rule rule, split_gpuStream_t s = 0) {
-
-   auto len = copy_if_raw(input, output.data(), rule, s);
-   output.erase(&output[len], output.end());
-}
 
 /**
  * @brief Same as copy_keys_if but using raw memory
  */
 template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
-size_t copy_keys_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& input, U* output, Rule rule,
+size_t copy_keys_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& input, U* output, Rule rule,size_t nBlocks,Cuda_mempool& mPool,
                         split_gpuStream_t s = 0) {
 
-   // Figure out Blocks to use
-   size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
-   size_t nBlocks = nextPow2(_s);
-   if (nBlocks == 0) {
-      nBlocks += 1;
-   }
-
-   // Allocate with Mempool
-   const size_t memory_for_pool = 8 * nBlocks * sizeof(uint32_t);
-   Cuda_mempool mPool(memory_for_pool, s);
 
    uint32_t* d_counts;
    uint32_t* d_offsets;
@@ -723,6 +693,24 @@ size_t copy_keys_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>
    return numel;
 }
 
+
+/**
+ * @brief Estimates memory needed for compacting the input splitvector
+ */
+template <typename T, int BLOCKSIZE=1024>
+size_t estimateMemoryForCompaction(split::SplitVector<T, split::split_unified_allocator<T>>& input){
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+
+   // Allocate with Mempool
+   return 8 * nBlocks * sizeof(uint32_t);
+}
+
+
 /**
  * @brief Same as copy_if but only for Hashinator keys
  */
@@ -731,7 +719,80 @@ void copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& inpu
                     split::SplitVector<U, split::split_unified_allocator<U>>& output, Rule rule,
                     split_gpuStream_t s = 0) {
 
-   auto len = copy_keys_if_raw(input, output.data(), rule, s);
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+
+   // Allocate with Mempool
+   const size_t memory_for_pool = 8 * nBlocks * sizeof(uint32_t);
+   Cuda_mempool mPool(memory_for_pool, s);
+   auto len = copy_keys_if_raw(input, output.data(), rule,nBlocks,mPool, s);
+   output.erase(&output[len], output.end());
+}
+
+/**
+ * @brief Perform element compaction based on a rule.
+ *
+ * This function performs element compaction on the given input SplitVector based on a specified rule.
+ * It generates compacted output, updates counts and offsets SplitVectors, and returns compacted count.
+ *
+ * @tparam T Type of the array elements.
+ * @tparam Rule The rule functor for element compaction.
+ * @tparam BLOCKSIZE The size of each thread block.
+ * @tparam WARP The size of each warp.
+ * @param input The input SplitVector.
+ * @param output The output SplitVector for storing the compacted elements.
+ * @param rule The rule functor object.
+ * @param s The split_gpuStream_t stream for GPU execution (default is 0).
+ */
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
+             split::SplitVector<T, split::split_unified_allocator<T>>& output, Rule rule, split_gpuStream_t s = 0) {
+
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+
+   // Allocate with Mempool
+   const size_t memory_for_pool = 8 * nBlocks * sizeof(uint32_t);
+   Cuda_mempool mPool(memory_for_pool, s);
+   auto len = copy_if_raw(input, output.data(), rule,nBlocks,mPool, s);
+   output.erase(&output[len], output.end());
+}
+
+
+template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+void copy_keys_if_V2(split::SplitVector<T, split::split_unified_allocator<T>>& input,
+                    split::SplitVector<U, split::split_unified_allocator<U>>& output, Rule rule,Cuda_mempool& mPool,
+                    split_gpuStream_t s = 0) {
+
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+   auto len = copy_keys_if_raw(input, output.data(), rule,nBlocks,mPool, s);
+   output.erase(&output[len], output.end());
+}
+
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+void copy_if_V2(split::SplitVector<T, split::split_unified_allocator<T>>& input,
+             split::SplitVector<T, split::split_unified_allocator<T>>& output, Rule rule, Cuda_mempool& mPool, split_gpuStream_t s = 0) {
+
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+   auto len = copy_if_raw(input, output.data(), rule,nBlocks,mPool, s);
    output.erase(&output[len], output.end());
 }
 

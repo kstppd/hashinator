@@ -1025,21 +1025,28 @@ public:
          elements.optimizeGPU(s);
       }
       // Extract elements matching the Pattern Rule(element)==true;
-      size_t retval =
-          split::tools::copy_if_raw<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, defaults::MAX_BLOCKSIZE, defaults::WARPSIZE>(
-              buckets, elements.data(), rule, s);
-
-      // Remove unwanted elements
-      elements.erase(&(elements.at(retval)), elements.end());
-      return retval;
+      split::tools::copy_if<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, defaults::MAX_BLOCKSIZE, defaults::WARPSIZE>(
+              buckets, elements, rule, s);
+      return elements.size();
    }
 
-   template <typename Rule>
+   template <typename Rule,int BLOCKSIZE=1024>
    size_t extractPattern(hash_pair<KEY_TYPE, VAL_TYPE>* elements, Rule rule, split_gpuStream_t s = 0) {
       // Extract elements matching the Pattern Rule(element)==true;
+      
+      // Figure out Blocks to use
+      size_t _s = std::ceil((float(buckets.size())) / (float)BLOCKSIZE);
+      size_t nBlocks = nextPow2(_s);
+      if (nBlocks == 0) {
+         nBlocks += 1;
+      }
+
+      // Allocate with Mempool
+      const size_t memory_for_pool = 8 * nBlocks * sizeof(uint32_t);
+      split::tools::Cuda_mempool mPool(memory_for_pool, s);
       size_t retval =
           split::tools::copy_if_raw<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, defaults::MAX_BLOCKSIZE, defaults::WARPSIZE>(
-              buckets, elements, rule, s);
+              buckets, elements, rule,nBlocks,mPool, s);
       return retval;
    }
 
@@ -1051,12 +1058,9 @@ public:
          elements.optimizeGPU(s);
       }
       // Extract element **keys** matching the Pattern Rule(element)==true;
-      size_t retval =
-          split::tools::copy_keys_if_raw<hash_pair<KEY_TYPE, VAL_TYPE>, KEY_TYPE, Rule, defaults::MAX_BLOCKSIZE,
-                                         defaults::WARPSIZE>(buckets, elements.data(), rule, s);
-      // Remove unwanted elements
-      elements.erase(&(elements.at(retval)), elements.end());
-      return retval;
+      split::tools::copy_keys_if<hash_pair<KEY_TYPE, VAL_TYPE>, KEY_TYPE, Rule, defaults::MAX_BLOCKSIZE,
+                                         defaults::WARPSIZE>(buckets, elements, rule, s);
+      return elements.size();
    }
 
    size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, split_gpuStream_t s = 0, bool prefetches = true) {
