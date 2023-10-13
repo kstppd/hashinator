@@ -1358,6 +1358,31 @@ public:
    }
 }; // SplitVector
 
+/*Equal operator*/
+template <typename T, class Allocator>
+static inline HOSTDEVICE bool operator==(const SplitVector<T, Allocator>& lhs,
+                                         const SplitVector<T, Allocator>& rhs) noexcept {
+   if (lhs.size() != rhs.size()) {
+      return false;
+   }
+   for (size_t i = 0; i < lhs.size(); i++) {
+      if (!(lhs[i] == rhs[i])) {
+         return false;
+      }
+   }
+   // if we end up here the vectors are equal
+   return true;
+}
+
+/*Not-Equal operator*/
+template <typename T, class Allocator>
+static inline HOSTDEVICE bool operator!=(const SplitVector<T, Allocator>& lhs,
+                                         const SplitVector<T, Allocator>& rhs) noexcept {
+   return !(rhs == lhs);
+}
+
+
+#ifndef SPLIT_CPU_ONLY_MODE
 template <typename T>
 class SplitDeviceVector {
    static_assert(std::is_trivially_copyable<T>::value);
@@ -1641,29 +1666,6 @@ public:
 }; // SplitDeviceVector
 
 /*Equal operator*/
-template <typename T, class Allocator>
-static inline HOSTDEVICE bool operator==(const SplitVector<T, Allocator>& lhs,
-                                         const SplitVector<T, Allocator>& rhs) noexcept {
-   if (lhs.size() != rhs.size()) {
-      return false;
-   }
-   for (size_t i = 0; i < lhs.size(); i++) {
-      if (!(lhs[i] == rhs[i])) {
-         return false;
-      }
-   }
-   // if we end up here the vectors are equal
-   return true;
-}
-
-/*Not-Equal operator*/
-template <typename T, class Allocator>
-static inline HOSTDEVICE bool operator!=(const SplitVector<T, Allocator>& lhs,
-                                         const SplitVector<T, Allocator>& rhs) noexcept {
-   return !(rhs == lhs);
-}
-
-/*Equal operator*/
 template <typename T>
 static inline HOSTONLY bool operator==(const SplitDeviceVector<T>& lhs, const SplitDeviceVector<T>& rhs) noexcept {
    if (lhs.size() != rhs.size()) {
@@ -1683,5 +1685,6 @@ template <typename T>
 static inline HOSTONLY bool operator!=(const SplitDeviceVector<T>& lhs, const SplitDeviceVector<T>& rhs) noexcept {
    return !(rhs == lhs);
 }
+#endif
 
 } // namespace split
