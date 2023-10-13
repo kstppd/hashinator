@@ -1358,29 +1358,6 @@ public:
    }
 }; // SplitVector
 
-/*Equal operator*/
-template <typename T, class Allocator>
-static inline HOSTDEVICE bool operator==(const SplitVector<T, Allocator>& lhs,
-                                         const SplitVector<T, Allocator>& rhs) noexcept {
-   if (lhs.size() != rhs.size()) {
-      return false;
-   }
-   for (size_t i = 0; i < lhs.size(); i++) {
-      if (!(lhs[i] == rhs[i])) {
-         return false;
-      }
-   }
-   // if we end up here the vectors are equal
-   return true;
-}
-
-/*Not-Equal operator*/
-template <typename T, class Allocator>
-static inline HOSTDEVICE bool operator!=(const SplitVector<T, Allocator>& lhs,
-                                         const SplitVector<T, Allocator>& rhs) noexcept {
-   return !(rhs == lhs);
-}
-
 template <typename T>
 class SplitDeviceVector {
    static_assert(std::is_trivially_copyable<T>::value);
@@ -1450,7 +1427,7 @@ private:
    }
 
    HOSTONLY
-   inline T getElementFromDevice(const size_t index) noexcept {
+   inline T getElementFromDevice(const size_t index) const noexcept {
       T retval;
       split_gpuMemcpy(&retval, &_data[index], sizeof(T), split_gpuMemcpyDeviceToHost);
       return retval;
@@ -1567,7 +1544,7 @@ public:
    size_t capacity() const noexcept { return (getMeta()).capacity; }
 
    HOSTONLY
-   T get(size_t index) {
+   T get(size_t index)const {
       _rangeCheckHost(index);
       return getElementFromDevice(index);
    }
@@ -1579,7 +1556,7 @@ public:
    }
 
    DEVICEONLY
-   T device_get(size_t index) {
+   T device_get(size_t index)const {
       _rangeCheckDevice(index);
       return _data[index];
    }
@@ -1662,4 +1639,49 @@ public:
    }
 
 }; // SplitDeviceVector
+
+/*Equal operator*/
+template <typename T, class Allocator>
+static inline HOSTDEVICE bool operator==(const SplitVector<T, Allocator>& lhs,
+                                         const SplitVector<T, Allocator>& rhs) noexcept {
+   if (lhs.size() != rhs.size()) {
+      return false;
+   }
+   for (size_t i = 0; i < lhs.size(); i++) {
+      if (!(lhs[i] == rhs[i])) {
+         return false;
+      }
+   }
+   // if we end up here the vectors are equal
+   return true;
+}
+
+/*Not-Equal operator*/
+template <typename T, class Allocator>
+static inline HOSTDEVICE bool operator!=(const SplitVector<T, Allocator>& lhs,
+                                         const SplitVector<T, Allocator>& rhs) noexcept {
+   return !(rhs == lhs);
+}
+
+/*Equal operator*/
+template <typename T>
+static inline HOSTONLY bool operator==(const SplitDeviceVector<T>& lhs, const SplitDeviceVector<T>& rhs) noexcept {
+   if (lhs.size() != rhs.size()) {
+      return false;
+   }
+   for (size_t i = 0; i < lhs.size(); i++) {
+      if (!(lhs.get(i) == rhs.get(i))) {
+         return false;
+      }
+   }
+   // if we end up here the vectors are equal
+   return true;
+}
+
+/*Not-Equal operator*/
+template <typename T>
+static inline HOSTONLY bool operator!=(const SplitDeviceVector<T>& lhs, const SplitDeviceVector<T>& rhs) noexcept {
+   return !(rhs == lhs);
+}
+
 } // namespace split

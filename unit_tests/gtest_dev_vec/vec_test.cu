@@ -59,6 +59,37 @@ TEST(SplitDeviceVector,Construction){
    delete f;
 }
 
+TEST(SplitDeviceVector,AssignmentOperator){
+   
+   constexpr size_t N=1<<10;
+   vector* a=new vector;
+   expect_true(a->size()==0);
+   expect_true(a->capacity()==0);
+
+   vector* b=new vector;
+   *b=*a;
+   expect_true(b->size()==0);
+   expect_true(b->capacity()==0);
+
+   vector*c =new vector(N);
+   c->reserve(10*N);
+   vector*d =new vector;
+   *d=*c;
+   
+   expect_true(d->size()==c->size());
+
+   for (size_t i =0;i<d->size();i++){
+      expect_true(d->get(i)==c->get(i));
+   }
+   expect_true((*d==*c));
+   expect_true(!(*d!=*c));
+   delete a;
+   delete b;
+   delete c;
+   delete d;
+}
+
+
 TEST(SplitDeviceVector,SizeModifiers){
 
    constexpr size_t N=(1<<10);
