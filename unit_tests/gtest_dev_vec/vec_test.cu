@@ -177,6 +177,26 @@ TEST(SplitDeviceVector,DevicePushBack){
    delete a;
 }
 
+__global__
+void kernel_read_iterators(vector* a){
+   for ( auto i=a->device_begin(); i!=a->device_end();++i){
+      *i=(*i)*2;
+   }
+   for ( auto i=a->device_begin(); i!=a->device_end();++i){
+   }
+}
+
+TEST(SplitDeviceVector,DeviceIterator){
+   constexpr size_t N=32;
+   vector* a=new vector;
+   a->reserve(N);
+   kernel_pushback<<<1,N>>>(a);
+   split_gpuDeviceSynchronize();
+   kernel_read_iterators<<<1,1>>>(a);
+   split_gpuDeviceSynchronize();
+   delete a;
+}
+
 int main(int argc, char* argv[]){
    ::testing::InitGoogleTest(&argc, argv);
    return RUN_ALL_TESTS();

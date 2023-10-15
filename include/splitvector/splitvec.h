@@ -1663,6 +1663,145 @@ public:
       return true;
    }
 
+
+   // Iterators
+   class device_iterator {
+
+   private:
+      T* _data;
+
+   public:
+      using value_type = T;
+      using difference_type = int64_t;
+      using pointer = T*;
+      using reference = T&;
+
+      // device_iterator(){}
+      DEVICEONLY
+      device_iterator(pointer data) : _data(data) {}
+
+      DEVICEONLY
+      pointer data() { return _data; }
+      DEVICEONLY
+      pointer operator->() { return _data; }
+      DEVICEONLY
+      reference operator*() { return *_data; }
+
+      DEVICEONLY
+      bool operator==(const device_iterator& other) const { return _data == other._data; }
+      DEVICEONLY
+      bool operator!=(const device_iterator& other) const { return _data != other._data; }
+      DEVICEONLY
+      device_iterator& operator++() {
+         _data += 1;
+         return *this;
+      }
+      DEVICEONLY
+      device_iterator operator++(int) { return device_iterator(_data + 1); }
+      DEVICEONLY
+      device_iterator operator--(int) { return device_iterator(_data - 1); }
+      DEVICEONLY
+      device_iterator operator--() {
+         _data -= 1;
+         return *this;
+      }
+      DEVICEONLY
+      device_iterator& operator+=(int64_t offset) {
+         _data += offset;
+         return *this;
+      }
+      DEVICEONLY
+      device_iterator& operator-=(int64_t offset) {
+         _data -= offset;
+         return *this;
+      }
+      DEVICEONLY
+      device_iterator operator+(int64_t offset) const {
+         device_iterator itt(*this);
+         return itt += offset;
+      }
+      DEVICEONLY
+      device_iterator operator-(int64_t offset) const {
+         device_iterator itt(*this);
+         return itt -= offset;
+      }
+   };
+
+   class const_device_iterator {
+
+   private:
+      const T* _data;
+
+   public:
+      using device_iterator_category = std::forward_iterator_tag;
+      using value_type = T;
+      using difference_type = int64_t;
+      using pointer = const T*;
+      using reference = const T&;
+
+      DEVICEONLY
+      const_device_iterator(pointer data) : _data(data) {}
+
+      DEVICEONLY
+      pointer data() const { return _data; }
+      DEVICEONLY
+      pointer operator->() const { return _data; }
+      DEVICEONLY
+      reference operator*() const { return *_data; }
+
+      DEVICEONLY
+      bool operator==(const const_device_iterator& other) const { return _data == other._data; }
+      DEVICEONLY
+      bool operator!=(const const_device_iterator& other) const { return _data != other._data; }
+      DEVICEONLY
+      const_device_iterator& operator++() {
+         _data += 1;
+         return *this;
+      }
+      DEVICEONLY
+      const_device_iterator operator++(int) { return const_iterator(_data + 1); }
+      DEVICEONLY
+      const_device_iterator operator--(int) { return const_iterator(_data - 1); }
+      DEVICEONLY
+      const_device_iterator operator--() {
+         _data -= 1;
+         return *this;
+      }
+      DEVICEONLY
+      const_device_iterator& operator+=(int64_t offset) {
+         _data += offset;
+         return *this;
+      }
+      DEVICEONLY
+      const_device_iterator& operator-=(int64_t offset) {
+         _data -= offset;
+         return *this;
+      }
+      DEVICEONLY
+      const_device_iterator operator+(int64_t offset) const {
+         const_device_iterator itt(*this);
+         return itt += offset;
+      }
+      DEVICEONLY
+      const_device_iterator operator-(int64_t offset) const {
+         const_device_iterator itt(*this);
+         return itt -= offset;
+      }
+   };
+
+   DEVICEONLY
+   device_iterator device_begin() noexcept { return device_iterator(_data); }
+
+   DEVICEONLY
+   const_device_iterator device_begin() const noexcept { return const_device_iterator(_data); }
+ 
+   DEVICEONLY
+   device_iterator device_end() noexcept { return device_iterator(_data + device_size()); }
+
+   DEVICEONLY
+   const_device_iterator device_end() const noexcept { return const_device_iterator(_data + device_size()); }
+ 
+
 }; // SplitDeviceVector
 
 /*Equal operator*/
