@@ -376,8 +376,10 @@ public:
    HASHINATOR_HOSTDEVICE
    size_t bucket_count() const { return buckets.size(); }
 
+   HASHINATOR_HOSTDEVICE
    float load_factor() const { return (float)size() / bucket_count(); }
 
+   HASHINATOR_HOSTDEVICE
    size_t count(const KEY_TYPE& key) const {
       if (find(key) != end()) {
          return 1;
@@ -445,6 +447,7 @@ public:
    }
 #endif
 
+   HASHINATOR_HOSTDEVICE
    void print_pair(const hash_pair<KEY_TYPE, VAL_TYPE>& i) const {
       size_t currentSizePower = _mapInfo->sizePower;
       const size_t hashIndex = HashFunction::_hash(i.first, currentSizePower);
@@ -465,6 +468,7 @@ public:
       }
    }
 
+   HASHINATOR_HOSTDEVICE
    void dump_buckets() const {
       printf("Hashinator Stats \n");
       printf("Fill= %zu, LoadFactor=%f \n", _mapInfo->fill, load_factor());
@@ -475,16 +479,19 @@ public:
       std::cout << std::endl;
    }
 
+   HASHINATOR_HOSTDEVICE
    void stats() const {
       printf("Hashinator Stats \n");
-      printf("Bucket size= %zu\n", buckets.size());
-      printf("Fill= %zu, LoadFactor=%f \n", _mapInfo->fill, load_factor());
-      printf("Tombstones= %zu\n", _mapInfo->tombstoneCounter);
-      printf("Overflow= %zu\n", _mapInfo->currentMaxBucketOverflow);
+      printf("Bucket size= %lu\n", buckets.size());
+      printf("Fill= %lu, LoadFactor=%f \n", _mapInfo->fill, load_factor());
+      printf("Tombstones= %lu\n", _mapInfo->tombstoneCounter);
+      printf("Overflow= %lu\n", _mapInfo->currentMaxBucketOverflow);
    }
 
+   HASHINATOR_HOSTDEVICE
    size_t tombstone_count() const { return _mapInfo->tombstoneCounter; }
 
+   HASHINATOR_HOSTDEVICE
    float tombstone_ratio() const {
       if (tombstone_count() == 0) {
          return 0.0;
@@ -514,7 +521,7 @@ public:
    // Try to get the overflow back to the original one
    void performCleanupTasks(split_gpuStream_t s = 0) {
       while (_mapInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW) {
-         device_rehash(_mapInfo->sizePower + 1);
+         device_rehash(_mapInfo->sizePower + 1, s);
       }
       if (tombstone_ratio() > 0.025) {
          clean_tombstones(s);
