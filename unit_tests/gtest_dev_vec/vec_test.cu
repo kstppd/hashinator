@@ -1,14 +1,26 @@
 #include <iostream>
 #include <stdlib.h>
 #include <vector>
+#include <random>
 #include <chrono>
 #include <gtest/gtest.h>
 #include "../../include/splitvector/splitvec.h"
+#include "../../include/splitvector/split_tools.h"
 #define expect_true EXPECT_TRUE
 
 using vec_type_t = int;
 using vector =  split::SplitDeviceVector<vec_type_t> ;
 
+
+void fill_vec(vector* v, size_t targetSize){
+   std::random_device rd;
+   std::mt19937 gen(rd());
+   std::uniform_int_distribution<vec_type_t> dist(1, std::numeric_limits<vec_type_t>::max());
+   while (v->size() < targetSize) {
+      vec_type_t val =dist(gen);
+      v->push_back(val);
+    }
+}
 
 void printVecStats(vector* v){
    std::cout<<v->size()<<std::endl;
@@ -196,6 +208,26 @@ TEST(SplitDeviceVector,DeviceIterator){
    split_gpuDeviceSynchronize();
    delete a;
 }
+
+bool run_test(size_t sz){
+   vector* v=new vector;
+   fill_vec(v,sz);
+   auto predicate_on =[]__host__ __device__ (vec_type_t element)->bool{ return element%2 == 0 ;};
+   auto predicate_off =[]__host__ __device__ (vec_type_t element)->bool{ return element%2 != 0 ;};
+   vector* output1 = new vector(v->size());
+   vector* output2 = new vector(v->size());
+   const size_t len1 = split::tools::copy_if(v->data(),output1->data(),v->size(),predicate_on);
+   const size_t len2 = split::tools::copy_if(v->data(),output2->data(),v->size(),predicate_off);
+   //std::cout<<len1<<" "<<len2<<" "<<len1+len2<<" "<<v->size()<<std::endl;
+   return len1+len2==v->size();
+}
+
+TEST(SplitDeviceVector,StreamCompaction){
+   for (size_t i = 100; i< 50000; i*=4){
+      expect_true(run_test(i));
+   }
+}
+
 
 int main(int argc, char* argv[]){
    ::testing::InitGoogleTest(&argc, argv);

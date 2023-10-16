@@ -709,6 +709,22 @@ estimateMemoryForCompaction(const split::SplitVector<T, split::split_unified_all
 }
 
 /**
+ * @brief Estimates memory needed for compacting the input splitvector
+ */
+template <int BLOCKSIZE = 1024>
+[[nodiscard]] size_t estimateMemoryForCompaction(const size_t inputSize) noexcept {
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(inputSize)) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+
+   // Allocate with Mempool
+   return 8 * nBlocks * sizeof(uint32_t);
+}
+
+/**
  * @brief Same as copy_if but only for Hashinator keys
  */
 template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
@@ -826,6 +842,33 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
    Cuda_mempool mPool(stack, max_size);
    auto len = copy_if_raw(input.data(), output.data(), input.size(), rule, nBlocks, mPool, s);
    output.erase(&output[len], output.end());
+}
+
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+[[nodiscard]] size_t copy_if(T* input, T* output, size_t inputSize, Rule rule, Cuda_mempool& mPool,
+                             split_gpuStream_t s = 0) {
+
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(inputSize)) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+   return copy_if_raw(input, output, inputSize, rule, nBlocks, mPool, s);
+}
+
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+[[nodiscard]] size_t copy_if(T* input, T* output, size_t inputSize, Rule rule, split_gpuStream_t s = 0) {
+
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(inputSize)) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+   size_t mem = estimateMemoryForCompaction(inputSize);
+   Cuda_mempool mPool(mem, s);
+   return copy_if_raw(input, output, inputSize, rule, nBlocks, mPool, s);
 }
 
 } // namespace tools
