@@ -209,7 +209,7 @@ TEST(SplitDeviceVector,DeviceIterator){
    delete a;
 }
 
-bool run_test(size_t sz){
+bool run_compcation_test(size_t sz){
    vector* v=new vector;
    fill_vec(v,sz);
    auto predicate_on =[]__host__ __device__ (vec_type_t element)->bool{ return element%2 == 0 ;};
@@ -224,7 +224,7 @@ bool run_test(size_t sz){
 
 TEST(SplitDeviceVector,StreamCompaction){
    for (size_t i = 100; i< 50000; i*=4){
-      expect_true(run_test(i));
+      expect_true(run_compcation_test(i));
    }
 }
 
