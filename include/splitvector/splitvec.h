@@ -1381,7 +1381,6 @@ static inline HOSTDEVICE bool operator!=(const SplitVector<T, Allocator>& lhs,
    return !(rhs == lhs);
 }
 
-
 #ifndef SPLIT_CPU_ONLY_MODE
 template <typename T>
 class SplitDeviceVector {
@@ -1569,7 +1568,7 @@ public:
    size_t capacity() const noexcept { return (getMeta()).capacity; }
 
    HOSTONLY
-   T get(size_t index)const {
+   T get(size_t index) const {
       _rangeCheckHost(index);
       return getElementFromDevice(index);
    }
@@ -1581,7 +1580,7 @@ public:
    }
 
    DEVICEONLY
-   T device_get(size_t index)const {
+   T device_get(size_t index) const {
       _rangeCheckDevice(index);
       return _data[index];
    }
@@ -1662,7 +1661,6 @@ public:
       split::s_atomicCAS(&(_data[old]), _data[old], val);
       return true;
    }
-
 
    // Iterators
    class device_iterator {
@@ -1794,13 +1792,12 @@ public:
 
    DEVICEONLY
    const_device_iterator device_begin() const noexcept { return const_device_iterator(_data); }
- 
+
    DEVICEONLY
    device_iterator device_end() noexcept { return device_iterator(_data + device_size()); }
 
    DEVICEONLY
    const_device_iterator device_end() const noexcept { return const_device_iterator(_data + device_size()); }
- 
 
 }; // SplitDeviceVector
 
