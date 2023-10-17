@@ -1662,13 +1662,63 @@ public:
       return true;
    }
 
-   // Iterators
+   class const_host_read_only_iterator {
+
+   private:
+      const T* _data;
+
+   public:
+      using iterator_category = std::forward_iterator_tag;
+      using value_type = T;
+      using difference_type = int64_t;
+      using pointer = const T*;
+      using reference = const T&;
+
+      const_host_read_only_iterator(pointer data) : _data(data) {}
+      pointer data() const { return _data; }
+      pointer operator->() const { return _data; }
+      reference operator*() const {
+         assert(false);
+         return *_data;
+      }
+      bool operator==(const const_host_read_only_iterator& other) const { return _data == other._data; }
+      bool operator!=(const const_host_read_only_iterator& other) const { return _data != other._data; }
+      const_host_read_only_iterator& operator++() {
+         _data += 1;
+         return *this;
+      }
+      const_host_read_only_iterator operator++(int) { return const_host_read_only_iterator(_data + 1); }
+      const_host_read_only_iterator operator--(int) { return const_host_read_only_iterator(_data - 1); }
+      const_host_read_only_iterator operator--() {
+         _data -= 1;
+         return *this;
+      }
+      const_host_read_only_iterator& operator+=(int64_t offset) {
+         _data += offset;
+         return *this;
+      }
+      const_host_read_only_iterator& operator-=(int64_t offset) {
+         _data -= offset;
+         return *this;
+      }
+      const_host_read_only_iterator operator+(int64_t offset) const {
+         const_host_read_only_iterator itt(*this);
+         return itt += offset;
+      }
+      const_host_read_only_iterator operator-(int64_t offset) const {
+         const_host_read_only_iterator itt(*this);
+         return itt -= offset;
+      }
+   };
+
+   // Device Iterators
    class device_iterator {
 
    private:
       T* _data;
 
    public:
+      using iterator_category = std::forward_iterator_tag;
       using value_type = T;
       using difference_type = int64_t;
       using pointer = T*;
@@ -1786,6 +1836,12 @@ public:
          return itt -= offset;
       }
    };
+
+   HOSTONLY
+   const_host_read_only_iterator begin() const noexcept { return const_host_read_only_iterator(_data); }
+
+   HOSTONLY
+   const_host_read_only_iterator end() const noexcept { return const_host_read_only_iterator(_data + size()); }
 
    DEVICEONLY
    device_iterator device_begin() noexcept { return device_iterator(_data); }

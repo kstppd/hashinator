@@ -209,6 +209,19 @@ TEST(SplitDeviceVector,DeviceIterator){
    delete a;
 }
 
+TEST(SplitDeviceVector,HostIterator){
+   constexpr size_t N=32;
+   vector* a=new vector;
+   a->reserve(N);
+   kernel_pushback<<<1,N>>>(a);
+   split_gpuDeviceSynchronize();
+   for (auto i= a->begin(); i!=a->end();++i){
+      std::cout<<i.data()<<std::endl;;
+
+   }
+   delete a;
+}
+
 bool run_compcation_test(size_t sz){
    vector* v=new vector;
    fill_vec(v,sz);
