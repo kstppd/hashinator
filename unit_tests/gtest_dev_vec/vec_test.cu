@@ -216,8 +216,6 @@ TEST(SplitDeviceVector,HostIterator){
    kernel_pushback<<<1,N>>>(a);
    split_gpuDeviceSynchronize();
    for (auto i= a->begin(); i!=a->end();++i){
-      std::cout<<i.data()<<std::endl;;
-
    }
    delete a;
 }
@@ -231,8 +229,11 @@ bool run_compcation_test(size_t sz){
    vector* output2 = new vector(v->size());
    const size_t len1 = split::tools::copy_if(v->data(),output1->data(),v->size(),predicate_on);
    const size_t len2 = split::tools::copy_if(v->data(),output2->data(),v->size(),predicate_off);
-   //std::cout<<len1<<" "<<len2<<" "<<len1+len2<<" "<<v->size()<<std::endl;
-   return len1+len2==v->size();
+   auto r=v->size();
+   delete v;
+   delete output1;
+   delete output2;
+   return len1+len2==r;
 }
 
 TEST(SplitDeviceVector,StreamCompaction){
