@@ -1641,6 +1641,14 @@ public:
       return;
    }
 
+   DEVICEONLY
+   void device_resize(size_t newSize) {
+      if (newSize>capacity()){
+         return;
+      }
+      _meta[0]=newSize;
+   }
+
    HOSTONLY
    void push_back(const T& val) {
       Meta currentMeta = getMeta();
@@ -1662,7 +1670,7 @@ public:
       return true;
    }
 
-   class const_host_read_only_iterator {
+   class iterator {
 
    private:
       const T* _data;
@@ -1674,39 +1682,39 @@ public:
       using pointer = const T*;
       using reference = const T&;
 
-      const_host_read_only_iterator(pointer data) : _data(data) {}
+      iterator(pointer data) : _data(data) {}
       pointer data() const { return _data; }
       pointer operator->() const { return _data; }
       reference operator*() const {
          assert(false);
          return *_data;
       }
-      bool operator==(const const_host_read_only_iterator& other) const { return _data == other._data; }
-      bool operator!=(const const_host_read_only_iterator& other) const { return _data != other._data; }
-      const_host_read_only_iterator& operator++() {
+      bool operator==(const iterator& other) const { return _data == other._data; }
+      bool operator!=(const iterator& other) const { return _data != other._data; }
+      iterator& operator++() {
          _data += 1;
          return *this;
       }
-      const_host_read_only_iterator operator++(int) { return const_host_read_only_iterator(_data + 1); }
-      const_host_read_only_iterator operator--(int) { return const_host_read_only_iterator(_data - 1); }
-      const_host_read_only_iterator operator--() {
+      iterator operator++(int) { return iterator(_data + 1); }
+      iterator operator--(int) { return iterator(_data - 1); }
+      iterator operator--() {
          _data -= 1;
          return *this;
       }
-      const_host_read_only_iterator& operator+=(int64_t offset) {
+      iterator& operator+=(int64_t offset) {
          _data += offset;
          return *this;
       }
-      const_host_read_only_iterator& operator-=(int64_t offset) {
+      iterator& operator-=(int64_t offset) {
          _data -= offset;
          return *this;
       }
-      const_host_read_only_iterator operator+(int64_t offset) const {
-         const_host_read_only_iterator itt(*this);
+      iterator operator+(int64_t offset) const {
+         iterator itt(*this);
          return itt += offset;
       }
-      const_host_read_only_iterator operator-(int64_t offset) const {
-         const_host_read_only_iterator itt(*this);
+      iterator operator-(int64_t offset) const {
+         iterator itt(*this);
          return itt -= offset;
       }
    };
@@ -1838,10 +1846,10 @@ public:
    };
 
    HOSTONLY
-   const_host_read_only_iterator begin() const noexcept { return const_host_read_only_iterator(_data); }
+   iterator begin() const noexcept { return iterator(_data); }
 
    HOSTONLY
-   const_host_read_only_iterator end() const noexcept { return const_host_read_only_iterator(_data + size()); }
+   iterator end() const noexcept { return iterator(_data + size()); }
 
    DEVICEONLY
    device_iterator device_begin() noexcept { return device_iterator(_data); }
@@ -1854,6 +1862,70 @@ public:
 
    DEVICEONLY
    const_device_iterator device_end() const noexcept { return const_device_iterator(_data + device_size()); }
+
+   HOSTONLY
+   void set(const iterator& it, T val ){
+      size_t index = it.data()-_data;
+      return setElementFromHost(index, val);
+   }
+
+   T get(const iterator& it){
+      size_t index = it.data()-_data;
+      return getElementFromDevice(index);
+   }
+
+   HOSTONLY
+   void remove_from_back(size_t n) noexcept {
+      const size_t end = size() - n;
+      Meta currentMeta=getMeta();
+      currentMeta.size=end;
+      setMeta(currentMeta);
+   }
+
+   DEVICEONLY
+   void device_remove_from_back(size_t n) noexcept {
+      const size_t end = device_size() - n;
+      _meta[0]=end;
+   }
+
+   HOSTONLY
+   void pop_back() noexcept {
+      remove_from_back(1);
+   }
+
+   DEVICEONLY
+   void device_pop_back() noexcept {
+      device_remove_from_back(1);
+   }
+
+   HOSTONLY
+   iterator erase(iterator it) noexcept {
+      const int64_t index = it.data() - begin().data();
+      Meta currentMeta=getMeta();
+      for (auto i = index; i < size() - 1; i++) {
+         set(i,get(i+1));
+      }
+      currentMeta.size-=1;
+      setMeta(currentMeta);
+      iterator retval = &_data[index];
+      return retval;
+   }
+
+   HOSTONLY
+   iterator erase(iterator p0, iterator p1) noexcept {
+      const int64_t start = p0.data() - begin().data();
+      const int64_t end = p1.data() - begin().data();
+      const int64_t offset = end - start;
+      Meta currentMeta=getMeta();
+      for (auto i = start; i < size() - offset; ++i) {
+         set(i,get(i+offset));
+      }
+      currentMeta.size-=end - start;
+      setMeta(currentMeta);
+      iterator it = &_data[start];
+      return it;
+   }
+
 
 }; // SplitDeviceVector
 

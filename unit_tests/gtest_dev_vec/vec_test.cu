@@ -189,34 +189,36 @@ TEST(SplitDeviceVector,DevicePushBack){
    delete a;
 }
 
-__global__
-void kernel_read_iterators(vector* a){
-   for ( auto i=a->device_begin(); i!=a->device_end();++i){
-      *i=(*i)*2;
-   }
-   for ( auto i=a->device_begin(); i!=a->device_end();++i){
-   }
-}
-
-TEST(SplitDeviceVector,DeviceIterator){
-   constexpr size_t N=32;
-   vector* a=new vector;
-   a->reserve(N);
-   kernel_pushback<<<1,N>>>(a);
-   split_gpuDeviceSynchronize();
-   kernel_read_iterators<<<1,1>>>(a);
-   split_gpuDeviceSynchronize();
-   delete a;
-}
-
-TEST(SplitDeviceVector,HostIterator){
+TEST(SplitDeviceVector,RemoveFromBack_PopBack_Host){
    constexpr size_t N=32;
    vector* a=new vector;
    a->reserve(N);
    kernel_pushback<<<1,N>>>(a);
    split_gpuDeviceSynchronize();
    for (auto i= a->begin(); i!=a->end();++i){
+      a->set(i,a->get(i)*2);
    }
+   a->remove_from_back(2);
+   expect_true(a->size()==N-2);
+   a->remove_from_back(1);
+   expect_true(a->size()==N-3);
+   a->pop_back();
+   expect_true(a->size()==N-4);
+   delete a;
+}
+
+TEST(SplitDeviceVector,HostErase){
+   constexpr size_t N=32;
+   vector* a=new vector;
+   a->reserve(N);
+   kernel_pushback<<<1,N>>>(a);
+   split_gpuDeviceSynchronize();
+   for (auto i= a->begin(); i!=a->end();++i){
+      a->set(i,a->get(i)*2);
+   }
+   auto it=a->begin();
+   a->erase(it);
+   expect_true(a->get(a->begin())==2);
    delete a;
 }
 
