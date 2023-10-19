@@ -1138,7 +1138,7 @@ public:
 
       size_t old_size = size();
       if (size() + count > capacity()) {
-         resize(capacity() + count);
+         resize(size() + count);
       }
 
       iterator retval = &_data[index];
