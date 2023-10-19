@@ -252,7 +252,6 @@ TEST(SplitDeviceVector,HostInsert){
    a->insert(a->end(),63);
    expect_true(a->back()==63);
    a->insert(a->begin(),42);
-   printVecElements(a);
    expect_true(a->front()==42);
    delete a;
 }

@@ -1384,21 +1384,35 @@ static inline HOSTDEVICE bool operator!=(const SplitVector<T, Allocator>& lhs,
 #ifndef SPLIT_CPU_ONLY_MODE
 template <typename T>
 class SplitDeviceVector {
-   static_assert(std::is_trivially_copyable<T>::value);
+   static_assert(std::is_trivially_copyable<T>::value &&
+         "SplitDeviceVector only works for POD types");
 
 private:
+   enum MEMBER{SIZE,CAPACITY};
+
    // packed to 1 cache line
    struct __attribute__((__packed__)) Meta {
       size_t size;
       size_t capacity;
       char padding[64 - 2 * sizeof(size_t)]; // pad up to cache line
       HOSTDEVICE
-      size_t& operator[](int i) noexcept { return reinterpret_cast<size_t*>(this)[i]; }
+      inline size_t& operator[](MEMBER member) noexcept { 
+         switch (member)
+         {
+            case MEMBER::SIZE:
+               return *reinterpret_cast<size_t*>(this); 
+            case MEMBER::CAPACITY:
+               return *(reinterpret_cast<size_t*>(this)+1); 
+            default:
+               abort();
+         }
+      }
    };
 
    // Members
    Meta* _meta = nullptr;
    T* _data = nullptr;
+   split_gpuStream_t _stream;
 
    void setupSpace(void* ptr) noexcept {
       _meta = reinterpret_cast<Meta*>(ptr);
@@ -1407,14 +1421,23 @@ private:
 
    [[nodiscard]] void* _allocate(const size_t sz) {
       void* _ptr = nullptr;
-      SPLIT_CHECK_ERR(split_gpuMalloc((void**)&_ptr, sizeof(Meta) + sz * sizeof(T)));
+      if (_stream==NULL){
+         SPLIT_CHECK_ERR(split_gpuMalloc((void**)&_ptr, sizeof(Meta) + sz * sizeof(T)));
+      }else{
+         SPLIT_CHECK_ERR(split_gpuMallocAsync((void**)&_ptr, sizeof(Meta) + sz * sizeof(T),_stream));
+      }
       return _ptr;
    }
+
    void _deallocate(void* _ptr) {
       if (_ptr == nullptr) {
          return;
       }
-      SPLIT_CHECK_ERR(split_gpuFree((void*)_ptr));
+      if (_stream==NULL){
+         SPLIT_CHECK_ERR(split_gpuFree((void*)_ptr));
+      }else{
+         SPLIT_CHECK_ERR(split_gpuFreeAsync((void*)_ptr,_stream));
+      }
       _ptr = nullptr;
    }
 
@@ -1436,35 +1459,35 @@ private:
    HOSTONLY
    inline Meta getMeta() const noexcept {
       Meta buffer;
-      split_gpuMemcpy(&buffer, _meta, sizeof(Meta), split_gpuMemcpyDeviceToHost);
+      SPLIT_CHECK_ERR(split_gpuMemcpy(&buffer, _meta, sizeof(Meta), split_gpuMemcpyDeviceToHost));
       return buffer;
    }
 
    HOSTONLY
    inline void getMeta(Meta& buffer) const noexcept {
-      split_gpuMemcpy(&buffer, _meta, sizeof(Meta), split_gpuMemcpyDeviceToHost);
+      SPLIT_CHECK_ERR(split_gpuMemcpy(&buffer, _meta, sizeof(Meta), split_gpuMemcpyDeviceToHost));
    }
 
    HOSTONLY
    inline void setMeta(const Meta& buffer) noexcept {
-      split_gpuMemcpy(_meta, &buffer, sizeof(Meta), split_gpuMemcpyHostToDevice);
+      SPLIT_CHECK_ERR(split_gpuMemcpy(_meta, &buffer, sizeof(Meta), split_gpuMemcpyHostToDevice));
    }
 
    HOSTONLY
    inline T getElementFromDevice(const size_t index) const noexcept {
       T retval;
-      split_gpuMemcpy(&retval, &_data[index], sizeof(T), split_gpuMemcpyDeviceToHost);
+      SPLIT_CHECK_ERR(split_gpuMemcpy(&retval, &_data[index], sizeof(T), split_gpuMemcpyDeviceToHost));
       return retval;
    }
 
    HOSTONLY
    inline void setElementFromHost(const size_t index, const T& val) noexcept {
-      split_gpuMemcpy(&_data[index], &val, sizeof(T), split_gpuMemcpyHostToDevice);
+      SPLIT_CHECK_ERR(split_gpuMemcpy(&_data[index], &val, sizeof(T), split_gpuMemcpyHostToDevice));
       return;
    }
 
 public:
-   SplitDeviceVector(size_t sz = 0) {
+   SplitDeviceVector(size_t sz = 0):_stream(NULL) {
       void* ptr = _allocate(sz);
       setupSpace(ptr);
       size_t s = sz;
@@ -1472,7 +1495,14 @@ public:
       SPLIT_CHECK_ERR(split_gpuMemcpy(&_meta->capacity, &sz, sizeof(size_t), split_gpuMemcpyHostToDevice));
    }
 
-   SplitDeviceVector(const SplitDeviceVector<T>& other) {
+   SplitDeviceVector(size_t sz , split_gpuStream_t s):_stream(s) {
+      void* ptr = _allocate(sz);
+      setupSpace(ptr);
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&_meta->size, &sz, sizeof(size_t), split_gpuMemcpyHostToDevice,s));
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&_meta->capacity, &sz, sizeof(size_t), split_gpuMemcpyHostToDevice,s));
+   }
+
+   SplitDeviceVector(const SplitDeviceVector<T>& other):_stream(NULL){
       Meta otherMeta = other.getMeta();
       void* ptr = _allocate(otherMeta.size);
       setupSpace(ptr);
@@ -1482,14 +1512,32 @@ public:
       return;
    }
 
-   SplitDeviceVector(const SplitDeviceVector<T>&& other) {
+   SplitDeviceVector(const SplitDeviceVector<T>& other, split_gpuStream_t s):_stream(s){
+      Meta otherMeta = other.getMeta();
+      void* ptr = _allocate(otherMeta.size);
+      setupSpace(ptr);
+      Meta newMeta{.size = otherMeta.size, .capacity = otherMeta.size};
+      setMeta(newMeta);
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(_data, other._data, otherMeta.size * sizeof(T), split_gpuMemcpyDeviceToDevice,s));
+      return;
+   }
+
+
+   SplitDeviceVector(const SplitDeviceVector<T>&& other):_stream(NULL) {
       _meta = other._meta;
       _data = other._data;
       other._meta = nullptr;
       other._data = nullptr;
    }
 
-   SplitDeviceVector(const SplitVector<T>& vec) {
+   SplitDeviceVector(const SplitDeviceVector<T>&& other,split_gpuStream_t s):_stream(s) {
+      _meta = other._meta;
+      _data = other._data;
+      other._meta = nullptr;
+      other._data = nullptr;
+   }
+
+   SplitDeviceVector(const SplitVector<T>& vec):_stream(NULL) {
       void* ptr = _allocate(vec.size());
       setupSpace(ptr);
       Meta newMeta{.size = vec.size(), .capacity = vec.size()};
@@ -1498,12 +1546,30 @@ public:
       return;
    }
 
-   SplitDeviceVector(const std::vector<T>& vec) {
+   SplitDeviceVector(const SplitVector<T>& vec,split_gpuStream_t s):_stream(s) {
+      void* ptr = _allocate(vec.size());
+      setupSpace(ptr);
+      Meta newMeta{.size = vec.size(), .capacity = vec.size()};
+      setMeta(newMeta);
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(_data, vec.data(), vec.size() * sizeof(T), split_gpuMemcpyHostToDevice,s));
+      return;
+   }
+
+   SplitDeviceVector(const std::vector<T>& vec):_stream(NULL) {
       void* ptr = _allocate(vec.size());
       setupSpace(ptr);
       Meta newMeta{.size = vec.size(), .capacity = vec.size()};
       setMeta(newMeta);
       SPLIT_CHECK_ERR(split_gpuMemcpy(_data, vec.data(), vec.size() * sizeof(T), split_gpuMemcpyHostToDevice));
+      return;
+   }
+
+   SplitDeviceVector(const std::vector<T>& vec,split_gpuStream_t s):_stream(s) {
+      void* ptr = _allocate(vec.size());
+      setupSpace(ptr);
+      Meta newMeta{.size = vec.size(), .capacity = vec.size()};
+      setMeta(newMeta);
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(_data, vec.data(), vec.size() * sizeof(T), split_gpuMemcpyHostToDevice,s));
       return;
    }
 
@@ -1518,8 +1584,13 @@ public:
    SplitDeviceVector& operator=(const SplitDeviceVector& other) {
       Meta otherMeta = other.getMeta();
       resize(otherMeta.size);
-      SPLIT_CHECK_ERR(split_gpuMemcpy(_meta, other._meta, sizeof(Meta) + otherMeta.size * sizeof(T),
+      if (_stream==NULL){
+         SPLIT_CHECK_ERR(split_gpuMemcpy(_meta, other._meta, sizeof(Meta) + otherMeta.size * sizeof(T),
                                       split_gpuMemcpyDeviceToDevice));
+      }else{
+         SPLIT_CHECK_ERR(split_gpuMemcpyAsync(_meta, other._meta, sizeof(Meta) + otherMeta.size * sizeof(T),
+                                      split_gpuMemcpyDeviceToDevice,_stream));
+      }
       return *this;
    }
 
@@ -1606,13 +1677,32 @@ public:
       void* _new_data = _allocate(requested_space);
       const auto currentMeta = getMeta();
       size_t currentSize = currentMeta.size;
-      SPLIT_CHECK_ERR(
-          split_gpuMemcpy(_new_data, _meta, sizeof(Meta) + currentSize * sizeof(T), split_gpuMemcpyDeviceToDevice));
+      if (_stream==NULL){
+         SPLIT_CHECK_ERR(
+             split_gpuMemcpy(_new_data, _meta, sizeof(Meta) + currentSize * sizeof(T), split_gpuMemcpyDeviceToDevice));
+      }else{
+         SPLIT_CHECK_ERR(
+             split_gpuMemcpyAsync(_new_data, _meta, sizeof(Meta) + currentSize * sizeof(T), split_gpuMemcpyDeviceToDevice,_stream));
+      }
       _deallocate(_meta);
       setupSpace(_new_data);
       auto newMeta = currentMeta;
       newMeta.capacity = requested_space;
       setMeta(newMeta);
+      return;
+   }
+
+   HOSTONLY
+   void clear() noexcept {
+      Meta currentMeta=getMeta();
+      currentMeta.size=0;
+      setMeta(currentMeta);
+      return;
+   }
+   
+   DEVICEONLY
+   void device_clear() noexcept {
+      _meta[MEMBER::SIZE]=0;
       return;
    }
 
@@ -1641,12 +1731,15 @@ public:
       return;
    }
 
+   HOSTONLY
+   void grow() { reserve(capacity() + 1); }
+
    DEVICEONLY
    void device_resize(size_t newSize) {
       if (newSize>capacity()){
          return;
       }
-      _meta[0]=newSize;
+      _meta[MEMBER::SIZE]=newSize;
    }
 
    HOSTONLY
@@ -1660,10 +1753,10 @@ public:
 
    DEVICEONLY
    bool device_push_back(const T& val) {
-      size_t old = split::s_atomicAdd((unsigned int*)&_meta[0], 1);
+      size_t old = split::s_atomicAdd((unsigned long *)&_meta[MEMBER::SIZE], 1);
       // TODO relpace this > in splitvec as well
-      if (old > ((*_meta)[1]) - 1) {
-         atomicSub((unsigned int*)&_meta[0], 1);
+      if (old > (_meta->operator[](MEMBER::CAPACITY)) - 1) {
+         atomicSub((unsigned *)&_meta[MEMBER::SIZE], 1);
          return false;
       }
       split::s_atomicCAS(&(_data[old]), _data[old], val);
@@ -1864,6 +1957,24 @@ public:
    const_device_iterator device_end() const noexcept { return const_device_iterator(_data + device_size()); }
 
    HOSTONLY
+   T back() const noexcept { return get(size()-1); }
+
+   HOSTONLY
+   T front() const noexcept { return get(0); }
+
+   DEVICEONLY
+   T& device_back() noexcept { return _data[size() - 1]; }
+
+   DEVICEONLY
+   T& device_front() noexcept { return _data[0]; }
+
+   DEVICEONLY
+   const T& device_back() const noexcept { return _data[size() - 1]; }
+
+   DEVICEONLY
+   const T& device_front() const noexcept { return _data[0]; }
+
+   HOSTONLY
    void set(const iterator& it, T val ){
       size_t index = it.data()-_data;
       return setElementFromHost(index, val);
@@ -1885,7 +1996,7 @@ public:
    DEVICEONLY
    void device_remove_from_back(size_t n) noexcept {
       const size_t end = device_size() - n;
-      _meta[0]=end;
+      _meta[MEMBER::SIZE]=end;
    }
 
    HOSTONLY
@@ -1924,6 +2035,36 @@ public:
       setMeta(currentMeta);
       iterator it = &_data[start];
       return it;
+   }
+
+   HOSTONLY
+   iterator insert(iterator it, const T& val) {
+
+      // If empty or inserting at the end no relocating is needed
+      if (it == end()) {
+         push_back(val);
+         return end()--;
+      }
+
+      int64_t index = it.data() - begin().data();
+      if (index < 0 || index > size()) {
+         throw std::out_of_range("Insert");
+      }
+
+      // Do we do need to increase our capacity?
+      if (size() == capacity()) {
+         grow();
+      }
+
+      for (int64_t i = size() - 1; i >= index; i--) {
+         set(i+1,get(i));
+      }
+
+      set(index,val);
+      Meta currentMeta = getMeta();
+      currentMeta.size++;
+      setMeta(currentMeta);
+      return iterator(_data + index);
    }
 
 
