@@ -118,6 +118,24 @@ TEST(SplitDeviceVector,SizeModifiers){
    delete a;
 }
 
+TEST(SplitDeviceVector,Clear){
+
+   constexpr size_t N=(1<<10);
+   vector* a = new vector;
+   expect_true(a->size()==0);
+   expect_true(a->capacity()==0);
+   a->reserve(N);
+   expect_true(a->size()==0);
+   expect_true(a->capacity()>=N);
+   auto cap =a->capacity();
+   a->resize(N);
+   expect_true(a->size()==N);
+   expect_true(a->capacity()==cap);
+   a->clear();
+   expect_true(a->size()==0);
+   delete a;
+}
+
 TEST(SplitDeviceVector,HostPushBack){
    
    constexpr size_t N=(1<<10);
