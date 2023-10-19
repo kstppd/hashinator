@@ -240,6 +240,23 @@ TEST(SplitDeviceVector,HostErase){
    delete a;
 }
 
+TEST(SplitDeviceVector,HostInsert){
+   constexpr size_t N=32;
+   vector* a=new vector;
+   a->reserve(N);
+   kernel_pushback<<<1,N>>>(a);
+   split_gpuDeviceSynchronize();
+   for (auto i= a->begin(); i!=a->end();++i){
+      a->set(i,a->get(i)*2);
+   }
+   a->insert(a->end(),63);
+   expect_true(a->back()==63);
+   a->insert(a->begin(),42);
+   printVecElements(a);
+   expect_true(a->front()==42);
+   delete a;
+}
+
 bool run_compcation_test(size_t sz){
    vector* v=new vector;
    fill_vec(v,sz);
