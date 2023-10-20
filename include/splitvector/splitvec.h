@@ -1459,30 +1459,50 @@ private:
    HOSTONLY
    inline Meta getMeta() const noexcept {
       Meta buffer;
-      SPLIT_CHECK_ERR(split_gpuMemcpy(&buffer, _meta, sizeof(Meta), split_gpuMemcpyDeviceToHost));
+      if (_stream==NULL){
+         SPLIT_CHECK_ERR(split_gpuMemcpy(&buffer, _meta, sizeof(Meta), split_gpuMemcpyDeviceToHost));
+      }else{
+         SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&buffer, _meta, sizeof(Meta), split_gpuMemcpyDeviceToHost,_stream));
+      }
       return buffer;
    }
 
    HOSTONLY
    inline void getMeta(Meta& buffer) const noexcept {
-      SPLIT_CHECK_ERR(split_gpuMemcpy(&buffer, _meta, sizeof(Meta), split_gpuMemcpyDeviceToHost));
+      if (_stream==NULL){
+         SPLIT_CHECK_ERR(split_gpuMemcpy(&buffer, _meta, sizeof(Meta), split_gpuMemcpyDeviceToHost));
+      }else{
+         SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&buffer, _meta, sizeof(Meta), split_gpuMemcpyDeviceToHost,_stream));
+      }
    }
 
    HOSTONLY
    inline void setMeta(const Meta& buffer) noexcept {
-      SPLIT_CHECK_ERR(split_gpuMemcpy(_meta, &buffer, sizeof(Meta), split_gpuMemcpyHostToDevice));
+      if (_stream==NULL){
+         SPLIT_CHECK_ERR(split_gpuMemcpy(_meta, &buffer, sizeof(Meta), split_gpuMemcpyHostToDevice));
+      }else{
+         SPLIT_CHECK_ERR(split_gpuMemcpyAsync(_meta, &buffer, sizeof(Meta), split_gpuMemcpyHostToDevice,_stream));
+      }
    }
 
    HOSTONLY
    inline T getElementFromDevice(const size_t index) const noexcept {
       T retval;
-      SPLIT_CHECK_ERR(split_gpuMemcpy(&retval, &_data[index], sizeof(T), split_gpuMemcpyDeviceToHost));
+      if (_stream==NULL){
+         SPLIT_CHECK_ERR(split_gpuMemcpy(&retval, &_data[index], sizeof(T), split_gpuMemcpyDeviceToHost));
+      }else{
+         SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&retval, &_data[index], sizeof(T), split_gpuMemcpyDeviceToHost,_stream));
+      }
       return retval;
    }
 
    HOSTONLY
    inline void setElementFromHost(const size_t index, const T& val) noexcept {
-      SPLIT_CHECK_ERR(split_gpuMemcpy(&_data[index], &val, sizeof(T), split_gpuMemcpyHostToDevice));
+      if (_stream==NULL){
+         SPLIT_CHECK_ERR(split_gpuMemcpy(&_data[index], &val, sizeof(T), split_gpuMemcpyHostToDevice));
+      }else{
+         SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&_data[index], &val, sizeof(T), split_gpuMemcpyHostToDevice,_stream));
+      }
       return;
    }
 
@@ -2067,6 +2087,34 @@ public:
       return iterator(_data + index);
    }
 
+   template <typename InputIterator, class = typename std::enable_if<!std::is_integral<InputIterator>::value>::type>
+   HOSTONLY iterator insert(iterator it, InputIterator p0, InputIterator p1) {
+
+      const int64_t count = std::distance(p0, p1);
+      const int64_t index = it.data() - begin().data();
+
+      if (index < 0 || index > size()) {
+         throw std::out_of_range("Insert");
+      }
+
+      size_t old_size = size();
+      resize(size() + count);
+
+      iterator retval = &_data[index];
+
+      //Copy 
+      for (int64_t i =old_size-1; i>=index; i--){
+         set(count+i,get(i));
+      }
+
+      //Overwrite
+      size_t i=index;
+      for (auto p=p0; p!=p1 ;++p){
+         set(i,get(p));
+         i++;
+      }
+      return retval;
+   }
 
 }; // SplitDeviceVector
 

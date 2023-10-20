@@ -253,7 +253,38 @@ TEST(SplitDeviceVector,HostInsert){
    expect_true(a->back()==63);
    a->insert(a->begin(),42);
    expect_true(a->front()==42);
+   expect_true(a->size()==N+2);
    delete a;
+}
+
+
+TEST(SplitDeviceVector,HostInsertRange){
+   constexpr size_t N=32;
+   vector* a=new vector;
+   a->reserve(N);
+   kernel_pushback<<<1,N>>>(a);
+   split_gpuDeviceSynchronize();
+   for (auto i= a->begin(); i!=a->end();++i){
+      a->set(i,a->get(i)*2);
+   }
+   vector* b=new vector(N);
+   for (auto i= b->begin(); i!=b->end();++i){
+      b->set(i,1);
+   }
+   
+   a->insert(a->end(),b->begin(),b->end());
+   a->insert(a->begin(),b->begin(),b->end());
+   for (int i=0;i<32;i++){
+      expect_true(a->get(i)==1);
+   }
+   for (int i=32;i<64;i++){
+      expect_true(a->get(i)>=0 && a->get(i)<63);
+   }
+   for (int i=64;i<96;i++){
+      expect_true(a->get(i)==1);
+   }
+   delete a;
+   delete b;
 }
 
 bool run_compcation_test(size_t sz){
