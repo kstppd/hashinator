@@ -273,7 +273,7 @@ public:
       auto hashIndex = hash(key);
 
       // Try to find the matching bucket.
-      for (size_t i = 0; i <= _mapInfo->currentMaxBucketOverflow; i++) {
+      for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
 
          hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
@@ -299,7 +299,7 @@ public:
             // We look ahead in case candidate was already in the hashmap
             // If we find it then we swap the duplicate with empty and do not increment fill
             // but we only reduce the tombstone count
-            for (size_t j = i + 1; j <= _mapInfo->currentMaxBucketOverflow; ++j) {
+            for (size_t j = i + 1; j < _mapInfo->currentMaxBucketOverflow; ++j) {
                hash_pair<KEY_TYPE, VAL_TYPE>& duplicate = buckets[(hashIndex + j) & bitMask];
                if (duplicate.first == candidate.first) {
                   alreadyExists = true;
@@ -336,7 +336,7 @@ public:
       auto hashIndex = hash(key);
 
       // Try to find the matching bucket.
-      for (size_t i = 0; i <= _mapInfo->currentMaxBucketOverflow; i++) {
+      for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
          const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
          if (candidate.first == TOMBSTONE) {
@@ -623,7 +623,7 @@ public:
       auto hashIndex = hash(key);
 
       // Try to find the matching bucket.
-      for (size_t i = 0; i <= _mapInfo->currentMaxBucketOverflow; i++) {
+      for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
          const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
          if (candidate.first == TOMBSTONE) {
@@ -651,7 +651,7 @@ public:
       auto hashIndex = hash(key);
 
       // Try to find the matching bucket.
-      for (size_t i = 0; i <= _mapInfo->currentMaxBucketOverflow; i++) {
+      for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
          const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
          if (candidate.first == TOMBSTONE) {
@@ -1383,7 +1383,7 @@ public:
       auto hashIndex = hash(key);
 
       // Try to find the matching bucket.
-      for (size_t i = 0; i <= _mapInfo->currentMaxBucketOverflow; i++) {
+      for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
          const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
          if (candidate.first == TOMBSTONE) {
@@ -1411,7 +1411,7 @@ public:
       auto hashIndex = hash(key);
 
       // Try to find the matching bucket.
-      for (size_t i = 0; i <= _mapInfo->currentMaxBucketOverflow; i++) {
+      for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
          const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
          if (candidate.first == TOMBSTONE) {
@@ -1557,7 +1557,7 @@ public:
       auto hashIndex = hash(key);
 
       // Try to find the matching bucket.
-      for (size_t i = 0; i <= _mapInfo->currentMaxBucketOverflow; i++) {
+      for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
          uint32_t vecindex = (hashIndex + i) & bitMask;
          const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[vecindex];
          if (candidate.first == key) {
