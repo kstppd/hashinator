@@ -786,7 +786,7 @@ public:
             if (w_tid == winner) {
                KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
                if (old == EMPTYBUCKET) {
-                  threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex);
+                  threadOverflow =(probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex+1);
                   split::s_atomicExch(&buckets[probingindex].second, candidateVal);
                   warpDone = 1;
                   split::s_atomicAdd(&_mapInfo->fill, 1);
@@ -870,7 +870,7 @@ public:
             if (w_tid == winner) {
                KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
                if (old == EMPTYBUCKET) {
-                  threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex);
+                  threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex+1);
                   split::s_atomicExch(&buckets[probingindex].second, candidateVal);
                   warpDone = 1;
                   localCount = 1;
