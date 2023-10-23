@@ -259,6 +259,7 @@ public:
       this->_allocate(size_to_allocate);
       if constexpr (std::is_trivially_copyable<T>::value) {
          if (other._location == Residency::device) {
+            _location = Residency::device;
             optimizeGPU();
             SPLIT_CHECK_ERR(
                 split_gpuMemcpy(_data, other._data, size_to_allocate * sizeof(T), split_gpuMemcpyDeviceToDevice));
@@ -341,6 +342,7 @@ public:
 
       if constexpr (std::is_trivially_copyable<T>::value) {
          if (other._location == Residency::device) {
+            _location = Residency::device;
             optimizeGPU();
             SPLIT_CHECK_ERR(split_gpuMemcpy(_data, other._data, size() * sizeof(T), split_gpuMemcpyDeviceToDevice));
             return *this;
@@ -437,9 +439,6 @@ public:
     * @param stream The GPU stream to perform the prefetch on.
     */
    HOSTONLY void optimizeGPU(split_gpuStream_t stream = 0) noexcept {
-      if (_location == Residency::device) {
-         return;
-      }
       _location = Residency::device;
       int device;
       SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
@@ -461,9 +460,6 @@ public:
     * @param stream The GPU stream to perform the prefetch on.
     */
    HOSTONLY void optimizeCPU(split_gpuStream_t stream = 0) noexcept {
-      if (_location == Residency::host) {
-         return;
-      }
       _location = Residency::host;
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), split_gpuCpuDeviceId, stream));
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_size, sizeof(size_t), split_gpuCpuDeviceId, stream));
@@ -482,6 +478,15 @@ public:
       SPLIT_CHECK_ERR(split_gpuStreamAttachMemAsync(s, (void*)_capacity, sizeof(size_t), flags));
       SPLIT_CHECK_ERR(split_gpuStreamAttachMemAsync(s, (void*)_data, *_capacity * sizeof(T), flags));
       return;
+   }
+
+   /**
+    * @brief  Returns the residency information of this
+    *         Splitvector
+    */
+   HOSTDEVICE
+   [[nodiscard]] inline Residency getResidency()const noexcept{
+      return _location;
    }
 
    /**
