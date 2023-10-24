@@ -1104,9 +1104,7 @@ public:
       }
 
       // Do we do need to increase our capacity?
-      if (newSize > size()) {
-         resize(newSize);
-      }
+      resize(newSize);
 
       it = begin().data() + index;
       iterator last = it.data() + oldsize;
@@ -1137,9 +1135,7 @@ public:
       }
 
       size_t old_size = size();
-      if (size() + count > capacity()) {
-         resize(size() + count);
-      }
+      resize(size() + count);
 
       iterator retval = &_data[index];
       std::move(retval, iterator(&_data[old_size]), retval.data() + count);
@@ -1238,10 +1234,7 @@ public:
                      "space available.");
       }
 
-      // Do we do need to increase our capacity?
-      if (newSize > size()) {
-         device_resize(newSize);
-      }
+      device_resize(newSize);
 
       it = begin().data() + index;
       iterator last = it.data() + oldsize;
