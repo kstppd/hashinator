@@ -845,6 +845,23 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
 }
 
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+void copy_if(split::SplitDeviceVector<T>& input,
+                split::SplitDeviceVector<T>& output, Rule rule, void* stack, size_t max_size,
+                split_gpuStream_t s = 0) {
+
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+   assert(stack && "Invalid stack!");
+   Cuda_mempool mPool(stack, max_size);
+   auto len = copy_if_raw(input.data(), output.data(), input.size(), rule, nBlocks, mPool, s);
+   output.erase(output.data()+len, output.end());
+}
+
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 [[nodiscard]] size_t copy_if(T* input, T* output, size_t inputSize, Rule rule, Cuda_mempool& mPool,
                              split_gpuStream_t s = 0) {
 
