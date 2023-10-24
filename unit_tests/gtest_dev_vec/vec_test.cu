@@ -303,9 +303,30 @@ bool run_compcation_test(size_t sz){
    return len1+len2==r;
 }
 
+bool run_compcation_test2(size_t sz){
+   vector* v=new vector;
+   void* stack=nullptr;
+   size_t maxBytes = split::tools::estimateMemoryForCompaction(sz);
+   SPLIT_CHECK_ERR (split_gpuMalloc( (void**)&stack ,maxBytes));
+   fill_vec(v,sz);
+   auto predicate_on =[]__host__ __device__ (vec_type_t element)->bool{ return element%2 == 0 ;};
+   auto predicate_off =[]__host__ __device__ (vec_type_t element)->bool{ return element%2 != 0 ;};
+   vector* output1 = new vector(v->size());
+   vector* output2 = new vector(v->size());
+   const size_t len1 = split::tools::copy_if(v->data(),output1->data(),v->size(),predicate_on,stack,maxBytes);
+   const size_t len2 = split::tools::copy_if(v->data(),output2->data(),v->size(),predicate_off,stack,maxBytes);
+   auto r=v->size();
+   delete v;
+   delete output1;
+   delete output2;
+   SPLIT_CHECK_ERR (split_gpuFree(stack));
+   return len1+len2==r;
+}
+
 TEST(SplitDeviceVector,StreamCompaction){
    for (size_t i = 100; i< 50000; i*=4){
       expect_true(run_compcation_test(i));
+      expect_true(run_compcation_test2(i));
    }
 }
 

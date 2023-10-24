@@ -858,6 +858,20 @@ template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARP
 }
 
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+[[nodiscard]] size_t copy_if(T* input, T* output, size_t inputSize, Rule rule, void* stack, size_t max_size,split_gpuStream_t s = 0) {
+
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(inputSize)) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+   assert(stack && "Invalid stack!");
+   Cuda_mempool mPool(stack, max_size);
+   return copy_if_raw(input, output, inputSize, rule, nBlocks, mPool, s);
+}
+
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 [[nodiscard]] size_t copy_if(T* input, T* output, size_t inputSize, Rule rule, split_gpuStream_t s = 0) {
 
    // Figure out Blocks to use
