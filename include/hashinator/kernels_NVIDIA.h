@@ -87,7 +87,6 @@ __global__ void reset_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY
    hash_pair<KEY_TYPE, VAL_TYPE> candidate = src[wid];
    const int bitMask = (1 << (sizePower)) - 1;
    const auto hashIndex = HashFunction::_hash(candidate.first, sizePower);
-   const size_t optimalindex = (hashIndex)&bitMask;
    uint32_t vWarpDone = 0; // state of virtual warp
 
    for (size_t i = 0; i < (1 << sizePower); i += VIRTUALWARP) {
@@ -169,7 +168,6 @@ __global__ void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_
    hash_pair<KEY_TYPE, VAL_TYPE> candidate = src[wid];
    const int bitMask = (1 << (sizePower)) - 1;
    const auto hashIndex = HashFunction::_hash(candidate.first, sizePower);
-   const size_t optimalindex = (hashIndex)&bitMask;
    uint32_t vWarpDone = 0; // state of virtual warp
    uint32_t localCount = 0;
    uint64_t threadOverflow = 0;
@@ -210,7 +208,7 @@ __global__ void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_
          if (w_tid == sub_winner) {
             KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidate.first);
             if (old == EMPTYBUCKET) {
-               threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex+1);
+               threadOverflow = std::min(i+w_tid,static_cast<size_t>(1<<sizePower)) +1;
                split::s_atomicExch(&buckets[probingindex].second, candidate.second);
                vWarpDone = 1;
                // Flip the bit which corresponds to the thread that added an element
@@ -330,7 +328,6 @@ __global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE
    VAL_TYPE candidateVal = vals[wid];
    const int bitMask = (1 << (sizePower)) - 1;
    const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
-   const size_t optimalindex = (hashIndex)&bitMask;
    uint32_t vWarpDone = 0; // state of virtual warp
    uint32_t localCount = 0;
    uint64_t threadOverflow = 0;
@@ -371,7 +368,7 @@ __global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE
          if (w_tid == sub_winner) {
             KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
             if (old == EMPTYBUCKET) {
-               threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex +1);
+               threadOverflow = std::min(i+w_tid,static_cast<size_t>(1<<sizePower)) +1;
                split::s_atomicExch(&buckets[probingindex].second, candidateVal);
                vWarpDone = 1;
                // Flip the bit which corresponds to the thread that added an element
@@ -491,7 +488,6 @@ __global__ void insert_index_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE
    VAL_TYPE candidateVal = wid;
    const int bitMask = (1 << (sizePower)) - 1;
    const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
-   const size_t optimalindex = (hashIndex)&bitMask;
    uint32_t vWarpDone = 0; // state of virtual warp
    uint32_t localCount = 0;
    uint64_t threadOverflow = 0;
@@ -532,7 +528,7 @@ __global__ void insert_index_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE
          if (w_tid == sub_winner) {
             KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
             if (old == EMPTYBUCKET) {
-               threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex +1);
+               threadOverflow = std::min(i+w_tid,static_cast<size_t>(1<<sizePower)) +1;
                split::s_atomicExch(&buckets[probingindex].second, candidateVal);
                vWarpDone = 1;
                // Flip the bit which corresponds to the thread that added an element
