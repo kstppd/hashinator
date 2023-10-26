@@ -252,7 +252,7 @@ __global__ void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_
       int blockTotal = warpReduce<WARPSIZE>(addMask[(proper_w_tid)]);
       // First thread updates fill and overlfow (1 update per block)
       if (proper_w_tid == 0) {
-         atomicMax((unsigned long long*)d_overflow, (unsigned long long)nextPow2(blockOverflow));
+         atomicMax((unsigned long long*)d_overflow, (unsigned long long)nextOverflow(blockOverflow,VIRTUALWARP));
          split::s_atomicAdd(d_fill, blockTotal);
          ;
       }
@@ -412,7 +412,7 @@ __global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE
       int blockTotal = warpReduce<WARPSIZE>(addMask[(proper_w_tid)]);
       // First thread updates fill and overlfow (1 update per block)
       if (proper_w_tid == 0) {
-         atomicMax((unsigned long long*)d_overflow, (unsigned long long)nextPow2(blockOverflow));
+         atomicMax((unsigned long long*)d_overflow, (unsigned long long)nextOverflow(blockOverflow,VIRTUALWARP));
          split::s_atomicAdd(d_fill, blockTotal);
          ;
       }
@@ -572,7 +572,7 @@ __global__ void insert_index_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE
       int blockTotal = warpReduce<WARPSIZE>(addMask[(proper_w_tid)]);
       // First thread updates fill and overlfow (1 update per block)
       if (proper_w_tid == 0) {
-         atomicMax((unsigned long long*)d_overflow, (unsigned long long)nextPow2(blockOverflow));
+         atomicMax((unsigned long long*)d_overflow, (unsigned long long)nextOverflow(blockOverflow,VIRTUALWARP));
          split::s_atomicAdd(d_fill, blockTotal);
          ;
       }
