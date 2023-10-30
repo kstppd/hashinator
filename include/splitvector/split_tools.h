@@ -31,6 +31,9 @@
  * */
 #pragma once
 #include "gpu_wrappers.h"
+#ifndef SPLIT_CPU_ONLY_MODE
+#include "devicevec.h"
+#endif
 #define NUM_BANKS 32 // TODO depends on device
 #define LOG_NUM_BANKS 5
 #define CONFLICT_FREE_OFFSET(n) ((n) >> LOG_NUM_BANKS)
@@ -844,9 +847,10 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
    output.erase(&output[len], output.end());
 }
 
+#ifndef SPLIT_CPU_ONLY_MODE
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
-void copy_if(split::SplitDeviceVector<T>& input,
-                split::SplitDeviceVector<T>& output, Rule rule, void* stack, size_t max_size,
+void copy_if(split::DeviceVector<T>& input,
+                split::DeviceVector<T>& output, Rule rule, void* stack, size_t max_size,
                 split_gpuStream_t s = 0) {
 
    // Figure out Blocks to use
@@ -860,6 +864,7 @@ void copy_if(split::SplitDeviceVector<T>& input,
    auto len = copy_if_raw(input.data(), output.data(), input.size(), rule, nBlocks, mPool, s);
    output.erase(output.data()+len, output.end());
 }
+#endif
 
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 [[nodiscard]] size_t copy_if(T* input, T* output, size_t inputSize, Rule rule, Cuda_mempool& mPool,

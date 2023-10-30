@@ -5,11 +5,12 @@
 #include <chrono>
 #include <gtest/gtest.h>
 #include "../../include/splitvector/splitvec.h"
+#include "../../include/splitvector/devicevec.h"
 #include "../../include/splitvector/split_tools.h"
 #define expect_true EXPECT_TRUE
 
 using vec_type_t = int;
-using vector =  split::SplitDeviceVector<vec_type_t> ;
+using vector =  split::DeviceVector<vec_type_t> ;
 
 
 void fill_vec(vector* v, size_t targetSize){
@@ -39,7 +40,7 @@ void printVecElements(vector* v){
 }
 
 
-TEST(SplitDeviceVector,Construction){
+TEST(SpDeviceVector,Construction){
    
    constexpr size_t N=1<<10;
    vector* a=new vector;
@@ -71,7 +72,7 @@ TEST(SplitDeviceVector,Construction){
    delete f;
 }
 
-TEST(SplitDeviceVector,AssignmentOperator){
+TEST(SpDeviceVector,AssignmentOperator){
    
    constexpr size_t N=1<<10;
    vector* a=new vector;
@@ -102,7 +103,7 @@ TEST(SplitDeviceVector,AssignmentOperator){
 }
 
 
-TEST(SplitDeviceVector,SizeModifiers){
+TEST(SpDeviceVector,SizeModifiers){
 
    constexpr size_t N=(1<<10);
    vector* a = new vector;
@@ -118,7 +119,7 @@ TEST(SplitDeviceVector,SizeModifiers){
    delete a;
 }
 
-TEST(SplitDeviceVector,Clear){
+TEST(SpDeviceVector,Clear){
 
    constexpr size_t N=(1<<10);
    vector* a = new vector;
@@ -136,7 +137,7 @@ TEST(SplitDeviceVector,Clear){
    delete a;
 }
 
-TEST(SplitDeviceVector,HostPushBack){
+TEST(SpDeviceVector,HostPushBack){
    
    constexpr size_t N=(1<<10);
    vector* a=new vector;
@@ -182,7 +183,7 @@ void kernel_pushback(vector* a){
    a->device_push_back(index);
 }
 
-TEST(SplitDeviceVector,DeviceSet){
+TEST(SpDeviceVector,DeviceSet){
    
    constexpr size_t N=(1<<10);
    vector* a=new vector;
@@ -196,7 +197,7 @@ TEST(SplitDeviceVector,DeviceSet){
    delete a;
 }
 
-TEST(SplitDeviceVector,DevicePushBack){
+TEST(SpDeviceVector,DevicePushBack){
    
    constexpr size_t N=(1<<10);
    vector* a=new vector;
@@ -207,7 +208,7 @@ TEST(SplitDeviceVector,DevicePushBack){
    delete a;
 }
 
-TEST(SplitDeviceVector,RemoveFromBack_PopBack_Host){
+TEST(SpDeviceVector,RemoveFromBack_PopBack_Host){
    constexpr size_t N=32;
    vector* a=new vector;
    a->reserve(N);
@@ -225,7 +226,7 @@ TEST(SplitDeviceVector,RemoveFromBack_PopBack_Host){
    delete a;
 }
 
-TEST(SplitDeviceVector,HostErase){
+TEST(SpDeviceVector,HostErase){
    constexpr size_t N=32;
    vector* a=new vector;
    a->reserve(N);
@@ -240,7 +241,7 @@ TEST(SplitDeviceVector,HostErase){
    delete a;
 }
 
-TEST(SplitDeviceVector,HostInsert){
+TEST(SpDeviceVector,HostInsert){
    constexpr size_t N=32;
    vector* a=new vector;
    a->reserve(N);
@@ -258,7 +259,7 @@ TEST(SplitDeviceVector,HostInsert){
 }
 
 
-TEST(SplitDeviceVector,HostInsertRange){
+TEST(SpDeviceVector,HostInsertRange){
    constexpr size_t N=32;
    vector* a=new vector;
    a->reserve(N);
@@ -323,7 +324,7 @@ bool run_compcation_test2(size_t sz){
    return len1+len2==r;
 }
 
-TEST(SplitDeviceVector,StreamCompaction){
+TEST(SpDeviceVector,StreamCompaction){
    for (size_t i = 100; i< 50000; i*=4){
       expect_true(run_compcation_test(i));
       expect_true(run_compcation_test2(i));
