@@ -28,6 +28,7 @@
 #include <iostream>
 #include <memory>
 #include <stdlib.h>
+#include <vector>
 
 #ifndef SPLIT_CPU_ONLY_MODE
 #ifdef __NVCC__
