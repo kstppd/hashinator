@@ -99,6 +99,9 @@ private:
 
    // Deallocates the bookeepping info and the device pointer
    void deallocate_device_handles() {
+      if (device_map==nullptr){
+         return;
+      }
 #ifndef HASHINATOR_CPU_ONLY_MODE
       SPLIT_CHECK_ERR(split_gpuFree(device_map));
       device_map = nullptr;
@@ -131,6 +134,33 @@ public:
       *_mapInfo = *(other._mapInfo);
       buckets = other.buckets;
    };
+
+   Hashmap(Hashmap<KEY_TYPE, VAL_TYPE>&& other) {
+      preallocate_device_handles();
+      _mapInfo = other._mapInfo;
+      other._mapInfo=nullptr;
+      buckets = std::move(other.buckets);
+   };
+
+   Hashmap& operator=(const Hashmap<KEY_TYPE,VAL_TYPE>& other) {
+      if (this == &other) {
+         return *this;
+      }
+      *_mapInfo = *(other._mapInfo);
+      buckets = other.buckets;
+      return *this;
+   }
+
+   Hashmap& operator=(Hashmap<KEY_TYPE,VAL_TYPE>&& other) {
+      if (this == &other) {
+         return *this;
+      }
+      _metaAllocator.deallocate(_mapInfo, 1);
+      _mapInfo = other._mapInfo;
+      other._mapInfo=nullptr;
+      buckets =std::move(other.buckets);
+      return *this;
+   }
 
    ~Hashmap() {
       deallocate_device_handles();
