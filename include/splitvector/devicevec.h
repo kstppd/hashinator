@@ -322,6 +322,10 @@ public:
       return _data[index];
    }
 
+   DEVICEONLY T& operator[](size_t index) noexcept { return _data[index]; }
+
+   DEVICEONLY const T& operator[](size_t index) const noexcept { return _data[index]; }
+
    HOSTDEVICE T* data() noexcept { return &(_data[0]); }
 
    HOSTDEVICE const T* data() const noexcept { return &(_data[0]); }
