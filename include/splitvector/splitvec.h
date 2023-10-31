@@ -322,6 +322,9 @@ public:
  */
 #ifdef SPLIT_CPU_ONLY_MODE
    HOSTONLY SplitVector<T, Allocator>& operator=(const SplitVector<T, Allocator>& other) {
+      if (this == &other) {
+         return *this;
+      }
       // Match other's size prior to copying
       resize(other.size());
       for (size_t i = 0; i < other.size(); i++) {
@@ -332,6 +335,9 @@ public:
 #else
 
    HOSTONLY SplitVector<T, Allocator>& operator=(const SplitVector<T, Allocator>& other) {
+      if (this == &other) {
+         return *this;
+      }
       // Match other's size prior to copying
       resize(other.size());
       auto copySafe = [&]() -> void {

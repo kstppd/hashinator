@@ -787,6 +787,26 @@ bool test_hashmap_4(int power){
    return true;
 }
 
+TEST(HashmapUnitTets , Test_Construction){
+   hashmap map0(12);
+   expect_true(map0.size()==0);
+   for (key_type i=0 ; i< 1<<11; i++){
+      map0[i]=i;
+   }
+   expect_true(map0.size()==1<<11);
+   hashmap map1(map0);
+   expect_true(map1.size()==1<<11);
+   hashmap map2 = map0;
+   expect_true(map2.size()==1<<11);
+   hashmap map3(hashmap(12));
+   expect_true(map3.size()==0);
+   expect_true(map3.bucket_count()==1<<12);
+   map3=hashmap(13);
+   expect_true(map3.size()==0);
+   expect_true(map3.bucket_count()==1<<13);
+}
+
+
 
 TEST(HashmapUnitTets , Test1_HostDevice_UploadDownload){
    for (int power=MINPOWER; power<MAXPOWER; ++power){
