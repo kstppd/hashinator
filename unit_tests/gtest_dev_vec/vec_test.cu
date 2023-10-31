@@ -178,6 +178,12 @@ void kernel_set(vector* a){
 }
 
 __global__
+void kernel_at(vector* a){
+   int index = blockIdx.x * blockDim.x + threadIdx.x;
+   a->at(index)=index;
+}
+
+__global__
 void kernel_pushback(vector* a){
    int index = blockIdx.x * blockDim.x + threadIdx.x;
    a->device_push_back(index);
@@ -189,6 +195,20 @@ TEST(SpDeviceVector,DeviceSet){
    vector* a=new vector;
    a->resize(N);
    kernel_set<<<1,N>>>(a);
+   split_gpuDeviceSynchronize();
+
+   for (size_t i =0;i<N;i++){
+      expect_true(a->get(i)==i);
+   }
+   delete a;
+}
+
+TEST(SpDeviceVector,DeviceAt){
+   
+   constexpr size_t N=(1<<10);
+   vector* a=new vector;
+   a->resize(N);
+   kernel_at<<<1,N>>>(a);
    split_gpuDeviceSynchronize();
 
    for (size_t i =0;i<N;i++){

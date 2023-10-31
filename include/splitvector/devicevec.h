@@ -312,6 +312,16 @@ public:
       return;
    }
 
+   DEVICEONLY T& at(size_t index) {
+      _rangeCheckDevice(index);
+      return _data[index];
+   }
+
+   DEVICEONLY const T& at(size_t index) const {
+      _rangeCheckDevice(index);
+      return _data[index];
+   }
+
    HOSTDEVICE T* data() noexcept { return &(_data[0]); }
 
    HOSTDEVICE const T* data() const noexcept { return &(_data[0]); }
