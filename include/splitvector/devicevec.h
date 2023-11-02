@@ -13,7 +13,7 @@
 
 namespace split {
 
-template <typename T>
+template <typename T, class Allocator = split::split_device_allocator<T>>
 class DeviceVector {
    static_assert(std::is_trivially_copyable<T>::value && "DeviceVector only works for POD types");
 
@@ -41,6 +41,7 @@ private:
    // Members
    Meta* _meta = nullptr;
    T* _data = nullptr;
+   Allocator _allocator;
    split_gpuStream_t _stream;
 
    void setupSpace(void* ptr) noexcept {
@@ -49,11 +50,10 @@ private:
    }
 
    [[nodiscard]] void* _allocate(const size_t sz) {
-      void* _ptr = nullptr;
-      if (_stream == NULL) {
-         SPLIT_CHECK_ERR(split_gpuMalloc((void**)&_ptr, sizeof(Meta) + sz * sizeof(T)));
+      void* _ptr =nullptr;      if (_stream == NULL) {
+         _ptr = _allocator.allocate_raw( sizeof(Meta) + sz*sizeof(T));
       } else {
-         SPLIT_CHECK_ERR(split_gpuMallocAsync((void**)&_ptr, sizeof(Meta) + sz * sizeof(T), _stream));
+         _ptr = _allocator.allocate_raw( sizeof(Meta) + sz*sizeof(T),_stream);
       }
       return _ptr;
    }
@@ -63,9 +63,9 @@ private:
          return;
       }
       if (_stream == NULL) {
-         SPLIT_CHECK_ERR(split_gpuFree((void*)_ptr));
+         _allocator.deallocate((_ptr));
       } else {
-         SPLIT_CHECK_ERR(split_gpuFreeAsync((void*)_ptr, _stream));
+         _allocator.deallocate(_ptr,_stream);
       }
       _ptr = nullptr;
    }
