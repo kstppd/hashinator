@@ -461,6 +461,9 @@ public:
    void resize(int newSizePower) { rehash(newSizePower); }
 #else
    void resize(int newSizePower, targets t = targets::host, split_gpuStream_t s = 0) {
+      if (newSizePower <= _mapInfo->sizePower) {
+         return;
+      }
       switch (t) {
       case targets::host:
          rehash(newSizePower);
@@ -1223,7 +1226,9 @@ public:
       if (neededPowerSize > _mapInfo->sizePower) {
          resize(neededPowerSize, targets::device, s);
       }
-      buckets.optimizeGPU(s);
+      if (prefetches) {
+         buckets.optimizeGPU(s);
+      }
       DeviceHasher::insert(src, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
                            &_mapInfo->currentMaxBucketOverflow, &_mapInfo->fill, len, &_mapInfo->err, s);
       return;
@@ -1271,12 +1276,23 @@ public:
    void optimizeGPU(split_gpuStream_t stream = 0) noexcept {
       int device;
       SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
+      // Prefetch hashmap to CPU
+      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(this, sizeof(this), split_gpuCpuDeviceId, stream));
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+      // Prefetch contents of hashmap to GPU
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_mapInfo, sizeof(MapInfo), device, stream));
       buckets.optimizeGPU(stream);
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+      // Prefetch hashmap to GPU
+      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(this, sizeof(this), device, stream));
    }
 
    /*Manually prefetch data on Host*/
    void optimizeCPU(split_gpuStream_t stream = 0) noexcept {
+      // Prefetch hashmap to CPU
+      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(this, sizeof(this), split_gpuCpuDeviceId, stream));
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+      // Prefetch contents of hashmap to CPU
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_mapInfo, sizeof(MapInfo), split_gpuCpuDeviceId, stream));
       buckets.optimizeCPU(stream);
    }
