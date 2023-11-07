@@ -526,9 +526,23 @@ public:
     * @param dst Pointer to the destination SplitInfo structure.
     * @param s The GPU stream to perform the copy on.
     */
-   HOSTONLY void copyMetadata(SplitInfo* dst, split_gpuStream_t s = 0) {
-      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&dst->size, _size, sizeof(size_t), split_gpuMemcpyDeviceToHost, s));
-      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&dst->capacity, _capacity, sizeof(size_t), split_gpuMemcpyDeviceToHost, s));
+   HOSTONLY void copyMetadata(SplitInfo* dst, split_gpuStream_t stream = 0, bool unified=false) {
+      int device;
+      SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
+      if (unified) {
+         // Prefetch splitVector to CPU
+         SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(this, sizeof(this), split_gpuCpuDeviceId, stream));
+         SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+      }
+      // Store addresses for safe copy back
+      size_t* __size = _size;
+      size_t* __capacity = _capacity;
+      if (unified) {
+         SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(this, sizeof(this), device, stream));
+         SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+      }
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&dst->size, __size, sizeof(size_t), split_gpuMemcpyDeviceToHost, stream));
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&dst->capacity, __capacity, sizeof(size_t), split_gpuMemcpyDeviceToHost, stream));
    }
 
    /**

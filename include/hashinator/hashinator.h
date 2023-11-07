@@ -199,8 +199,21 @@ public:
 
    void operator delete[](void* ptr) { split_gpuFree(ptr); }
 
-   void copyMetadata(MapInfo* dst, split_gpuStream_t s = 0) {
-      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(dst, _mapInfo, sizeof(MapInfo), split_gpuMemcpyDeviceToHost, s));
+   void copyMetadata(MapInfo* dst, split_gpuStream_t stream = 0, bool unified=false) {
+      int device;
+      if (unified) {
+         SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
+         // Prefetch splitVector to CPU
+         SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(this, sizeof(this), split_gpuCpuDeviceId, stream));
+         SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+      }
+      // Store addresses for prefetching back
+      MapInfo* __mapInfo = _mapInfo;
+      if (unified) {
+         SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(this, sizeof(this), device, stream));
+         SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+      }
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(dst, __mapInfo, sizeof(MapInfo), split_gpuMemcpyDeviceToHost, stream));
    }
 
 #endif
