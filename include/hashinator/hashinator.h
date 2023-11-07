@@ -1273,25 +1273,32 @@ public:
       return device_map;
    }
 
-   void optimizeGPU(split_gpuStream_t stream = 0) noexcept {
+   void optimizeGPU(split_gpuStream_t stream = 0, bool unified=false) noexcept {
       int device;
       SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
-      // Prefetch hashmap to CPU
-      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(this, sizeof(this), split_gpuCpuDeviceId, stream));
-      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+      if (unified) {
+         // Prefetch hashmap to CPU
+         SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(this, sizeof(this), split_gpuCpuDeviceId, stream));
+         SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+      }
+      // Store addresses for prefetching back
+      MapInfo* __mapInfo = _mapInfo;
       // Prefetch contents of hashmap to GPU
-      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_mapInfo, sizeof(MapInfo), device, stream));
-      buckets.optimizeGPU(stream);
-      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
-      // Prefetch hashmap to GPU
-      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(this, sizeof(this), device, stream));
+      buckets.optimizeGPU(stream, unified);
+      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(__mapInfo, sizeof(MapInfo), device, stream));
+      if (unified) {
+         // Prefetch hashmap to GPU
+         SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(this, sizeof(this), device, stream));
+      }
    }
 
    /*Manually prefetch data on Host*/
-   void optimizeCPU(split_gpuStream_t stream = 0) noexcept {
-      // Prefetch hashmap to CPU
-      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(this, sizeof(this), split_gpuCpuDeviceId, stream));
-      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+   void optimizeCPU(split_gpuStream_t stream = 0, bool unified=false) noexcept {
+      if (unified) {
+         // Prefetch hashmap to CPU
+         SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(this, sizeof(this), split_gpuCpuDeviceId, stream));
+         SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+      }
       // Prefetch contents of hashmap to CPU
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_mapInfo, sizeof(MapInfo), split_gpuCpuDeviceId, stream));
       buckets.optimizeCPU(stream);

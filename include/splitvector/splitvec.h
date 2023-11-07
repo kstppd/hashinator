@@ -445,25 +445,33 @@ public:
     *
     * @param stream The GPU stream to perform the prefetch on.
     */
-   HOSTONLY void optimizeGPU(split_gpuStream_t stream = 0) noexcept {
+   HOSTONLY void optimizeGPU(split_gpuStream_t stream = 0, bool unified=false) noexcept {
       int device;
       SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
-      // Prefetch splitVector to CPU
-      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(this, sizeof(this), split_gpuCpuDeviceId, stream));
-      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+      if (unified) {
+         // Prefetch splitVector to CPU
+         SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(this, sizeof(this), split_gpuCpuDeviceId, stream));
+         SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+      }
       // Set residency, prefetch capacity to CPU
       _location = Residency::device;
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), split_gpuCpuDeviceId, stream));
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+      // Store addresses for prefetching back
+      T* __data = _data;
+      size_t* __size = _size;
+      size_t* __capacity = _capacity;
       // Prefetch data if count is nonzero
-      if (*_capacity!=0){
-         SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_data, *_capacity * sizeof(T), device, stream));
+      if (*__capacity!=0){
+         SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(__data, *__capacity * sizeof(T), device, stream));
       }
       // And prefetch splitvector and variables back to device
-      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_size, sizeof(size_t), device, stream));
-      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), device, stream));
-      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
-      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(this, sizeof(this), device, stream));
+      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(__size, sizeof(size_t), device, stream));
+      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(__capacity, sizeof(size_t), device, stream));
+      if (unified) {
+         SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(this, sizeof(this), device, stream));
+         SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+      }
       return;
    }
 
@@ -472,10 +480,12 @@ public:
     *
     * @param stream The GPU stream to perform the prefetch on.
     */
-   HOSTONLY void optimizeCPU(split_gpuStream_t stream = 0) noexcept {
-      // Prefetch splitVector to CPU
-      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(this, sizeof(this), split_gpuCpuDeviceId, stream));
-      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+   HOSTONLY void optimizeCPU(split_gpuStream_t stream = 0, bool unified=false) noexcept {
+      if (unified) {
+         // Prefetch splitVector to CPU
+         SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(this, sizeof(this), split_gpuCpuDeviceId, stream));
+         SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+      }
       // Set residency, prefetch metadata CPU
       _location = Residency::host;
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), split_gpuCpuDeviceId, stream));
