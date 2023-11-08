@@ -838,7 +838,7 @@ public:
                   split::s_atomicAdd(&_mapInfo->fill, 1);
                   if (threadOverflow > _mapInfo->currentMaxBucketOverflow) {
                      split::s_atomicExch((unsigned long long*)(&_mapInfo->currentMaxBucketOverflow),
-                                         (unsigned long long)nextPow2(threadOverflow));
+                                         (unsigned long long)nextOverflow(threadOverflow,defaults::WARPSIZE));
                   }
                } else if (old == candidateKey) {
                   // Parallel stuff are fun. Major edge case!
@@ -923,7 +923,7 @@ public:
                   split::s_atomicAdd(&_mapInfo->fill, 1);
                   if (threadOverflow > _mapInfo->currentMaxBucketOverflow) {
                      split::s_atomicExch((unsigned long long*)(&_mapInfo->currentMaxBucketOverflow),
-                                         (unsigned long long)nextPow2(threadOverflow));
+                                         (unsigned long long)nextOverflow(threadOverflow,defaults::WARPSIZE));
                   }
                } else if (old == candidateKey) {
                   // Parallel stuff are fun. Major edge case!
@@ -1614,7 +1614,7 @@ public:
    void set_element(const KEY_TYPE& key, VAL_TYPE val) {
       size_t thread_overflowLookup = 0;
       insert_element(key, val, thread_overflowLookup);
-      atomicMax((unsigned long long*)&(_mapInfo->currentMaxBucketOverflow), nextPow2(thread_overflowLookup));
+      atomicMax((unsigned long long*)&(_mapInfo->currentMaxBucketOverflow), nextOverflow(thread_overflowLookup,defaults::WARPSIZE/defaults::elementsPerWarp));
    }
 
    HASHINATOR_DEVICEONLY
