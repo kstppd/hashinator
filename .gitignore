@@ -13,3 +13,5 @@ storage/*
 manuscript/*
 compile_commands.json
 doc/
+subprojects/
+build/
