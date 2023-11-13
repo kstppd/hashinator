@@ -1177,7 +1177,7 @@ public:
       if (prefetches) {
          buckets.optimizeGPU(s);
       }
-      size_t neededPowerSize = std::ceil(std::log2((_mapInfo->fill + len) * (1.0 / targetLF)));
+      int64_t neededPowerSize = std::ceil(std::log2((_mapInfo->fill + len) * (1.0 / targetLF)));
       if (neededPowerSize > _mapInfo->sizePower) {
          resize(neededPowerSize, targets::device, s);
       }
@@ -1198,7 +1198,7 @@ public:
       if (prefetches) {
          buckets.optimizeGPU(s);
       }
-      size_t neededPowerSize = std::ceil(std::log2((_mapInfo->fill + len) * (1.0 / targetLF)));
+      int64_t neededPowerSize = std::ceil(std::log2((_mapInfo->fill + len) * (1.0 / targetLF)));
       if (neededPowerSize > _mapInfo->sizePower) {
          resize(neededPowerSize, targets::device, s);
       }
@@ -1219,7 +1219,7 @@ public:
          buckets.optimizeGPU(s);
       }
       // Here we do some calculations to estimate how much if any we need to grow our buckets
-      size_t neededPowerSize = std::ceil(std::log2(((_mapInfo->fill) + len) * (1.0 / targetLF)));
+      int64_t neededPowerSize = std::ceil(std::log2(((_mapInfo->fill) + len) * (1.0 / targetLF)));
       if (neededPowerSize > _mapInfo->sizePower) {
          resize(neededPowerSize, targets::device, s);
       }
@@ -1320,7 +1320,7 @@ public:
 
    public:
       HASHINATOR_DEVICEONLY
-      device_iterator(Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index) : hashtable(&hashtable), index(index) {}
+      device_iterator(Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index) : index(index),hashtable(&hashtable) {}
 
       HASHINATOR_DEVICEONLY
       size_t getIndex() { return index; }
@@ -1367,7 +1367,7 @@ public:
    public:
       HASHINATOR_DEVICEONLY
       explicit const_device_iterator(const Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index)
-          : hashtable(&hashtable), index(index) {}
+          : index(index), hashtable(&hashtable){}
 
       HASHINATOR_DEVICEONLY
       size_t getIndex() { return index; }

@@ -26,7 +26,7 @@ struct Predicate{
 
 // If fn returns void, only the time is returned
 template <class Fn, class ... Args>
-auto timer(char* name,int reps,Fn fn, Args && ... args){
+auto timer(const char* name,int reps,Fn fn, Args && ... args){
    static_assert(std::is_void<decltype(fn(args...))>::value,
                 "Call timer for non void return type");
    std::chrono::time_point<std::chrono::_V2::system_clock, std::chrono::_V2::system_clock::duration> start,stop;

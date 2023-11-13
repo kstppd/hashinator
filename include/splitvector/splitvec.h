@@ -1086,7 +1086,7 @@ public:
       }
 
       int64_t index = it.data() - begin().data();
-      if (index < 0 || index > size()) {
+      if (index < 0 || index > static_cast<int64_t>(size())) {
          throw std::out_of_range("Insert");
       }
 
@@ -1117,7 +1117,7 @@ public:
       int64_t index = it.data() - begin().data();
       size_t oldsize = size();
       size_t newSize = oldsize + elements;
-      if (index < 0 || index > size()) {
+      if (index < 0 || index > static_cast<int64_t>(size())) {
          throw std::out_of_range("Insert");
       }
 
@@ -1148,7 +1148,7 @@ public:
       const int64_t count = std::distance(p0, p1);
       const int64_t index = it.data() - begin().data();
 
-      if (index < 0 || index > size()) {
+      if (index < 0 || index > static_cast<int64_t>(size())) {
          throw std::out_of_range("Insert");
       }
 
@@ -1287,7 +1287,7 @@ public:
       const int64_t index = it.data() - begin().data();
       if constexpr (std::is_nothrow_destructible<T>::value) {
          _data[index].~T();
-         for (auto i = index; i < size() - 1; i++) {
+         for (size_t i = index; i < size() - 1; i++) {
             new (&_data[i]) T(_data[i + 1]);
             _data[i + 1].~T();
          }
@@ -1318,12 +1318,12 @@ public:
          for (int64_t i = 0; i < offset; i++) {
             _data[i].~T();
          }
-         for (auto i = start; i < size() - offset; ++i) {
+         for (size_t i = start; i < size() - offset; ++i) {
             new (&_data[i]) T(_data[i + offset]);
             _data[i + offset].~T();
          }
       } else {
-         for (auto i = start; i < size() - offset; ++i) {
+         for (size_t i = start; i < size() - offset; ++i) {
             new (&_data[i]) T(_data[i + offset]);
          }
       }
@@ -1346,7 +1346,7 @@ public:
    template <class... Args>
    iterator emplace(iterator pos, Args&&... args) {
       const int64_t index = pos.data() - begin().data();
-      if (index < 0 || index > size()) {
+      if (index < 0 || index > static_cast<int64_t>(size())) {
          throw new std::out_of_range("Out of range");
       }
       resize(size() + 1);

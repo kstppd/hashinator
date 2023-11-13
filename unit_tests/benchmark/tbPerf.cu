@@ -55,6 +55,8 @@ enum class METHOD{
 void precondition(hashmap& hmap,vector& src,key_vec& keys, val_vec& vals,size_t size){
    hmap.insert(src.data(),0.9*size,1);
    hmap.erase(keys.data(),0.2*(size));
+   (void)keys;
+   (void)vals;
 }
 
 void insert_control(hashmap& hmap,vector& src,key_vec& keys, val_vec& vals,size_t size,METHOD method){
@@ -70,6 +72,8 @@ void insert_control(hashmap& hmap,vector& src,key_vec& keys, val_vec& vals,size_
       default:
          assert(0 && "No method selected!");
    }
+   (void)keys;
+   (void)vals;
    hmap.insert(src.data(),0.1*size,1);
 }
 

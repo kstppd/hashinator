@@ -53,6 +53,7 @@ void benchInsert2(hashmap& hmap, hash_pair<key_type,val_type>*src,key_type* keys
    //hmap.clean_tombstones();
    hmap.insert(src,1<<sz,1);
    hmap.retrieve(keys,vals,1<<sz);
+   (void)deleteRatio;
    return ;
 }
 

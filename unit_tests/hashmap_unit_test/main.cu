@@ -42,6 +42,7 @@ auto execute_and_time(const char* name,Fn fn, Args && ... args) ->bool{
    auto duration = duration_cast<microseconds>(stop- start).count();
    total_time+=duration;
    //std::cout<<name<<" took "<<total_time<<" us"<<std::endl;
+   (void)name;
    return retval;
 }
 
@@ -337,8 +338,6 @@ bool testWarpInsert(int power){
    //duplicate test
    {
       size_t N = 1<<power;
-      size_t blocksize=BLOCKSIZE;
-      size_t blocks=N/blocksize;
       size_t warpsize     =  Hashinator::defaults::WARPSIZE;
       size_t threadsNeeded  =  N*warpsize; 
       blocks = threadsNeeded/BLOCKSIZE;
@@ -404,8 +403,6 @@ bool testWarpInsertUnorderedSet(int power){
    //duplicate test
    {
       size_t N = 1<<power;
-      size_t blocksize=BLOCKSIZE;
-      size_t blocks=N/blocksize;
       size_t warpsize     =  Hashinator::defaults::WARPSIZE;
       size_t threadsNeeded  =  N*warpsize; 
       blocks = threadsNeeded/BLOCKSIZE;
@@ -1024,7 +1021,7 @@ std::vector<key_type> generateUniqueRandomKeys(size_t size, size_t range=std::nu
     std::mt19937 gen(rd());
     std::uniform_int_distribution<int> dist(1, range);
 
-    for (int i = 0; i < size; ++i) {
+    for (size_t i = 0; i < size; ++i) {
         key_type randomNum = i;//dist(gen);
         if (std::find(elements.begin(), elements.end(), randomNum) == elements.end()) {
             elements.push_back(randomNum);

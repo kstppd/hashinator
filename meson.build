@@ -1,4 +1,4 @@
-project('Hashinator', 'cpp', 'cuda' ,default_options : ['cpp_std=c++20','warning_level=2','buildtype=debugoptimized'])
+project('Hashinator', 'cpp', 'cuda' ,default_options : ['cpp_std=c++20','warning_level=2','werror=true','buildtype=debugoptimized'])
  
 #Config
 add_global_arguments('-DHASHMAPDEBUG', language : 'cpp')
