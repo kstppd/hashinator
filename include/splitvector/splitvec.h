@@ -1292,7 +1292,7 @@ public:
             _data[i + 1].~T();
          }
       } else {
-         for (auto i = index; i < size() - 1; i++) {
+         for (auto i = static_cast<size_t>(index); i < size() - 1; i++) {
             new (&_data[i]) T(_data[i + 1]);
          }
       }

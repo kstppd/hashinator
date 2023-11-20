@@ -99,7 +99,7 @@ double test(int sz,vector& cpu_src,key_vec& keyBuffer,val_vec& valBuffer,METHOD 
 
 int main(){
    printf("Results for Control Sizepower-- Device Rehash -- Tombstone Cleaning\n");
-   for (int sz=10; sz<=24;sz++){
+   for (int sz=10; sz<=20;sz++){
       vector cpu_src;
       key_vec keyBuffer;
       val_vec valBuffer;
