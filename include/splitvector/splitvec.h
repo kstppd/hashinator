@@ -766,7 +766,7 @@ public:
    HOSTDEVICE
    void remove_from_back(size_t n) noexcept {
       const size_t end = size() - n;
-      if constexpr (std::is_nothrow_destructible<T>::value) {
+      if constexpr (!std::is_trivial<T>::value) {
          for (auto i = size(); i > end;) {
             (_data + --i)->~T();
          }
@@ -779,7 +779,7 @@ public:
     */
    HOSTDEVICE
    void clear() noexcept {
-      if constexpr (std::is_nothrow_destructible<T>::value) {
+      if constexpr (!std::is_trivial<T>::value) {
          for (size_t i = 0; i < size(); i++) {
             _data[i].~T();
          }
@@ -1285,14 +1285,14 @@ public:
    HOSTDEVICE
    iterator erase(iterator it) noexcept {
       const int64_t index = it.data() - begin().data();
-      if constexpr (std::is_nothrow_destructible<T>::value) {
+      if constexpr (!std::is_trivial<T>::value) {
          _data[index].~T();
          for (size_t i = index; i < size() - 1; i++) {
             new (&_data[i]) T(_data[i + 1]);
             _data[i + 1].~T();
          }
       } else {
-         for (auto i = index; i < size() - 1; i++) {
+         for (auto i = static_cast<size_t>(index); i < size() - 1; i++) {
             new (&_data[i]) T(_data[i + 1]);
          }
       }
@@ -1312,19 +1312,20 @@ public:
    iterator erase(iterator p0, iterator p1) noexcept {
       const int64_t start = p0.data() - begin().data();
       const int64_t end = p1.data() - begin().data();
-      const int64_t offset = end - start;
+      const int64_t range = end - start;
 
-      if constexpr (std::is_nothrow_destructible<T>::value) {
-         for (int64_t i = 0; i < offset; i++) {
+      const size_t sz=size();
+      if constexpr (!std::is_trivial<T>::value) {
+         for (int64_t i = start; i < end; i++) {
             _data[i].~T();
          }
-         for (size_t i = start; i < size() - offset; ++i) {
-            new (&_data[i]) T(_data[i + offset]);
-            _data[i + offset].~T();
+         for (size_t i = start; i < sz - range; ++i) {
+            new (&_data[i]) T(_data[i + range]);
+            _data[i + range].~T();
          }
       } else {
-         for (size_t i = start; i < size() - offset; ++i) {
-            new (&_data[i]) T(_data[i + offset]);
+         for (size_t i = start; i < sz - range; ++i) {
+            new (&_data[i]) T(_data[i + range]);
          }
       }
       *_size -= end - start;
