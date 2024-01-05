@@ -22,6 +22,13 @@
 ## Installation
 No installation required. Just include  "hashinator.h" . However, if you plan to use Hashinator at its full potential you will need a system with a dedicated GPU card, either NVIDIA or AMD and  a healthy installation of CUDA or ROCm. Hashinator rerquires at least ```cuda-9.0``` or ```rocm 5.4```. To run the tests ```googletest``` needs to be installed.
 
+## Run the tests   
+```
+meson wrap install gtest # skip if you have gtest installed system wide and pkg-config can find it. 
+meson setup build  --buildtype=release 
+meson test -C build
+```
+
 ## Example Usage: 
 ### SplitVector: Basic Usage on host  
 ```c++
