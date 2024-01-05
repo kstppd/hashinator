@@ -28,6 +28,7 @@
 #include <iostream>
 #include <memory>
 #include <stdlib.h>
+#include <vector>
 
 #ifndef SPLIT_CPU_ONLY_MODE
 #ifdef __NVCC__
@@ -765,7 +766,7 @@ public:
    HOSTDEVICE
    void remove_from_back(size_t n) noexcept {
       const size_t end = size() - n;
-      if constexpr (std::is_nothrow_destructible<T>::value) {
+      if constexpr (!std::is_trivial<T>::value) {
          for (auto i = size(); i > end;) {
             (_data + --i)->~T();
          }
@@ -778,7 +779,7 @@ public:
     */
    HOSTDEVICE
    void clear() noexcept {
-      if constexpr (std::is_nothrow_destructible<T>::value) {
+      if constexpr (!std::is_trivial<T>::value) {
          for (size_t i = 0; i < size(); i++) {
             _data[i].~T();
          }
@@ -1085,7 +1086,7 @@ public:
       }
 
       int64_t index = it.data() - begin().data();
-      if (index < 0 || index > size()) {
+      if (index < 0 || index > static_cast<int64_t>(size())) {
          throw std::out_of_range("Insert");
       }
 
@@ -1116,7 +1117,7 @@ public:
       int64_t index = it.data() - begin().data();
       size_t oldsize = size();
       size_t newSize = oldsize + elements;
-      if (index < 0 || index > size()) {
+      if (index < 0 || index > static_cast<int64_t>(size())) {
          throw std::out_of_range("Insert");
       }
 
@@ -1147,7 +1148,7 @@ public:
       const int64_t count = std::distance(p0, p1);
       const int64_t index = it.data() - begin().data();
 
-      if (index < 0 || index > size()) {
+      if (index < 0 || index > static_cast<int64_t>(size())) {
          throw std::out_of_range("Insert");
       }
 
@@ -1284,14 +1285,14 @@ public:
    HOSTDEVICE
    iterator erase(iterator it) noexcept {
       const int64_t index = it.data() - begin().data();
-      if constexpr (std::is_nothrow_destructible<T>::value) {
+      if constexpr (!std::is_trivial<T>::value) {
          _data[index].~T();
-         for (auto i = index; i < size() - 1; i++) {
+         for (size_t i = index; i < size() - 1; i++) {
             new (&_data[i]) T(_data[i + 1]);
             _data[i + 1].~T();
          }
       } else {
-         for (auto i = index; i < size() - 1; i++) {
+         for (auto i = static_cast<size_t>(index); i < size() - 1; i++) {
             new (&_data[i]) T(_data[i + 1]);
          }
       }
@@ -1311,19 +1312,20 @@ public:
    iterator erase(iterator p0, iterator p1) noexcept {
       const int64_t start = p0.data() - begin().data();
       const int64_t end = p1.data() - begin().data();
-      const int64_t offset = end - start;
+      const int64_t range = end - start;
 
-      if constexpr (std::is_nothrow_destructible<T>::value) {
-         for (int64_t i = 0; i < offset; i++) {
+      const size_t sz=size();
+      if constexpr (!std::is_trivial<T>::value) {
+         for (int64_t i = start; i < end; i++) {
             _data[i].~T();
          }
-         for (auto i = start; i < size() - offset; ++i) {
-            new (&_data[i]) T(_data[i + offset]);
-            _data[i + offset].~T();
+         for (size_t i = start; i < sz - range; ++i) {
+            new (&_data[i]) T(_data[i + range]);
+            _data[i + range].~T();
          }
       } else {
-         for (auto i = start; i < size() - offset; ++i) {
-            new (&_data[i]) T(_data[i + offset]);
+         for (size_t i = start; i < sz - range; ++i) {
+            new (&_data[i]) T(_data[i + range]);
          }
       }
       *_size -= end - start;
@@ -1345,7 +1347,7 @@ public:
    template <class... Args>
    iterator emplace(iterator pos, Args&&... args) {
       const int64_t index = pos.data() - begin().data();
-      if (index < 0 || index > size()) {
+      if (index < 0 || index > static_cast<int64_t>(size())) {
          throw new std::out_of_range("Out of range");
       }
       resize(size() + 1);

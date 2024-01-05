@@ -53,9 +53,6 @@ bool recover_elements(const hashmap& hmap, keyval_type* keys, keyval_type* vals,
 
 bool test_hashmap_insertionDM(keyval_type power){
    size_t N = 1<<power;
-   size_t blocksize=BLOCKSIZE;
-   size_t blocks=2*N/blocksize;
-
    vector keys(N);
    vector vals(N);
    fill_input(keys.data(),vals.data(),N);

@@ -13,3 +13,8 @@ storage/*
 manuscript/*
 compile_commands.json
 doc/
+subprojects/
+build/
+.cache/
+*.lock
+*.temp

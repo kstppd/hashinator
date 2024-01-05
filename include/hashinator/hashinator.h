@@ -822,7 +822,7 @@ public:
                   split::s_atomicAdd(&_mapInfo->fill, 1);
                   if (threadOverflow > _mapInfo->currentMaxBucketOverflow) {
                      split::s_atomicExch((unsigned long long*)(&_mapInfo->currentMaxBucketOverflow),
-                                         (unsigned long long)nextPow2(threadOverflow));
+                                         (unsigned long long)nextOverflow(threadOverflow,defaults::WARPSIZE));
                   }
                } else if (old == candidateKey) {
                   // Parallel stuff are fun. Major edge case!
@@ -907,7 +907,7 @@ public:
                   split::s_atomicAdd(&_mapInfo->fill, 1);
                   if (threadOverflow > _mapInfo->currentMaxBucketOverflow) {
                      split::s_atomicExch((unsigned long long*)(&_mapInfo->currentMaxBucketOverflow),
-                                         (unsigned long long)nextPow2(threadOverflow));
+                                         (unsigned long long)nextOverflow(threadOverflow,defaults::WARPSIZE));
                   }
                } else if (old == candidateKey) {
                   // Parallel stuff are fun. Major edge case!
@@ -1177,7 +1177,7 @@ public:
       if (prefetches) {
          buckets.optimizeGPU(s);
       }
-      size_t neededPowerSize = std::ceil(std::log2((_mapInfo->fill + len) * (1.0 / targetLF)));
+      int64_t neededPowerSize = std::ceil(std::log2((_mapInfo->fill + len) * (1.0 / targetLF)));
       if (neededPowerSize > _mapInfo->sizePower) {
          resize(neededPowerSize, targets::device, s);
       }
@@ -1198,7 +1198,7 @@ public:
       if (prefetches) {
          buckets.optimizeGPU(s);
       }
-      size_t neededPowerSize = std::ceil(std::log2((_mapInfo->fill + len) * (1.0 / targetLF)));
+      int64_t neededPowerSize = std::ceil(std::log2((_mapInfo->fill + len) * (1.0 / targetLF)));
       if (neededPowerSize > _mapInfo->sizePower) {
          resize(neededPowerSize, targets::device, s);
       }
@@ -1219,7 +1219,7 @@ public:
          buckets.optimizeGPU(s);
       }
       // Here we do some calculations to estimate how much if any we need to grow our buckets
-      size_t neededPowerSize = std::ceil(std::log2(((_mapInfo->fill) + len) * (1.0 / targetLF)));
+      int64_t neededPowerSize = std::ceil(std::log2(((_mapInfo->fill) + len) * (1.0 / targetLF)));
       if (neededPowerSize > _mapInfo->sizePower) {
          resize(neededPowerSize, targets::device, s);
       }
@@ -1320,7 +1320,7 @@ public:
 
    public:
       HASHINATOR_DEVICEONLY
-      device_iterator(Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index) : hashtable(&hashtable), index(index) {}
+      device_iterator(Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index) : index(index),hashtable(&hashtable) {}
 
       HASHINATOR_DEVICEONLY
       size_t getIndex() { return index; }
@@ -1367,7 +1367,7 @@ public:
    public:
       HASHINATOR_DEVICEONLY
       explicit const_device_iterator(const Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index)
-          : hashtable(&hashtable), index(index) {}
+          : index(index), hashtable(&hashtable){}
 
       HASHINATOR_DEVICEONLY
       size_t getIndex() { return index; }
@@ -1578,7 +1578,7 @@ public:
    void set_element(const KEY_TYPE& key, VAL_TYPE val) {
       size_t thread_overflowLookup = 0;
       insert_element(key, val, thread_overflowLookup);
-      atomicMax((unsigned long long*)&(_mapInfo->currentMaxBucketOverflow), nextPow2(thread_overflowLookup));
+      atomicMax((unsigned long long*)&(_mapInfo->currentMaxBucketOverflow), nextOverflow(thread_overflowLookup,defaults::WARPSIZE/defaults::elementsPerWarp));
    }
 
    HASHINATOR_DEVICEONLY

@@ -76,8 +76,8 @@ insertion_mechanism.o: insertion_mechanism/main.cu
 pointer_test.o: pointer_test/main.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o pointertest pointer_test/main.cu
 
-hybrid_gpu.o: hybrid/main.cpp
-	${CC} -x cu  ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o hybrid_gpu hybrid/main.cpp
+hybrid_gpu.o: hybrid/main.cu
+	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o hybrid_gpu hybrid/main.cu
 
-hybrid_cpu.o: hybrid/main.cpp
-	${CCC} -L//home/kstppd/libs/googletest/build/lib  -I/home/kstppd/libs/googletest/googletest/include   -DHASHINATOR_CPU_ONLY_MODE  ${CXXFLAGS}    -std=c++17 -o hybrid_cpu hybrid/main.cpp   -lgtest -lgtest_main
+hybrid_cpu.o: hybrid/main.cu
+	${CC} -L//home/kstppd/libs/googletest/build/lib  -I/home/kstppd/libs/googletest/googletest/include   -DHASHINATOR_CPU_ONLY_MODE  ${CXXFLAGS}    -std=c++17 -o hybrid_cpu hybrid/main.cu   -lgtest -lgtest_main

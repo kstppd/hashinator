@@ -77,10 +77,6 @@ public:
     */
    split_unified_allocator() throw() {}
 
-   /**
-    * @brief Copy constructor.
-    */
-   split_unified_allocator(split_unified_allocator const&) throw() {}
 
    /**
     * @brief Copy constructor with different type.
@@ -241,11 +237,6 @@ public:
     * @brief Default constructor.
     */
    split_host_allocator() throw() {}
-
-   /**
-    * @brief Copy constructor.
-    */
-   split_host_allocator(split_host_allocator const&) throw() {}
 
    /**
     * @brief Copy constructor with different type.
