@@ -87,7 +87,6 @@ __global__ void reset_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY
    hash_pair<KEY_TYPE, VAL_TYPE> candidate = src[wid];
    const int bitMask = (1 << (sizePower)) - 1;
    const auto hashIndex = HashFunction::_hash(candidate.first, sizePower);
-   const size_t optimalindex = (hashIndex)&bitMask;
    uint32_t vWarpDone = 0; // state of virtual warp
 
    for (size_t i = 0; i < (1 << sizePower); i += VIRTUALWARP) {
@@ -169,10 +168,9 @@ __global__ void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_
    hash_pair<KEY_TYPE, VAL_TYPE> candidate = src[wid];
    const int bitMask = (1 << (sizePower)) - 1;
    const auto hashIndex = HashFunction::_hash(candidate.first, sizePower);
-   const size_t optimalindex = (hashIndex)&bitMask;
    uint32_t vWarpDone = 0; // state of virtual warp
    uint32_t localCount = 0;
-   uint64_t threadOverflow = 1;
+   uint64_t threadOverflow = 0;
 
    for (size_t i = 0; i < (1 << sizePower); i += VIRTUALWARP) {
 
@@ -210,7 +208,7 @@ __global__ void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_
          if (w_tid == sub_winner) {
             KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidate.first);
             if (old == EMPTYBUCKET) {
-               threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex);
+               threadOverflow = std::min(i+w_tid,static_cast<size_t>(1<<sizePower)) +1;
                split::s_atomicExch(&buckets[probingindex].second, candidate.second);
                vWarpDone = 1;
                // Flip the bit which corresponds to the thread that added an element
@@ -254,7 +252,7 @@ __global__ void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_
       int blockTotal = warpReduce<WARPSIZE>(addMask[(proper_w_tid)]);
       // First thread updates fill and overlfow (1 update per block)
       if (proper_w_tid == 0) {
-         atomicMax((unsigned long long*)d_overflow, (unsigned long long)nextPow2(blockOverflow));
+         atomicMax((unsigned long long*)d_overflow, (unsigned long long)nextOverflow(blockOverflow,VIRTUALWARP));
          split::s_atomicAdd(d_fill, blockTotal);
          ;
       }
@@ -330,10 +328,9 @@ __global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE
    VAL_TYPE candidateVal = vals[wid];
    const int bitMask = (1 << (sizePower)) - 1;
    const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
-   const size_t optimalindex = (hashIndex)&bitMask;
    uint32_t vWarpDone = 0; // state of virtual warp
    uint32_t localCount = 0;
-   uint64_t threadOverflow = 1;
+   uint64_t threadOverflow = 0;
 
    for (size_t i = 0; i < (1 << sizePower); i += VIRTUALWARP) {
 
@@ -371,7 +368,7 @@ __global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE
          if (w_tid == sub_winner) {
             KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
             if (old == EMPTYBUCKET) {
-               threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex);
+               threadOverflow = std::min(i+w_tid,static_cast<size_t>(1<<sizePower)) +1;
                split::s_atomicExch(&buckets[probingindex].second, candidateVal);
                vWarpDone = 1;
                // Flip the bit which corresponds to the thread that added an element
@@ -415,7 +412,7 @@ __global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE
       int blockTotal = warpReduce<WARPSIZE>(addMask[(proper_w_tid)]);
       // First thread updates fill and overlfow (1 update per block)
       if (proper_w_tid == 0) {
-         atomicMax((unsigned long long*)d_overflow, (unsigned long long)nextPow2(blockOverflow));
+         atomicMax((unsigned long long*)d_overflow, (unsigned long long)nextOverflow(blockOverflow,VIRTUALWARP));
          split::s_atomicAdd(d_fill, blockTotal);
          ;
       }
@@ -491,10 +488,9 @@ __global__ void insert_index_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE
    VAL_TYPE candidateVal = wid;
    const int bitMask = (1 << (sizePower)) - 1;
    const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
-   const size_t optimalindex = (hashIndex)&bitMask;
    uint32_t vWarpDone = 0; // state of virtual warp
    uint32_t localCount = 0;
-   uint64_t threadOverflow = 1;
+   uint64_t threadOverflow = 0;
 
    for (size_t i = 0; i < (1 << sizePower); i += VIRTUALWARP) {
 
@@ -532,7 +528,7 @@ __global__ void insert_index_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE
          if (w_tid == sub_winner) {
             KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
             if (old == EMPTYBUCKET) {
-               threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex);
+               threadOverflow = std::min(i+w_tid,static_cast<size_t>(1<<sizePower)) +1;
                split::s_atomicExch(&buckets[probingindex].second, candidateVal);
                vWarpDone = 1;
                // Flip the bit which corresponds to the thread that added an element
@@ -576,7 +572,7 @@ __global__ void insert_index_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE
       int blockTotal = warpReduce<WARPSIZE>(addMask[(proper_w_tid)]);
       // First thread updates fill and overlfow (1 update per block)
       if (proper_w_tid == 0) {
-         atomicMax((unsigned long long*)d_overflow, (unsigned long long)nextPow2(blockOverflow));
+         atomicMax((unsigned long long*)d_overflow, (unsigned long long)nextOverflow(blockOverflow,VIRTUALWARP));
          split::s_atomicAdd(d_fill, blockTotal);
          ;
       }
@@ -622,7 +618,6 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
    }
    __syncthreads();
 
-
    uint32_t subwarp_relative_index = (wid) % (WARPSIZE / VIRTUALWARP);
    uint32_t submask;
    if constexpr (elementsPerWarp == 1) {
@@ -640,19 +635,17 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
    uint32_t vWarpDone = 0; // state of virtual warp
 
    for (size_t i = 0; i < maxoverflow; i += VIRTUALWARP) {
-      if (vWarpDone){
+      if (vWarpDone) {
          break;
       }
 
       // Get the position we should be looking into
       size_t probingindex = ((hashIndex + i + w_tid) & bitMask);
-      const auto maskExists =
-          split::s_warpVote(buckets[probingindex].first == candidateKey,submask);
-      const auto emptyFound =
-          split::s_warpVote(buckets[probingindex].first == EMPTYBUCKET, submask) ;
+      const auto maskExists = split::s_warpVote(buckets[probingindex].first == candidateKey, submask);
+      const auto emptyFound = split::s_warpVote(buckets[probingindex].first == EMPTYBUCKET, submask);
       // If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
       if (!maskExists && emptyFound) {
-         vWarpDone=1;
+         vWarpDone = 1;
       }
       if (maskExists) {
          int winner = split::s_findFirstSig(maskExists) - 1;
@@ -660,8 +653,8 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
          if (w_tid == winner) {
             split::s_atomicExch(&buckets[probingindex].first, TOMBSTONE);
             localCount++;
-            //split::s_atomicAdd(d_tombstoneCounter, 1);
-            vWarpDone=1;
+            // split::s_atomicAdd(d_tombstoneCounter, 1);
+            vWarpDone = 1;
          }
       }
       vWarpDone = split::s_warpVoteAny(vWarpDone, submask);

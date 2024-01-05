@@ -42,6 +42,7 @@ auto execute_and_time(const char* name,Fn fn, Args && ... args) ->bool{
    auto duration = duration_cast<microseconds>(stop- start).count();
    total_time+=duration;
    //std::cout<<name<<" took "<<total_time<<" us"<<std::endl;
+   (void)name;
    return retval;
 }
 
@@ -337,8 +338,6 @@ bool testWarpInsert(int power){
    //duplicate test
    {
       size_t N = 1<<power;
-      size_t blocksize=BLOCKSIZE;
-      size_t blocks=N/blocksize;
       size_t warpsize     =  Hashinator::defaults::WARPSIZE;
       size_t threadsNeeded  =  N*warpsize; 
       blocks = threadsNeeded/BLOCKSIZE;
@@ -404,8 +403,6 @@ bool testWarpInsertUnorderedSet(int power){
    //duplicate test
    {
       size_t N = 1<<power;
-      size_t blocksize=BLOCKSIZE;
-      size_t blocks=N/blocksize;
       size_t warpsize     =  Hashinator::defaults::WARPSIZE;
       size_t threadsNeeded  =  N*warpsize; 
       blocks = threadsNeeded/BLOCKSIZE;
@@ -787,6 +784,26 @@ bool test_hashmap_4(int power){
    return true;
 }
 
+TEST(HashmapUnitTets , Test_Construction){
+   hashmap map0(12);
+   expect_true(map0.size()==0);
+   for (key_type i=0 ; i< 1<<11; i++){
+      map0[i]=i;
+   }
+   expect_true(map0.size()==1<<11);
+   hashmap map1(map0);
+   expect_true(map1.size()==1<<11);
+   hashmap map2 = map0;
+   expect_true(map2.size()==1<<11);
+   hashmap map3(hashmap(12));
+   expect_true(map3.size()==0);
+   expect_true(map3.bucket_count()==1<<12);
+   map3=hashmap(13);
+   expect_true(map3.size()==0);
+   expect_true(map3.bucket_count()==1<<13);
+}
+
+
 
 TEST(HashmapUnitTets , Test1_HostDevice_UploadDownload){
    for (int power=MINPOWER; power<MAXPOWER; ++power){
@@ -1004,7 +1021,7 @@ std::vector<key_type> generateUniqueRandomKeys(size_t size, size_t range=std::nu
     std::mt19937 gen(rd());
     std::uniform_int_distribution<int> dist(1, range);
 
-    for (int i = 0; i < size; ++i) {
+    for (size_t i = 0; i < size; ++i) {
         key_type randomNum = i;//dist(gen);
         if (std::find(elements.begin(), elements.end(), randomNum) == elements.end()) {
             elements.push_back(randomNum);

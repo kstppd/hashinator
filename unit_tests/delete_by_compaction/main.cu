@@ -102,6 +102,7 @@ bool test_hashmap_1(val_type power){
    split_gpuDeviceSynchronize();
    auto stop = std::chrono::high_resolution_clock::now();
    auto duration = duration_cast<microseconds>(stop- start).count();
+   (void)duration;
    ////std::cout<<"Write Time (us)= "<<duration<<std::endl;
    //double hashrate=  1e6*((double)src.size()/duration) ;
    //std::cout<<"Hashrate Naive= "<<hashrate<<std::endl;

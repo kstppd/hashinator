@@ -247,6 +247,7 @@ TEST(Vector_Functionality , Insert_1_Element){
       expect_true(a[0]=-1);
       expect_true(a.size()==s0+1);
       expect_true(a.capacity()>c0);
+      (void)it2;
    }
    {
       vec a{1,2,3,4,5,6,7,8,9,10};
@@ -257,6 +258,7 @@ TEST(Vector_Functionality , Insert_1_Element){
       expect_true(a[a.size()-1]=-1);
       expect_true(a.size()==s0+1);
       expect_true(a.capacity()>c0);
+      (void)it2;
    }
    {
       vec a{1,2,3,4,5,6,7,8,9,10};
@@ -266,6 +268,7 @@ TEST(Vector_Functionality , Insert_1_Element){
       expect_true(a[4]=-1);
       expect_true(a.size()==s0+1);
       expect_true(a.capacity()>c0);
+      (void)it2;
    }
    {
      vec a{1,2,3,4,5,6,7,8,9,10};
@@ -274,6 +277,7 @@ TEST(Vector_Functionality , Insert_1_Element){
       //hehe
       vec::iterator it(nullptr);
       auto it2=a.insert(it,-1);
+      (void)it2;
      }// this has to throw
      catch (...) {
         expect_true(true);
@@ -299,17 +303,19 @@ TEST(Vector_Functionality , Insert_Many_Elements){
       }
       expect_true(a.front()==-1);
       expect_true(a.size()==s0+10);
+      (void)it2;
    }
    {
       vec a{1,2,3,4,5,6,7,8,9,10};
       auto s0=a.size(); auto c0=a.capacity();
       vec::iterator it(a.end());
       auto it2=a.insert(it,10,-1);
-      for (int i =s0 ; i<a.size() ; i++){
+      for (size_t i =s0 ; i<a.size() ; i++){
          expect_true(a[i]=-1);
       }
       expect_true(a.back()=-1);
       expect_true(a.size()==s0+10);
+      (void)it2;
    }
 
    {
@@ -319,6 +325,7 @@ TEST(Vector_Functionality , Insert_Many_Elements){
       //hehe
       vec::iterator it(nullptr);
       auto it2=a.insert(it,10,-1);
+      (void)it2;
      }// this has to throw
      catch (...) {
         expect_true(true);

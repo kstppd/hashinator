@@ -28,6 +28,7 @@
 #include <iostream>
 #include <memory>
 #include <stdlib.h>
+#include <vector>
 
 #ifndef SPLIT_CPU_ONLY_MODE
 #ifdef __NVCC__
@@ -259,6 +260,7 @@ public:
       this->_allocate(size_to_allocate);
       if constexpr (std::is_trivially_copyable<T>::value) {
          if (other._location == Residency::device) {
+            _location = Residency::device;
             optimizeGPU();
             SPLIT_CHECK_ERR(
                 split_gpuMemcpy(_data, other._data, size_to_allocate * sizeof(T), split_gpuMemcpyDeviceToDevice));
@@ -321,6 +323,9 @@ public:
  */
 #ifdef SPLIT_CPU_ONLY_MODE
    HOSTONLY SplitVector<T, Allocator>& operator=(const SplitVector<T, Allocator>& other) {
+      if (this == &other) {
+         return *this;
+      }
       // Match other's size prior to copying
       resize(other.size());
       for (size_t i = 0; i < other.size(); i++) {
@@ -331,6 +336,9 @@ public:
 #else
 
    HOSTONLY SplitVector<T, Allocator>& operator=(const SplitVector<T, Allocator>& other) {
+      if (this == &other) {
+         return *this;
+      }
       // Match other's size prior to copying
       resize(other.size());
       auto copySafe = [&]() -> void {
@@ -341,6 +349,7 @@ public:
 
       if constexpr (std::is_trivially_copyable<T>::value) {
          if (other._location == Residency::device) {
+            _location = Residency::device;
             optimizeGPU();
             SPLIT_CHECK_ERR(split_gpuMemcpy(_data, other._data, size() * sizeof(T), split_gpuMemcpyDeviceToDevice));
             return *this;
@@ -437,9 +446,6 @@ public:
     * @param stream The GPU stream to perform the prefetch on.
     */
    HOSTONLY void optimizeGPU(split_gpuStream_t stream = 0) noexcept {
-      if (_location == Residency::device) {
-         return;
-      }
       _location = Residency::device;
       int device;
       SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
@@ -448,6 +454,9 @@ public:
       // This is done because _capacity would page-fault otherwise as pointed by Markus
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), split_gpuCpuDeviceId, stream));
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+      if (*_capacity==0){
+         return;
+      }
 
       // Now prefetch everything to device
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_data, capacity() * sizeof(T), device, stream));
@@ -461,13 +470,13 @@ public:
     * @param stream The GPU stream to perform the prefetch on.
     */
    HOSTONLY void optimizeCPU(split_gpuStream_t stream = 0) noexcept {
-      if (_location == Residency::host) {
-         return;
-      }
       _location = Residency::host;
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), split_gpuCpuDeviceId, stream));
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_size, sizeof(size_t), split_gpuCpuDeviceId, stream));
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
+      if (*_capacity==0){
+         return;
+      }
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_data, capacity() * sizeof(T), split_gpuCpuDeviceId, stream));
    }
 
@@ -482,6 +491,15 @@ public:
       SPLIT_CHECK_ERR(split_gpuStreamAttachMemAsync(s, (void*)_capacity, sizeof(size_t), flags));
       SPLIT_CHECK_ERR(split_gpuStreamAttachMemAsync(s, (void*)_data, *_capacity * sizeof(T), flags));
       return;
+   }
+
+   /**
+    * @brief  Returns the residency information of this
+    *         Splitvector
+    */
+   HOSTDEVICE
+   [[nodiscard]] inline Residency getResidency()const noexcept{
+      return _location;
    }
 
    /**
@@ -748,7 +766,7 @@ public:
    HOSTDEVICE
    void remove_from_back(size_t n) noexcept {
       const size_t end = size() - n;
-      if constexpr (std::is_nothrow_destructible<T>::value) {
+      if constexpr (!std::is_trivial<T>::value) {
          for (auto i = size(); i > end;) {
             (_data + --i)->~T();
          }
@@ -761,7 +779,7 @@ public:
     */
    HOSTDEVICE
    void clear() noexcept {
-      if constexpr (std::is_nothrow_destructible<T>::value) {
+      if constexpr (!std::is_trivial<T>::value) {
          for (size_t i = 0; i < size(); i++) {
             _data[i].~T();
          }
@@ -1068,7 +1086,7 @@ public:
       }
 
       int64_t index = it.data() - begin().data();
-      if (index < 0 || index > size()) {
+      if (index < 0 || index > static_cast<int64_t>(size())) {
          throw std::out_of_range("Insert");
       }
 
@@ -1099,14 +1117,12 @@ public:
       int64_t index = it.data() - begin().data();
       size_t oldsize = size();
       size_t newSize = oldsize + elements;
-      if (index < 0 || index > size()) {
+      if (index < 0 || index > static_cast<int64_t>(size())) {
          throw std::out_of_range("Insert");
       }
 
       // Do we do need to increase our capacity?
-      if (newSize > size()) {
-         resize(newSize);
-      }
+      resize(newSize);
 
       it = begin().data() + index;
       iterator last = it.data() + oldsize;
@@ -1132,14 +1148,12 @@ public:
       const int64_t count = std::distance(p0, p1);
       const int64_t index = it.data() - begin().data();
 
-      if (index < 0 || index > size()) {
+      if (index < 0 || index > static_cast<int64_t>(size())) {
          throw std::out_of_range("Insert");
       }
 
       size_t old_size = size();
-      if (size() + count > capacity()) {
-         resize(capacity() + count);
-      }
+      resize(size() + count);
 
       iterator retval = &_data[index];
       std::move(retval, iterator(&_data[old_size]), retval.data() + count);
@@ -1238,10 +1252,7 @@ public:
                      "space available.");
       }
 
-      // Do we do need to increase our capacity?
-      if (newSize > size()) {
-         device_resize(newSize);
-      }
+      device_resize(newSize);
 
       it = begin().data() + index;
       iterator last = it.data() + oldsize;
@@ -1274,14 +1285,14 @@ public:
    HOSTDEVICE
    iterator erase(iterator it) noexcept {
       const int64_t index = it.data() - begin().data();
-      if constexpr (std::is_nothrow_destructible<T>::value) {
+      if constexpr (!std::is_trivial<T>::value) {
          _data[index].~T();
-         for (auto i = index; i < size() - 1; i++) {
+         for (size_t i = index; i < size() - 1; i++) {
             new (&_data[i]) T(_data[i + 1]);
             _data[i + 1].~T();
          }
       } else {
-         for (auto i = index; i < size() - 1; i++) {
+         for (auto i = static_cast<size_t>(index); i < size() - 1; i++) {
             new (&_data[i]) T(_data[i + 1]);
          }
       }
@@ -1301,19 +1312,20 @@ public:
    iterator erase(iterator p0, iterator p1) noexcept {
       const int64_t start = p0.data() - begin().data();
       const int64_t end = p1.data() - begin().data();
-      const int64_t offset = end - start;
+      const int64_t range = end - start;
 
-      if constexpr (std::is_nothrow_destructible<T>::value) {
-         for (int64_t i = 0; i < offset; i++) {
+      const size_t sz=size();
+      if constexpr (!std::is_trivial<T>::value) {
+         for (int64_t i = start; i < end; i++) {
             _data[i].~T();
          }
-         for (auto i = start; i < size() - offset; ++i) {
-            new (&_data[i]) T(_data[i + offset]);
-            _data[i + offset].~T();
+         for (size_t i = start; i < sz - range; ++i) {
+            new (&_data[i]) T(_data[i + range]);
+            _data[i + range].~T();
          }
       } else {
-         for (auto i = start; i < size() - offset; ++i) {
-            new (&_data[i]) T(_data[i + offset]);
+         for (size_t i = start; i < sz - range; ++i) {
+            new (&_data[i]) T(_data[i + range]);
          }
       }
       *_size -= end - start;
@@ -1335,7 +1347,7 @@ public:
    template <class... Args>
    iterator emplace(iterator pos, Args&&... args) {
       const int64_t index = pos.data() - begin().data();
-      if (index < 0 || index > size()) {
+      if (index < 0 || index > static_cast<int64_t>(size())) {
          throw new std::out_of_range("Out of range");
       }
       resize(size() + 1);

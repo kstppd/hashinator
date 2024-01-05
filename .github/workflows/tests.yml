@@ -14,5 +14,5 @@ jobs:
     - uses: actions/checkout@v3
     - name: run_tests
       shell: bash
-      run: cd unit_tests; ./run_tests.sh
+      run: mkdir subprojects build; meson wrap install gtest ; meson setup build; meson test -C build/ -t 10 --num-processes 1 ;
     

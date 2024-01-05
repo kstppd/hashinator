@@ -99,6 +99,9 @@ private:
 
    // Deallocates the bookeepping info and the device pointer
    void deallocate_device_handles() {
+      if (device_map==nullptr){
+         return;
+      }
 #ifndef HASHINATOR_CPU_ONLY_MODE
       SPLIT_CHECK_ERR(split_gpuFree(device_map));
       device_map = nullptr;
@@ -131,6 +134,33 @@ public:
       *_mapInfo = *(other._mapInfo);
       buckets = other.buckets;
    };
+
+   Hashmap(Hashmap<KEY_TYPE, VAL_TYPE>&& other) {
+      preallocate_device_handles();
+      _mapInfo = other._mapInfo;
+      other._mapInfo=nullptr;
+      buckets = std::move(other.buckets);
+   };
+
+   Hashmap& operator=(const Hashmap<KEY_TYPE,VAL_TYPE>& other) {
+      if (this == &other) {
+         return *this;
+      }
+      *_mapInfo = *(other._mapInfo);
+      buckets = other.buckets;
+      return *this;
+   }
+
+   Hashmap& operator=(Hashmap<KEY_TYPE,VAL_TYPE>&& other) {
+      if (this == &other) {
+         return *this;
+      }
+      _metaAllocator.deallocate(_mapInfo, 1);
+      _mapInfo = other._mapInfo;
+      other._mapInfo=nullptr;
+      buckets =std::move(other.buckets);
+      return *this;
+   }
 
    ~Hashmap() {
       deallocate_device_handles();
@@ -376,8 +406,10 @@ public:
    HASHINATOR_HOSTDEVICE
    size_t bucket_count() const { return buckets.size(); }
 
+   HASHINATOR_HOSTDEVICE
    float load_factor() const { return (float)size() / bucket_count(); }
 
+   HASHINATOR_HOSTDEVICE
    size_t count(const KEY_TYPE& key) const {
       if (find(key) != end()) {
          return 1;
@@ -445,6 +477,7 @@ public:
    }
 #endif
 
+   HASHINATOR_HOSTDEVICE
    void print_pair(const hash_pair<KEY_TYPE, VAL_TYPE>& i) const {
       size_t currentSizePower = _mapInfo->sizePower;
       const size_t hashIndex = HashFunction::_hash(i.first, currentSizePower);
@@ -465,6 +498,7 @@ public:
       }
    }
 
+   HASHINATOR_HOSTDEVICE
    void dump_buckets() const {
       printf("Hashinator Stats \n");
       printf("Fill= %zu, LoadFactor=%f \n", _mapInfo->fill, load_factor());
@@ -475,16 +509,19 @@ public:
       std::cout << std::endl;
    }
 
+   HASHINATOR_HOSTDEVICE
    void stats() const {
       printf("Hashinator Stats \n");
-      printf("Bucket size= %zu\n", buckets.size());
-      printf("Fill= %zu, LoadFactor=%f \n", _mapInfo->fill, load_factor());
-      printf("Tombstones= %zu\n", _mapInfo->tombstoneCounter);
-      printf("Overflow= %zu\n", _mapInfo->currentMaxBucketOverflow);
+      printf("Bucket size= %lu\n", buckets.size());
+      printf("Fill= %lu, LoadFactor=%f \n", _mapInfo->fill, load_factor());
+      printf("Tombstones= %lu\n", _mapInfo->tombstoneCounter);
+      printf("Overflow= %lu\n", _mapInfo->currentMaxBucketOverflow);
    }
 
+   HASHINATOR_HOSTDEVICE
    size_t tombstone_count() const { return _mapInfo->tombstoneCounter; }
 
+   HASHINATOR_HOSTDEVICE
    float tombstone_ratio() const {
       if (tombstone_count() == 0) {
          return 0.0;
@@ -514,7 +551,7 @@ public:
    // Try to get the overflow back to the original one
    void performCleanupTasks(split_gpuStream_t s = 0) {
       while (_mapInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW) {
-         device_rehash(_mapInfo->sizePower + 1);
+         device_rehash(_mapInfo->sizePower + 1, s);
       }
       if (tombstone_ratio() > 0.025) {
          clean_tombstones(s);
@@ -779,13 +816,13 @@ public:
             if (w_tid == winner) {
                KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
                if (old == EMPTYBUCKET) {
-                  threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex);
+                  threadOverflow =(probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex+1);
                   split::s_atomicExch(&buckets[probingindex].second, candidateVal);
                   warpDone = 1;
                   split::s_atomicAdd(&_mapInfo->fill, 1);
                   if (threadOverflow > _mapInfo->currentMaxBucketOverflow) {
                      split::s_atomicExch((unsigned long long*)(&_mapInfo->currentMaxBucketOverflow),
-                                         (unsigned long long)nextPow2(threadOverflow));
+                                         (unsigned long long)nextOverflow(threadOverflow,defaults::WARPSIZE));
                   }
                } else if (old == candidateKey) {
                   // Parallel stuff are fun. Major edge case!
@@ -863,14 +900,14 @@ public:
             if (w_tid == winner) {
                KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
                if (old == EMPTYBUCKET) {
-                  threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex);
+                  threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex+1);
                   split::s_atomicExch(&buckets[probingindex].second, candidateVal);
                   warpDone = 1;
                   localCount = 1;
                   split::s_atomicAdd(&_mapInfo->fill, 1);
                   if (threadOverflow > _mapInfo->currentMaxBucketOverflow) {
                      split::s_atomicExch((unsigned long long*)(&_mapInfo->currentMaxBucketOverflow),
-                                         (unsigned long long)nextPow2(threadOverflow));
+                                         (unsigned long long)nextOverflow(threadOverflow,defaults::WARPSIZE));
                   }
                } else if (old == candidateKey) {
                   // Parallel stuff are fun. Major edge case!
@@ -1025,21 +1062,28 @@ public:
          elements.optimizeGPU(s);
       }
       // Extract elements matching the Pattern Rule(element)==true;
-      size_t retval =
-          split::tools::copy_if_raw<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, defaults::MAX_BLOCKSIZE, defaults::WARPSIZE>(
-              buckets, elements.data(), rule, s);
-
-      // Remove unwanted elements
-      elements.erase(&(elements.at(retval)), elements.end());
-      return retval;
+      split::tools::copy_if<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, defaults::MAX_BLOCKSIZE, defaults::WARPSIZE>(
+          buckets, elements, rule, s);
+      return elements.size();
    }
 
-   template <typename Rule>
+   template <typename Rule, int BLOCKSIZE = 1024>
    size_t extractPattern(hash_pair<KEY_TYPE, VAL_TYPE>* elements, Rule rule, split_gpuStream_t s = 0) {
       // Extract elements matching the Pattern Rule(element)==true;
+
+      // Figure out Blocks to use
+      size_t _s = std::ceil((float(buckets.size())) / (float)BLOCKSIZE);
+      size_t nBlocks = nextPow2(_s);
+      if (nBlocks == 0) {
+         nBlocks += 1;
+      }
+
+      // Allocate with Mempool
+      const size_t memory_for_pool = 8 * nBlocks * sizeof(uint32_t);
+      split::tools::Cuda_mempool mPool(memory_for_pool, s);
       size_t retval =
           split::tools::copy_if_raw<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, defaults::MAX_BLOCKSIZE, defaults::WARPSIZE>(
-              buckets, elements, rule, s);
+              buckets, elements, rule, nBlocks, mPool, s);
       return retval;
    }
 
@@ -1051,12 +1095,9 @@ public:
          elements.optimizeGPU(s);
       }
       // Extract element **keys** matching the Pattern Rule(element)==true;
-      size_t retval =
-          split::tools::copy_keys_if_raw<hash_pair<KEY_TYPE, VAL_TYPE>, KEY_TYPE, Rule, defaults::MAX_BLOCKSIZE,
-                                         defaults::WARPSIZE>(buckets, elements.data(), rule, s);
-      // Remove unwanted elements
-      elements.erase(&(elements.at(retval)), elements.end());
-      return retval;
+      split::tools::copy_keys_if<hash_pair<KEY_TYPE, VAL_TYPE>, KEY_TYPE, Rule, defaults::MAX_BLOCKSIZE,
+                                 defaults::WARPSIZE>(buckets, elements, rule, s);
+      return elements.size();
    }
 
    size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, split_gpuStream_t s = 0, bool prefetches = true) {
@@ -1136,7 +1177,7 @@ public:
       if (prefetches) {
          buckets.optimizeGPU(s);
       }
-      size_t neededPowerSize = std::ceil(std::log2((_mapInfo->fill + len) * (1.0 / targetLF)));
+      int64_t neededPowerSize = std::ceil(std::log2((_mapInfo->fill + len) * (1.0 / targetLF)));
       if (neededPowerSize > _mapInfo->sizePower) {
          resize(neededPowerSize, targets::device, s);
       }
@@ -1157,7 +1198,7 @@ public:
       if (prefetches) {
          buckets.optimizeGPU(s);
       }
-      size_t neededPowerSize = std::ceil(std::log2((_mapInfo->fill + len) * (1.0 / targetLF)));
+      int64_t neededPowerSize = std::ceil(std::log2((_mapInfo->fill + len) * (1.0 / targetLF)));
       if (neededPowerSize > _mapInfo->sizePower) {
          resize(neededPowerSize, targets::device, s);
       }
@@ -1178,7 +1219,7 @@ public:
          buckets.optimizeGPU(s);
       }
       // Here we do some calculations to estimate how much if any we need to grow our buckets
-      size_t neededPowerSize = std::ceil(std::log2(((_mapInfo->fill) + len) * (1.0 / targetLF)));
+      int64_t neededPowerSize = std::ceil(std::log2(((_mapInfo->fill) + len) * (1.0 / targetLF)));
       if (neededPowerSize > _mapInfo->sizePower) {
          resize(neededPowerSize, targets::device, s);
       }
@@ -1279,7 +1320,7 @@ public:
 
    public:
       HASHINATOR_DEVICEONLY
-      device_iterator(Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index) : hashtable(&hashtable), index(index) {}
+      device_iterator(Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index) : index(index),hashtable(&hashtable) {}
 
       HASHINATOR_DEVICEONLY
       size_t getIndex() { return index; }
@@ -1326,7 +1367,7 @@ public:
    public:
       HASHINATOR_DEVICEONLY
       explicit const_device_iterator(const Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index)
-          : hashtable(&hashtable), index(index) {}
+          : index(index), hashtable(&hashtable){}
 
       HASHINATOR_DEVICEONLY
       size_t getIndex() { return index; }
@@ -1537,7 +1578,7 @@ public:
    void set_element(const KEY_TYPE& key, VAL_TYPE val) {
       size_t thread_overflowLookup = 0;
       insert_element(key, val, thread_overflowLookup);
-      atomicMax((unsigned long long*)&(_mapInfo->currentMaxBucketOverflow), nextPow2(thread_overflowLookup));
+      atomicMax((unsigned long long*)&(_mapInfo->currentMaxBucketOverflow), nextOverflow(thread_overflowLookup,defaults::WARPSIZE/defaults::elementsPerWarp));
    }
 
    HASHINATOR_DEVICEONLY

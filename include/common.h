@@ -47,6 +47,16 @@ constexpr inline size_t nextPow2(size_t v) noexcept {
 }
 
 /**
+ * @brief Computes the next optimal overflow for the hasher kernels
+ */
+HASHINATOR_HOSTDEVICE
+[[nodiscard]]
+constexpr inline size_t nextOverflow(size_t currentOverflow, size_t virtualWarp) noexcept {
+    size_t remainder = currentOverflow % virtualWarp;
+    return ((remainder)==0)?currentOverflow: currentOverflow + (virtualWarp - remainder);
+}
+
+/**
  * @brief Enum for error checking in Hahsinator.
  */
 namespace Hashinator {

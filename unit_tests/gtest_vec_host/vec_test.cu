@@ -232,6 +232,7 @@ TEST(Vector_Functionality , Insert_1_Element){
       auto s0=a.size(); auto c0=a.capacity();
       auto it(a.begin());
       auto it2=a.insert(it,-1);
+      (void)it2;
       expect_true(a[0]=-1);
       expect_true(a.size()==s0+1);
       expect_true(a.capacity()>c0);
@@ -241,6 +242,7 @@ TEST(Vector_Functionality , Insert_1_Element){
       auto s0=a.size(); auto c0=a.capacity();
       vec::iterator it(a.end());
       auto it2=a.insert(it,-1);
+      (void)it2;
       expect_true(a.back()=-1);
       expect_true(a[a.size()-1]=-1);
       expect_true(a.size()==s0+1);
@@ -251,6 +253,7 @@ TEST(Vector_Functionality , Insert_1_Element){
       auto s0=a.size(); auto c0=a.capacity();
       vec::iterator it(&a[4]);
       auto it2=a.insert(it,-1);
+      (void)it2;
       expect_true(a[4]=-1);
       expect_true(a.size()==s0+1);
       expect_true(a.capacity()>c0);
@@ -262,6 +265,7 @@ TEST(Vector_Functionality , Insert_1_Element){
       //hehe
       vec::iterator it(nullptr);
       auto it2=a.insert(it,-1);
+      (void)it2;
      }// this has to throw
      catch (...) {
         expect_true(true);
@@ -282,6 +286,7 @@ TEST(Vector_Functionality , Insert_Many_Elements){
       auto s0=a.size(); auto c0=a.capacity();
       auto it(a.begin());
       auto it2=a.insert(it,10,-1);
+      (void)it2;
       for (int i =0 ; i<10 ; i++){
          expect_true(a[i]=-1);
       }
@@ -293,7 +298,8 @@ TEST(Vector_Functionality , Insert_Many_Elements){
       auto s0=a.size(); auto c0=a.capacity();
       vec::iterator it(a.end());
       auto it2=a.insert(it,10,-1);
-      for (int i =s0 ; i<a.size() ; i++){
+      (void)it2;
+      for (size_t i =s0 ; i<a.size() ; i++){
          expect_true(a[i]=-1);
       }
       expect_true(a.back()=-1);
@@ -307,6 +313,7 @@ TEST(Vector_Functionality , Insert_Many_Elements){
       //hehe
       vec::iterator it(nullptr);
       auto it2=a.insert(it,10,-1);
+      (void)it2;
      }// this has to throw
      catch (...) {
         expect_true(true);
@@ -332,11 +339,11 @@ TEST(Vector_Functionality , Insert_Range_Based){
       auto it_b1(b.end());
       a.insert(it,it_b0,it_b1);
       expect_true(a.size()==s0+b.size());
-      for (int i=0 ; i <10 ; i++){
+      for (size_t i=0 ; i <10 ; i++){
          expect_true(a[i]=backup[i]);
 
       }
-      for (int i=10 ; i <20 ; i++){
+      for (size_t i=10 ; i <20 ; i++){
          expect_true(a[i]=b[i-10]);
       }
    }
@@ -419,7 +426,7 @@ TEST(Vector_Functionality , Iterator_Arithmetics){
    {
       vec::iterator it_a(&a[0]);
          
-      for (int i=0 ;i< a.size(); i++){
+      for (size_t i=0 ;i< a.size(); i++){
          auto val=*(it_a+i);
          expect_true(  val==a.at(i) );
       }

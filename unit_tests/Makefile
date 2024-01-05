@@ -1,13 +1,13 @@
 CC=nvcc  
 CCC=clang++
 LNK=nvcc 
-OPT= -O3 -Xcompiler 
+OPT= -O3 -Xcompiler -fopenmp
 CXXFLAGS= 
-EXTRA= -g3  --std=c++17
+EXTRA=  --std=c++17
 EXTRA+= -gencode arch=compute_60,code=sm_60  
 EXTRA+=  -DHASHMAPDEBUG --expt-relaxed-constexpr  --expt-extended-lambda -lpthread
 GTEST= -L/home/kstppd/libs/googletest/build/lib  -I/home/kstppd/libs/googletest/googletest/include -lgtest -lgtest_main -lpthread
-OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o stream_compaction2.o delete_mechanism.o insertion_mechanism.o hybrid_cpu.o hybrid_gpu.o pointer_test.o benchmark.o benchmarkLF.o tbPerf.o realistic.o 
+OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o stream_compaction2.o delete_mechanism.o insertion_mechanism.o hybrid_cpu.o hybrid_gpu.o pointer_test.o benchmark.o benchmarkLF.o tbPerf.o realistic.o preallocated.o
 
 
 default: tests
@@ -22,6 +22,7 @@ allclean:
 	rm gtest_hashmap & 
 	rm compaction &
 	rm compaction2 &
+	rm compaction3 &
 	rm delete_mechanism &
 	rm hybrid_cpu & 
 	rm hybrid_gpu &
@@ -56,6 +57,9 @@ gtest_vec_device.o: gtest_vec_device/vec_test.cu
 stream_compaction.o: stream_compaction/race.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o compaction stream_compaction/race.cu
 
+preallocated.o: stream_compaction/preallocated.cu
+	${CC} --default-stream per-thread  ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o compaction3 stream_compaction/preallocated.cu
+
 stream_compaction2.o: stream_compaction/unit.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o compaction2 stream_compaction/unit.cu
 
@@ -68,8 +72,8 @@ insertion_mechanism.o: insertion_mechanism/main.cu
 pointer_test.o: pointer_test/main.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o pointertest pointer_test/main.cu
 
-hybrid_gpu.o: hybrid/main.cpp
-	${CC} -x cu  ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o hybrid_gpu hybrid/main.cpp
+hybrid_gpu.o: hybrid/main.cu
+	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o hybrid_gpu hybrid/main.cu
 
-hybrid_cpu.o: hybrid/main.cpp
-	${CCC} -L//home/kstppd/libs/googletest/build/lib  -I/home/kstppd/libs/googletest/googletest/include   -DHASHINATOR_CPU_ONLY_MODE  ${CXXFLAGS}    -std=c++17 -o hybrid_cpu hybrid/main.cpp   -lgtest -lgtest_main
+hybrid_cpu.o: hybrid/main.cu
+	${CC} -L//home/kstppd/libs/googletest/build/lib  -I/home/kstppd/libs/googletest/googletest/include   -DHASHINATOR_CPU_ONLY_MODE  ${CXXFLAGS}    -std=c++17 -o hybrid_cpu hybrid/main.cu   -lgtest -lgtest_main
