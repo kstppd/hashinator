@@ -24,7 +24,7 @@ private:
    struct __attribute__((__packed__)) Meta {
       size_t size;
       size_t capacity;
-      char padding[64 - 2 * sizeof(size_t)]; // pad up to cache line
+      char padding[64 - 2 * sizeof(size_t)]={0}; // pad up to cache line
       HOSTDEVICE
       inline size_t& operator[](MEMBER member) noexcept {
          switch (member) {
@@ -33,7 +33,7 @@ private:
          case MEMBER::CAPACITY:
             return *(reinterpret_cast<size_t*>(this) + 1);
          default:
-            abort();
+            assert(false && "Invalid case");
          }
       }
    };
