@@ -42,7 +42,7 @@ private:
    Meta* _meta = nullptr;
    T* _data = nullptr;
    Allocator _allocator;
-   split_gpuStream_t _stream;
+   mutable split_gpuStream_t _stream;
 
    void setupSpace(void* ptr) noexcept {
       _meta = reinterpret_cast<Meta*>(ptr);
@@ -228,6 +228,9 @@ public:
       }
       _deallocate(_meta);
    }
+
+   HOSTONLY
+   void setStream(split_gpuStream_t s) const noexcept {_stream=s;}
 
    HOSTONLY
    DeviceVector& operator=(const DeviceVector& other) {
