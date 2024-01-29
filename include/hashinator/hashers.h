@@ -23,6 +23,7 @@
 #include "../splitvector/gpu_wrappers.h"
 #include "defaults.h"
 #include "hashfunctions.h"
+#include "hash_pair.h"
 #ifdef __NVCC__
 #include "kernels_NVIDIA.h"
 #endif

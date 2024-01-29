@@ -29,6 +29,7 @@ insertion_mechanism = executable('insertion', 'unit_tests/insertion_mechanism/ma
 tombstoneTest = executable('tbPerf', 'unit_tests/benchmark/tbPerf.cu', dependencies :gtest_dep)
 realisticTest = executable('realistic', 'unit_tests/benchmark/realistic.cu', dependencies :gtest_dep)
 hybridGPU = executable('hybrid_gpu', 'unit_tests/hybrid/main.cu',dependencies :gtest_dep )
+set_unit = executable('set_test', 'unit_tests/unordered_set_unit_test/main.cu',dependencies :gtest_dep )
 
 
 #Test-Runner
