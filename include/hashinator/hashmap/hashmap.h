@@ -99,7 +99,7 @@ private:
 
    // Deallocates the bookeepping info and the device pointer
    void deallocate_device_handles() {
-      if (device_map==nullptr){
+      if (device_map == nullptr) {
          return;
       }
 #ifndef HASHINATOR_CPU_ONLY_MODE
@@ -138,11 +138,11 @@ public:
    Hashmap(Hashmap<KEY_TYPE, VAL_TYPE>&& other) {
       preallocate_device_handles();
       _mapInfo = other._mapInfo;
-      other._mapInfo=nullptr;
+      other._mapInfo = nullptr;
       buckets = std::move(other.buckets);
    };
 
-   Hashmap& operator=(const Hashmap<KEY_TYPE,VAL_TYPE>& other) {
+   Hashmap& operator=(const Hashmap<KEY_TYPE, VAL_TYPE>& other) {
       if (this == &other) {
          return *this;
       }
@@ -151,14 +151,14 @@ public:
       return *this;
    }
 
-   Hashmap& operator=(Hashmap<KEY_TYPE,VAL_TYPE>&& other) {
+   Hashmap& operator=(Hashmap<KEY_TYPE, VAL_TYPE>&& other) {
       if (this == &other) {
          return *this;
       }
       _metaAllocator.deallocate(_mapInfo, 1);
       _mapInfo = other._mapInfo;
-      other._mapInfo=nullptr;
-      buckets =std::move(other.buckets);
+      other._mapInfo = nullptr;
+      buckets = std::move(other.buckets);
       return *this;
    }
 
@@ -816,13 +816,13 @@ public:
             if (w_tid == winner) {
                KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
                if (old == EMPTYBUCKET) {
-                  threadOverflow =(probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex+1);
+                  threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex + 1);
                   split::s_atomicExch(&buckets[probingindex].second, candidateVal);
                   warpDone = 1;
                   split::s_atomicAdd(&_mapInfo->fill, 1);
                   if (threadOverflow > _mapInfo->currentMaxBucketOverflow) {
                      split::s_atomicExch((unsigned long long*)(&_mapInfo->currentMaxBucketOverflow),
-                                         (unsigned long long)nextOverflow(threadOverflow,defaults::WARPSIZE));
+                                         (unsigned long long)nextOverflow(threadOverflow, defaults::WARPSIZE));
                   }
                } else if (old == candidateKey) {
                   // Parallel stuff are fun. Major edge case!
@@ -900,14 +900,14 @@ public:
             if (w_tid == winner) {
                KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
                if (old == EMPTYBUCKET) {
-                  threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex+1);
+                  threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex + 1);
                   split::s_atomicExch(&buckets[probingindex].second, candidateVal);
                   warpDone = 1;
                   localCount = 1;
                   split::s_atomicAdd(&_mapInfo->fill, 1);
                   if (threadOverflow > _mapInfo->currentMaxBucketOverflow) {
                      split::s_atomicExch((unsigned long long*)(&_mapInfo->currentMaxBucketOverflow),
-                                         (unsigned long long)nextOverflow(threadOverflow,defaults::WARPSIZE));
+                                         (unsigned long long)nextOverflow(threadOverflow, defaults::WARPSIZE));
                   }
                } else if (old == candidateKey) {
                   // Parallel stuff are fun. Major edge case!
@@ -1099,8 +1099,8 @@ public:
       return elements.size();
    }
    template <typename Rule>
-   size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements, Rule rule, void *stack, size_t max_size, split_gpuStream_t s = 0,
-                               bool prefetches = true) {
+   size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements, Rule rule, void* stack, size_t max_size,
+                               split_gpuStream_t s = 0, bool prefetches = true) {
       elements.resize(_mapInfo->fill + 1, true);
       if (prefetches) {
          elements.optimizeGPU(s);
@@ -1118,7 +1118,8 @@ public:
       };
       return extractKeysByPattern(elements, rule, s, prefetches);
    }
-   size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, void *stack, size_t max_size, split_gpuStream_t s = 0, bool prefetches = true) {
+   size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, void* stack, size_t max_size, split_gpuStream_t s = 0,
+                         bool prefetches = true) {
       // Extract all keys
       auto rule = [] __host__ __device__(const hash_pair<KEY_TYPE, VAL_TYPE>& kval) -> bool {
          return kval.first != EMPTYBUCKET && kval.first != TOMBSTONE;
@@ -1338,7 +1339,7 @@ public:
 
    public:
       HASHINATOR_DEVICEONLY
-      device_iterator(Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index) : index(index),hashtable(&hashtable) {}
+      device_iterator(Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index) : index(index), hashtable(&hashtable) {}
 
       HASHINATOR_DEVICEONLY
       size_t getIndex() { return index; }
@@ -1385,7 +1386,7 @@ public:
    public:
       HASHINATOR_DEVICEONLY
       explicit const_device_iterator(const Hashmap<KEY_TYPE, VAL_TYPE>& hashtable, size_t index)
-          : index(index), hashtable(&hashtable){}
+          : index(index), hashtable(&hashtable) {}
 
       HASHINATOR_DEVICEONLY
       size_t getIndex() { return index; }
@@ -1596,7 +1597,8 @@ public:
    void set_element(const KEY_TYPE& key, VAL_TYPE val) {
       size_t thread_overflowLookup = 0;
       insert_element(key, val, thread_overflowLookup);
-      atomicMax((unsigned long long*)&(_mapInfo->currentMaxBucketOverflow), nextOverflow(thread_overflowLookup,defaults::WARPSIZE/defaults::elementsPerWarp));
+      atomicMax((unsigned long long*)&(_mapInfo->currentMaxBucketOverflow),
+                nextOverflow(thread_overflowLookup, defaults::WARPSIZE / defaults::elementsPerWarp));
    }
 
    HASHINATOR_DEVICEONLY

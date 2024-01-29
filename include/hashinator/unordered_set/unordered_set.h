@@ -38,8 +38,5 @@
 
 namespace Hashinator {
 
-class Unordered_Set {
-
-
-};
-}
+class Unordered_Set {};
+} // namespace Hashinator

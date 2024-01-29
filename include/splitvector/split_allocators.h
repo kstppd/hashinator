@@ -77,7 +77,6 @@ public:
     */
    split_unified_allocator() throw() {}
 
-
    /**
     * @brief Copy constructor with different type.
     */
