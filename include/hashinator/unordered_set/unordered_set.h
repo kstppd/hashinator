@@ -27,16 +27,15 @@
 #include "../../splitvector/gpu_wrappers.h"
 #include "../../splitvector/split_allocators.h"
 #include "../../splitvector/splitvec.h"
-#include "defaults.h"
-#include "hashfunctions.h"
+#include "../defaults.h"
+#include "../hashfunctions.h"
 #include <algorithm>
 #include <stdexcept>
 #ifndef HASHINATOR_CPU_ONLY_MODE
 #include "../../splitvector/split_tools.h"
-#include "hashers.h"
+#include "../hashers.h"
 #endif
 
 namespace Hashinator {
-
 class Unordered_Set {};
 } // namespace Hashinator

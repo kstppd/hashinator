@@ -19,8 +19,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  * */
 #pragma once
-#include "../../common.h"
-#include "../../splitvector/gpu_wrappers.h"
+#include "../common.h"
+#include "../splitvector/gpu_wrappers.h"
 #include "defaults.h"
 #include "hashfunctions.h"
 #ifdef __NVCC__
