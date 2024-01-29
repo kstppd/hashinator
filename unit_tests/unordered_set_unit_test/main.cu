@@ -1,23 +1,20 @@
 #include <iostream>
-#include <stdlib.h>
-#include <chrono>
-#include <random>
 #include "../../include/hashinator/unordered_set/unordered_set.h"
 #include <gtest/gtest.h>
-#include <random>
-#include <algorithm>
-#include <limits.h>
 
-#define BLOCKSIZE 32
 #define expect_true EXPECT_TRUE
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
-constexpr int MINPOWER = 10;
-constexpr int MAXPOWER = 11;
+
+using namespace Hashinator;
+typedef uint32_t key_type;
+typedef split::SplitVector<key_type> vector ;
+typedef Unordered_Set<key_type> Set;
 
 
 TEST(Unordered_Set_UnitTest , Test1){
-      expect_true(true);
+   Set s;
+   expect_true(true);
 }
 
 int main(int argc, char* argv[]){

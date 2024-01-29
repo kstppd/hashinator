@@ -37,5 +37,24 @@
 #endif
 
 namespace Hashinator {
-class Unordered_Set {};
+template <typename KEY_TYPE, KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(),
+          KEY_TYPE TOMBSTONE = EMPTYBUCKET - 1, class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>>
+
+class Unordered_Set {
+
+   // members
+private:
+   Unordered_Set* device_set;
+   split::SplitVector<KEY_TYPE> buckets;
+
+   // Constructors Destructors and = Operators
+   Unordered_Set() {}
+   Unordered_Set(uint32_t sizePower) {}
+   Unordered_Set(const Unordered_Set& other) {}
+   Unordered_Set(Unordered_Set&& other) noexcept {}
+   ~Unordered_Set() {}
+   Unordered_Set& operator=(const Unordered_Set& other) {}
+   Unordered_Set& operator=(Unordered_Set&& other) noexcept {}
+};
+
 } // namespace Hashinator
