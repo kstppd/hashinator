@@ -997,6 +997,27 @@ TEST(HashmapUnitTets ,Test_ErrorCodes_ExtractKeysByPattern){
    }
 }
 
+TEST(HashmapUnitTets ,Test_ErrorCodes_ExtractKeysByPatternNoAllocations){
+   const int sz=5;
+   vector src(1<<sz);
+   create_input(src);
+   hashmap hmap;
+   hmap.insert(src.data(),src.size());
+   bool cpuOK=recover_all_elements(hmap,src);
+   expect_true(cpuOK);
+   expect_true(hmap.peek_status()==status::success);
+   ivector out1,out2;
+   hmap.extractKeysByPattern(out1,Rule<key_type,key_type>());
+
+   void* buffer=nullptr;
+   size_t mem=2*sizeof(key_type)*(1<<sz);
+   SPLIT_CHECK_ERR (split_gpuMallocManaged( (void**)&buffer ,mem));
+   hmap.extractKeysByPattern(out2, Rule<key_type,key_type>(),buffer,mem);
+   
+   expect_true(out1==out2);
+   SPLIT_CHECK_ERR (split_gpuFree(buffer));
+}
+
 
 TEST(HashmapUnitTets ,Test_Copy_Metadata){
    const int sz=18;
