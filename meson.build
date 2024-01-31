@@ -30,11 +30,13 @@ tombstoneTest = executable('tbPerf', 'unit_tests/benchmark/tbPerf.cu', dependenc
 realisticTest = executable('realistic', 'unit_tests/benchmark/realistic.cu', dependencies :gtest_dep)
 hybridGPU = executable('hybrid_gpu', 'unit_tests/hybrid/main.cu',dependencies :gtest_dep )
 unordered_set_unit = executable('unordered_set_test', 'unit_tests/unordered_set_unit_test/main.cu',dependencies :gtest_dep )
+unordered_set_unit_cpu = executable('unordered_set_test_cpu', 'unit_tests/unordered_set_unit_test/main.cpp',dependencies :gtest_dep )
 
 
 #Test-Runner
 test('HashinatorTest', hashinator_unit)
 test('UnorderedSetTest', unordered_set_unit)
+test('UnorderedSetTestCPU', unordered_set_unit_cpu)
 test('SplitVectorDeviceTest', splitvector_device_unit)
 test('SplitVectorHostTest', splitvector_host_unit)
 test('CompactionTest',  compaction_unit)

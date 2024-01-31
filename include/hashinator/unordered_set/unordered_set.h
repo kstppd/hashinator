@@ -28,6 +28,7 @@
 #include "../../splitvector/split_allocators.h"
 #include "../../splitvector/splitvec.h"
 #include "../defaults.h"
+#include "../hash_pair.h"
 #include "../hashfunctions.h"
 #include <algorithm>
 #include <stdexcept>
@@ -35,7 +36,6 @@
 #include "../../splitvector/split_tools.h"
 #include "../hashers.h"
 #endif
-
 #define UNUSED(x) (void)(x)
 namespace Hashinator {
 
@@ -48,7 +48,7 @@ using DefaultMetaAllocator = split::split_unified_allocator<T>;
 #else
 template <typename T>
 using DefaultMetaAllocator = split::split_host_allocator<T>;
-using DefaultHasher = void
+#define DefaultHasher void
 #endif
 
 typedef struct Info {
@@ -244,6 +244,7 @@ public:
 
 #endif
 
+#ifndef HASHINATOR_CPU_ONLY_MODE
    Unordered_Set* upload(split_gpuStream_t stream = 0) {
       optimizeGPU(stream);
       SPLIT_CHECK_ERR(split_gpuMemcpyAsync(device_set, this, sizeof(Unordered_Set), split_gpuMemcpyHostToDevice, stream));
@@ -275,6 +276,7 @@ public:
       buckets.optimizeCPU(stream);
    }
 
+#endif
 
    void rehash(uint32_t newSizePower) {
       if (newSizePower > 32) {
@@ -318,6 +320,7 @@ public:
    }
 
 
+#ifndef HASHINATOR_CPU_ONLY_MODE
    template <typename Rule, int BLOCKSIZE = 1024>
    size_t extractPattern(KEY_TYPE* elements, Rule rule, split_gpuStream_t s = 0) {
       // Figure out Blocks to use
@@ -386,6 +389,7 @@ public:
       return;
    }
 
+
    void clean_tombstones(split_gpuStream_t s = 0, bool prefetches = false) {
 
       if (_setInfo->tombstoneCounter == 0) {
@@ -442,6 +446,11 @@ public:
       SPLIT_CHECK_ERR(split_gpuFreeAsync(overflownElements, s));
       return;
    }
+#else
+   void clean_tombstones() {
+      rehash();
+   }
+#endif
 
 #ifdef HASHINATOR_CPU_ONLY_MODE
    // Try to get the overflow back to the original one
@@ -450,7 +459,7 @@ public:
          rehash(_setInfo->sizePower + 1);
       }
       // When operating in CPU only mode we rehash to get rid of tombstones
-      if (tombstone_ratio() > 0.25) {
+      if (tombstone_ratio() > 0.025) {
          rehash(_setInfo->sizePower);
       }
    }
@@ -529,6 +538,30 @@ public:
       size_t getIndex() { return index; }
    };
 
+   iterator begin() {
+      for (size_t i = 0; i < buckets.size(); i++) {
+         if (buckets[i] != EMPTYBUCKET && buckets[i] != TOMBSTONE) {
+            return iterator(*this, i);
+         }
+      }
+      return end();
+   }
+
+   const_iterator begin() const {
+      for (size_t i = 0; i < buckets.size(); i++) {
+         if (buckets[i] != EMPTYBUCKET && buckets[i] != TOMBSTONE) {
+            return const_iterator(*this, i);
+         }
+      }
+      return end();
+   }
+
+   iterator end() { return iterator(*this, buckets.size()); }
+
+   const_iterator end() const { return const_iterator(*this, buckets.size()); }
+
+
+#ifndef HASHINATOR_CPU_ONLY_MODE
    // Device Iterator type. Iterates through all non-empty buckets.
    class device_iterator {
    private:
@@ -617,28 +650,6 @@ public:
       HASHINATOR_DEVICEONLY
       const KEY_TYPE* operator->() const { return &set->buckets[index]; }
    };
-
-   iterator begin() {
-      for (size_t i = 0; i < buckets.size(); i++) {
-         if (buckets[i] != EMPTYBUCKET && buckets[i] != TOMBSTONE) {
-            return iterator(*this, i);
-         }
-      }
-      return end();
-   }
-
-   const_iterator begin() const {
-      for (size_t i = 0; i < buckets.size(); i++) {
-         if (buckets[i] != EMPTYBUCKET && buckets[i] != TOMBSTONE) {
-            return const_iterator(*this, i);
-         }
-      }
-      return end();
-   }
-
-   iterator end() { return iterator(*this, buckets.size()); }
-
-   const_iterator end() const { return const_iterator(*this, buckets.size()); }
 
    HASHINATOR_DEVICEONLY
    device_iterator device_end() { return device_iterator(*this, buckets.size()); }
@@ -761,6 +772,7 @@ public:
       atomicMax((unsigned long long*)&(_setInfo->currentMaxBucketOverflow),
                 nextOverflow(thread_overflowLookup, defaults::WARPSIZE / defaults::elementsPerWarp));
    }
+#endif
 
    void print_pair(const KEY_TYPE& i) const noexcept {
       size_t currentSizePower = _setInfo->sizePower;
@@ -832,7 +844,8 @@ public:
    size_t count(const KEY_TYPE& key) const noexcept { return contains(key) ? 1 : 0; }
 
 #ifdef HASHINATOR_CPU_ONLY_MODE
-   void clear(){
+   void clear(targets t= targets::host){
+      UNUSED(t);
       buckets = split::SplitVector<KEY_TYPE>(1 << _setInfo->sizePower, {EMPTYBUCKET});
       *_setInfo = SetInfo(_setInfo->sizePower);
       return;
@@ -934,7 +947,7 @@ public:
 
    iterator erase(iterator pos) {
       auto index = pos.getIndex();
-      assert(index < 1 << _setInfo->sizePower);
+      assert(index <static_cast<size_t>(  1 << _setInfo->sizePower ));
       KEY_TYPE& key = buckets[index];
       if (key != EMPTYBUCKET && key != TOMBSTONE) {
          key = TOMBSTONE;
@@ -956,6 +969,38 @@ public:
       return ++pos; // return next valid element;
    }
 
+   bool erase(const KEY_TYPE& key) {
+      auto it = find(key);
+      if (it!=end()){
+         erase(it);
+         return true;
+      }
+      return false;
+   }
+
+
+#ifdef HASHINATOR_CPU_ONLY_MODE
+   void resize(int newSizePower,targets t = targets::host) {
+      UNUSED(t);
+      rehash(newSizePower);
+   }
+
+   void insert(KEY_TYPE* keys,size_t len,float targetLF = 0.5) {
+      UNUSED(targetLF);
+      for (size_t i =0 ; i < len; ++i){
+         insert(keys[i]);
+
+      }
+   }
+
+   void erase(KEY_TYPE* keys,size_t len,float targetLF = 0.5) {
+      UNUSED(targetLF);
+      for (size_t i =0 ; i < len; ++i){
+         erase(keys[i]);
+
+      }
+   }
+#else
    void resize(int newSizePower, targets t = targets::host, split_gpuStream_t s = 0) {
       switch (t) {
       case targets::host:
@@ -971,6 +1016,7 @@ public:
       return;
    }
    
+
    void insert(KEY_TYPE* keys,size_t len,float targetLF = 0.5, split_gpuStream_t s = 0, bool prefetches = true) {
       // TODO fix these if paths or at least annotate them .
       if (len == 0) {
@@ -1007,6 +1053,7 @@ public:
       return;
    }
 
+#endif
 
 }; // Unordered_Set
 
