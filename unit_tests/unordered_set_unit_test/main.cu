@@ -6,13 +6,40 @@
 #define expect_true EXPECT_TRUE
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
-#define SMALL_SIZE 512
-#define LARGE_SIZE ( 1<<24 )
+#define SMALL_SIZE (1<<10)
+#define LARGE_SIZE ( 1<<20 )
 
 using namespace Hashinator;
 typedef uint32_t key_type;
 typedef split::SplitVector<key_type> vector ;
 typedef Unordered_Set<key_type> UnorderedSet;
+
+
+bool isFreeOfDuplicates(const vector& v){
+
+   for (const auto & it : v){
+      auto cnt = std::count( v.begin() ,v.end(),it);
+      if (cnt>1 ){return false;}
+   }
+   return true ;
+}
+
+
+bool isFreeOfDuplicates( UnorderedSet* s){
+   vector out(s->size());
+   size_t count = s->extractAllKeys(out);
+   expect_true(count==s->size());
+   expect_true( isFreeOfDuplicates(out) );
+   return true;
+}
+
+__global__ 
+void gpu_write(UnorderedSet* s, key_type*src, size_t N){
+   size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+   if (index < N ){
+      s->add_element(src[index]);
+   }
+}
 
 
 TEST(Unordered_UnitTest , Construction){
@@ -48,7 +75,7 @@ TEST(Unordered_UnitTest , InsertFindHost){
    expect_true(s.tombstone_count()==0);
 }
 
-TEST(Unordered_Timings , InsertHost){
+TEST(Unordered_UnitTest , InsertHost){
    UnorderedSet s;
    for (uint32_t i = 0 ; i < LARGE_SIZE;++i){
       s.insert(i);
@@ -56,23 +83,53 @@ TEST(Unordered_Timings , InsertHost){
    expect_true(s.size()==LARGE_SIZE);
 }
 
-TEST(Unordered_TimingsStd , InsertHost){
+
+TEST(Unordered_UnitTest , InsertKernel){
+   vector v;
+   for (uint32_t i = 0 ; i < LARGE_SIZE;++i){
+      v.push_back(i);
+   }
+   UnorderedSet s;
+   s.insert(v.data(),v.size()) ;
+   expect_true(s.size()==LARGE_SIZE);
+}
+
+
+TEST(Unordered_UnitTest , InsertEraseHost){
    std::unordered_set<key_type> s;
    for (uint32_t i = 0 ; i < LARGE_SIZE;++i){
       s.insert(i);
    }
    expect_true(s.size()==LARGE_SIZE);
+   for (uint32_t i = 0 ; i < LARGE_SIZE;++i){
+      s.erase(i);
+   }
+   expect_true(s.size()==0);
 }
 
-TEST(Unordered_Timings , InsertKernel){
+TEST(Unordered_UnitTest , Insert_Erase_Kernel){
    vector v;
    for (uint32_t i = 0 ; i < LARGE_SIZE;++i){
       v.push_back(i);
    }
-
    UnorderedSet s;
-   s.insert_fast(v.data(),v.size());
+   s.insert(v.data(),v.size()) ;
+   expect_true(s.size()==LARGE_SIZE);
+   s.erase(v.data(),v.size()) ;
+   expect_true(s.size()==0);
+}
 
+TEST(Unordered_UnitTest , NewOverloadManagedMemory){
+   vector v;
+   for (uint32_t i = 0 ; i < LARGE_SIZE;++i){
+      v.push_back(i);
+   }
+   UnorderedSet* s = new UnorderedSet;
+   s->insert(v.data(),v.size()) ;
+   expect_true(s->size()==LARGE_SIZE);
+   s->erase(v.data(),v.size()) ;
+   expect_true(s->size()==0);
+   delete s;
 }
 
 TEST(Unordered_UnitTest , Contains_Count){
@@ -85,7 +142,7 @@ TEST(Unordered_UnitTest , Contains_Count){
    }
 }
 
-TEST(Unordered_UnitTest , InsertEraseHost){
+TEST(Unordered_UnitTest , InsertEraseHostSmall){
    UnorderedSet s;
    for (uint32_t i = 0 ; i < SMALL_SIZE;++i){
       s.insert(i);
@@ -114,6 +171,162 @@ TEST(Unordered_UnitTest , InsertEraseHost){
    }
    expect_true(s.size()==SMALL_SIZE);
    expect_true(s.tombstone_count()==0);
+}
+
+TEST(Unordered_UnitTest , ExtractPattern){
+   vector v;
+   for (uint32_t i = 0 ; i < SMALL_SIZE;++i){
+      v.push_back(i);
+   }
+   UnorderedSet* s = new UnorderedSet;
+   s->insert(v.data(),v.size()) ;
+   expect_true(s->size()==SMALL_SIZE);
+   
+   vector out(SMALL_SIZE);
+   size_t count = s->extractAllKeys(out);
+   expect_true(count==s->size());
+   expect_true( isFreeOfDuplicates(out) );
+   delete s;
+}
+
+TEST(Unordered_UnitTest , Clear){
+   {
+      vector v;
+      for (uint32_t i = 0 ; i < SMALL_SIZE;++i){
+         v.push_back(i);
+      }
+      UnorderedSet* s = new UnorderedSet;
+      s->insert(v.data(),v.size()) ;
+      expect_true(s->size()==SMALL_SIZE);
+
+      s->clear();
+      expect_true(s->size()==0);
+      expect_true(s->empty());
+      delete s;
+   }
+
+
+   {
+      vector v;
+      for (uint32_t i = 0 ; i < SMALL_SIZE;++i){
+         v.push_back(i);
+      }
+      UnorderedSet* s = new UnorderedSet;
+      s->insert(v.data(),v.size()) ;
+      expect_true(s->size()==SMALL_SIZE);
+
+      s->clear(targets::device);
+      expect_true(s->size()==0);
+      expect_true(s->empty());
+      delete s;
+   }
+}
+
+TEST(Unordered_UnitTest , Resize){
+   {
+      vector v;
+      for (uint32_t i = 0 ; i < SMALL_SIZE;++i){
+         v.push_back(i);
+      }
+      UnorderedSet* s = new UnorderedSet;
+      s->insert(v.data(),v.size()) ;
+      expect_true(s->size()==SMALL_SIZE);
+      auto priorFill=s->size();
+
+      auto sizePower = s->getSizePower();
+      s->resize(sizePower+1,targets::host);
+      expect_true(s->size()==priorFill);
+   }
+
+   {
+      vector v;
+      for (uint32_t i = 0 ; i < SMALL_SIZE;++i){
+         v.push_back(i);
+      }
+      UnorderedSet* s = new UnorderedSet;
+      s->insert(v.data(),v.size()) ;
+      expect_true(s->size()==SMALL_SIZE);
+      auto priorFill=s->size();
+
+      auto sizePower = s->getSizePower();
+      s->resize(sizePower+1,targets::device);
+      expect_true(s->size()==priorFill);
+
+      vector out(SMALL_SIZE);
+      size_t count = s->extractAllKeys(out);
+      expect_true(count==s->size());
+      expect_true( isFreeOfDuplicates(out) );
+
+      delete s;
+   }
+}
+
+TEST(Unordered_UnitTest , LoadFactorReduction){
+
+   vector v;
+   for (uint32_t i = 0 ; i < SMALL_SIZE;++i){
+      v.push_back(i);
+   }
+   UnorderedSet* s = new UnorderedSet;
+   s->insert(v.data(),v.size(),1.0) ;
+   expect_true(s->size()==SMALL_SIZE);
+
+   //At this point we are heavilly overflown 
+   expect_true( isFreeOfDuplicates(s) );
+
+   //Let's resize to get back to a proper overflow
+   s->performCleanupTasks();
+   expect_true( isFreeOfDuplicates(s) );
+   delete s;
+}
+
+TEST(Unordered_UnitTest , TombstoneCleaning){
+
+   vector v;
+   for (uint32_t i = 0 ; i < SMALL_SIZE;++i){
+      v.push_back(i);
+   }
+   UnorderedSet* s = new UnorderedSet;
+   s->insert(v.data(),v.size(),1.0) ;
+   expect_true(s->size()==SMALL_SIZE);
+
+   //At this point we are heavilly overflown 
+   expect_true( isFreeOfDuplicates(s) );
+
+   //Let's resize to get back to a proper overflow
+   s->erase(v.data(),v.size()/2);
+   expect_true( s->tombstone_count()==SMALL_SIZE/2);
+   expect_true( isFreeOfDuplicates(s) );
+   expect_true( s->tombstone_count()==SMALL_SIZE/2);
+   s->performCleanupTasks();
+   expect_true( s->tombstone_count()==0);
+   delete s;
+}
+
+TEST(Unordered_UnitTest , DeviceKernelWrite){
+
+   vector v;
+   for (uint32_t i = 0 ; i < SMALL_SIZE;++i){
+      v.push_back(i);
+   }
+   UnorderedSet* s = new UnorderedSet;
+   s->insert(v.data(),v.size(),1.0) ;
+
+   auto* ds= s->upload();
+   gpu_write<<<v.size()/1024,1024>>>(ds,v.data(),v.size());
+   split_gpuDeviceSynchronize();
+   s->download();
+   expect_true(s->size()==SMALL_SIZE);
+   expect_true( isFreeOfDuplicates(s) );
+
+   //Let's resize to get back to a proper overflow
+   s->erase(v.data(),v.size()/2);
+   expect_true( s->tombstone_count()==SMALL_SIZE/2);
+   expect_true( isFreeOfDuplicates(s) );
+   expect_true( s->tombstone_count()==SMALL_SIZE/2);
+   s->performCleanupTasks();
+   expect_true( s->tombstone_count()==0);
+   delete s;
 }
 
 int main(int argc, char* argv[]){

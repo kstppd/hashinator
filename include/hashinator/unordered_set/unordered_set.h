@@ -43,12 +43,12 @@ namespace Hashinator {
 template <typename T>
 using DefaultMetaAllocator = split::split_unified_allocator<T>;
 #define DefaultHasher                                                                                                  \
-   Hashers::Hasher<KEY_TYPE, VAL_TYPE, HashFunction, EMPTYBUCKET, TOMBSTONE, defaults::WARPSIZE,                       \
+   Hashers::Hasher<KEY_TYPE, void, HashFunction, EMPTYBUCKET, TOMBSTONE, defaults::WARPSIZE,                       \
                    defaults::elementsPerWarp>
 #else
 template <typename T>
 using DefaultMetaAllocator = split::split_host_allocator<T>;
-#define DefaultHasher void
+using DefaultHasher = void
 #endif
 
 typedef struct Info {
@@ -65,22 +65,25 @@ typedef struct Info {
 
 template <typename KEY_TYPE, KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(),
           KEY_TYPE TOMBSTONE = EMPTYBUCKET - 1, class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>,
-          class Meta_Allocator = DefaultMetaAllocator<SetInfo>>
+          class DeviceHasher = DefaultHasher, class Meta_Allocator = DefaultMetaAllocator<SetInfo>>
 
 class Unordered_Set {
 
    // members
 private:
-   Unordered_Set* device_set;
+   SetInfo* _setInfo;
    split::SplitVector<KEY_TYPE> buckets;
    Meta_Allocator _metaAllocator;
-   SetInfo* _setInfo;
+   Unordered_Set* device_set;
 
    HASHINATOR_HOSTDEVICE
    uint32_t hash(KEY_TYPE in) const {
       static_assert(std::is_arithmetic<KEY_TYPE>::value);
       return HashFunction::_hash(in, _setInfo->sizePower);
    }
+
+   HASHINATOR_HOSTDEVICE
+   inline void set_status(status code) noexcept { _setInfo->err = code; }
 
    void addKey(KEY_TYPE key) noexcept {
       int bitMask = (1 << _setInfo->sizePower) - 1;
@@ -101,21 +104,41 @@ private:
       return addKey(key);
    }
 
+   void preallocate_device_handles() {
+   #ifndef HASHINATOR_CPU_ONLY_MODE
+      SPLIT_CHECK_ERR(split_gpuMalloc((void**)&device_set, sizeof(Unordered_Set)));
+   #endif
+   }
+
+   // Deallocates the bookeepping info and the device pointer
+   void deallocate_device_handles() {
+      if (device_set == nullptr) {
+         return;
+      }
+   #ifndef HASHINATOR_CPU_ONLY_MODE
+      SPLIT_CHECK_ERR(split_gpuFree(device_set));
+      device_set= nullptr;
+   #endif
+   }
+
 public:
    // Constructors Destructors and = Operators with move/cpy semantics
    Unordered_Set(uint32_t sizePower = 5) {
+      preallocate_device_handles();
       _setInfo = _metaAllocator.allocate(1);
       *_setInfo = SetInfo(sizePower);
       buckets = split::SplitVector<KEY_TYPE>(1 << _setInfo->sizePower, EMPTYBUCKET);
    }
 
    Unordered_Set(const Unordered_Set& other) {
+      preallocate_device_handles();
       _setInfo = _metaAllocator.allocate(1);
       *_setInfo = *other._setInfo;
       buckets = other.buckets;
    }
 
    Unordered_Set(const std::initializer_list<KEY_TYPE>& list) {
+      preallocate_device_handles();
       _setInfo = _metaAllocator.allocate(1);
       *_setInfo = SetInfo(5);
       buckets = split::SplitVector<KEY_TYPE>(1 << _setInfo->sizePower, EMPTYBUCKET);
@@ -124,7 +147,18 @@ public:
       }
    }
 
+   Unordered_Set(const std::vector<KEY_TYPE>& vec) {
+      preallocate_device_handles();
+      _setInfo = _metaAllocator.allocate(1);
+      *_setInfo = SetInfo(5);
+      buckets = split::SplitVector<KEY_TYPE>(1 << _setInfo->sizePower, EMPTYBUCKET);
+      for (size_t i = 0; i < vec.size(); i++) {
+         insert(vec.begin()[i]);
+      }
+   }
+
    Unordered_Set(std::initializer_list<KEY_TYPE>&& list) {
+      preallocate_device_handles();
       _setInfo = _metaAllocator.allocate(1);
       *_setInfo = SetInfo(5);
       buckets = split::SplitVector<KEY_TYPE>(1 << _setInfo->sizePower, EMPTYBUCKET);
@@ -134,12 +168,16 @@ public:
    }
 
    Unordered_Set(Unordered_Set&& other) noexcept {
+      preallocate_device_handles();
       *_setInfo = other.SetInfo;
       other._setInfo = nullptr;
       buckets = std::move(other.buckets);
    }
 
-   ~Unordered_Set() { _metaAllocator.deallocate(_setInfo, 1); }
+   ~Unordered_Set() { 
+      deallocate_device_handles();
+      _metaAllocator.deallocate(_setInfo, 1); 
+   }
 
    Unordered_Set& operator=(const Unordered_Set& other) {
       if (this == &other) {
@@ -160,6 +198,83 @@ public:
       buckets = std::move(other.buckets);
       return *this;
    }
+
+   HASHINATOR_HOSTDEVICE
+   inline status peek_status(void) noexcept {
+      status retval = _setInfo->err;
+      _setInfo->err = status::invalid;
+      return retval;
+   }
+
+#ifdef HASHINATOR_CPU_ONLY_MODE
+   void* operator new(size_t len) {
+      void* ptr = (void*)malloc(len);
+      return ptr;
+   }
+
+   void operator delete(void* ptr) { free(ptr); }
+
+   void* operator new[](size_t len) {
+      void* ptr = (void*)malloc(len);
+      return ptr;
+   }
+
+   void operator delete[](void* ptr) { free(ptr); }
+
+#else
+   void* operator new(size_t len) {
+      void* ptr;
+      SPLIT_CHECK_ERR(split_gpuMallocManaged(&ptr, len));
+      return ptr;
+   }
+
+   void operator delete(void* ptr) { SPLIT_CHECK_ERR(split_gpuFree(ptr)); }
+
+   void* operator new[](size_t len) {
+      void* ptr;
+      SPLIT_CHECK_ERR(split_gpuMallocManaged(&ptr, len));
+      return ptr;
+   }
+
+   void operator delete[](void* ptr) { split_gpuFree(ptr); }
+
+   void copyMetadata(SetInfo* dst, split_gpuStream_t s = 0) {
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(dst, _setInfo, sizeof(SetInfo), split_gpuMemcpyDeviceToHost, s));
+   }
+
+#endif
+
+   Unordered_Set* upload(split_gpuStream_t stream = 0) {
+      optimizeGPU(stream);
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(device_set, this, sizeof(Unordered_Set), split_gpuMemcpyHostToDevice, stream));
+      return device_set;
+   }
+
+   void download(split_gpuStream_t stream = 0) {
+      // Copy over fill as it might have changed
+      optimizeCPU(stream);
+      if (_setInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW) {
+         rehash(_setInfo->sizePower + 1);
+      } else {
+         if (tombstone_count() > 0) {
+            clean_tombstones(stream);
+         }
+      }
+   }
+
+   void optimizeGPU(split_gpuStream_t stream = 0) noexcept {
+      int device;
+      SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
+      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_setInfo, sizeof(SetInfo), device, stream));
+      buckets.optimizeGPU(stream);
+   }
+
+   /*Manually prefetch data on Host*/
+   void optimizeCPU(split_gpuStream_t stream = 0) noexcept {
+      SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_setInfo, sizeof(SetInfo), split_gpuCpuDeviceId, stream));
+      buckets.optimizeCPU(stream);
+   }
+
 
    void rehash(uint32_t newSizePower) {
       if (newSizePower > 32) {
@@ -201,6 +316,156 @@ public:
       _setInfo->currentMaxBucketOverflow = Hashinator::defaults::BUCKET_OVERFLOW;
       _setInfo->tombstoneCounter = 0;
    }
+
+
+   template <typename Rule, int BLOCKSIZE = 1024>
+   size_t extractPattern(KEY_TYPE* elements, Rule rule, split_gpuStream_t s = 0) {
+      // Figure out Blocks to use
+      size_t _s = std::ceil((float(buckets.size())) / (float)BLOCKSIZE);
+      size_t nBlocks = nextPow2(_s);
+      nBlocks+=(nBlocks==0);
+
+      // Allocate with Mempool
+      const size_t memory_for_pool = 8 * nBlocks * sizeof(uint32_t);
+      split::tools::Cuda_mempool mPool(memory_for_pool, s);
+      size_t retval =
+          split::tools::copy_if_raw<KEY_TYPE, Rule, defaults::MAX_BLOCKSIZE, defaults::WARPSIZE>(
+              buckets, elements, rule, nBlocks, mPool, s);
+      return retval;
+   }
+
+   size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, split_gpuStream_t s = 0, bool prefetches = true) {
+      // Extract all keys
+      if (prefetches){
+         elements.optimizeGPU(s);
+      }
+      auto rule = [] __host__ __device__(const KEY_TYPE& kval) -> bool {
+         return kval != EMPTYBUCKET && kval!= TOMBSTONE;
+      };
+      return extractPattern(elements.data(), rule, s);
+   }
+
+   void device_rehash(int newSizePower, split_gpuStream_t s = 0) {
+      if (newSizePower > 32) {
+         throw std::out_of_range("Hashmap ran into rehashing catastrophe and exceeded 32bit buckets.");
+      }
+
+      size_t priorFill = _setInfo->fill;
+      // Extract all valid elements
+      KEY_TYPE* validElements;
+      SPLIT_CHECK_ERR(split_gpuMallocAsync((void**)&validElements,
+                                           (_setInfo->fill + 1) * sizeof(KEY_TYPE), s));
+      optimizeGPU(s);
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+
+      auto isValidKey = [] __host__ __device__(KEY_TYPE& element) {
+         return ( (element !=TOMBSTONE) && (element!=EMPTYBUCKET) );
+      };
+
+      uint32_t nValidElements = extractPattern(validElements, isValidKey, s);
+
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+      assert(nValidElements == _setInfo->fill && "Something really bad happened during rehashing! Ask Kostis!");
+      // We can now clear our buckets
+      // Easy optimization: If our bucket had no valid elements and the same size was requested
+      // we can just clear it
+      if (newSizePower == _setInfo->sizePower && nValidElements == 0) {
+         clear(targets::device, s, true);
+         set_status((priorFill == _setInfo->fill) ? status::success : status::fail);
+         split_gpuFreeAsync(validElements, s);
+         return;
+      }
+      optimizeCPU(s);
+      buckets = std::move(split::SplitVector<KEY_TYPE>(1 << newSizePower, KEY_TYPE(EMPTYBUCKET)));
+      optimizeGPU(s);
+      *_setInfo = SetInfo(newSizePower);
+      // Insert valid elements to now larger buckets
+      insert(validElements, nValidElements, 1, s);
+      set_status((priorFill == _setInfo->fill) ? status::success : status::fail);
+      split_gpuFreeAsync(validElements, s);
+      return;
+   }
+
+   void clean_tombstones(split_gpuStream_t s = 0, bool prefetches = false) {
+
+      if (_setInfo->tombstoneCounter == 0) {
+         return;
+      }
+
+      // Reset the tomstone counter
+      _setInfo->tombstoneCounter = 0;
+      // Allocate memory for overflown elements. So far this is the same size as our buckets but we can be better than
+      // this
+
+      KEY_TYPE* overflownElements;
+      SPLIT_CHECK_ERR(split_gpuMallocAsync((void**)&overflownElements,
+                                           (1 << _setInfo->sizePower) * sizeof(KEY_TYPE), s));
+
+      if (prefetches) {
+         optimizeGPU(s);
+      }
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+
+      int currentSizePower = _setInfo->sizePower;
+      KEY_TYPE* bck_ptr = buckets.data();
+
+      auto isOverflown = [bck_ptr, currentSizePower] __host__ __device__(KEY_TYPE & element)->bool {
+         if (element == TOMBSTONE) {
+            element = EMPTYBUCKET;
+            return false;
+         }
+         if (element == EMPTYBUCKET) {
+            return false;
+         }
+         const size_t hashIndex = HashFunction::_hash(element, currentSizePower);
+         const int bitMask = (1 << (currentSizePower)) - 1;
+         bool isOverflown = (bck_ptr[hashIndex & bitMask] != element);
+         return isOverflown;
+      };
+
+      // Extract overflown elements and reset overflow
+      uint32_t nOverflownElements = extractPattern(overflownElements, isOverflown, s);
+      _setInfo->currentMaxBucketOverflow = defaults::BUCKET_OVERFLOW;
+
+      if (nOverflownElements == 0) {
+         SPLIT_CHECK_ERR(split_gpuFreeAsync(overflownElements, s));
+         return;
+      }
+      // If we do have overflown elements we put them back in the buckets
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+      DeviceHasher::reset_set(overflownElements, buckets.data(), _setInfo->sizePower, _setInfo->currentMaxBucketOverflow,
+                          nOverflownElements, s);
+      _setInfo->fill -= nOverflownElements;
+      DeviceHasher::insert_set(overflownElements, buckets.data(), _setInfo->sizePower, _setInfo->currentMaxBucketOverflow,
+                           &_setInfo->currentMaxBucketOverflow, &_setInfo->fill, nOverflownElements, &_setInfo->err, s);
+
+      SPLIT_CHECK_ERR(split_gpuFreeAsync(overflownElements, s));
+      return;
+   }
+
+#ifdef HASHINATOR_CPU_ONLY_MODE
+   // Try to get the overflow back to the original one
+   void performCleanupTasks() {
+      while (_setInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW) {
+         rehash(_setInfo->sizePower + 1);
+      }
+      // When operating in CPU only mode we rehash to get rid of tombstones
+      if (tombstone_ratio() > 0.25) {
+         rehash(_setInfo->sizePower);
+      }
+   }
+#else
+   // Try to get the overflow back to the original one
+   void performCleanupTasks(split_gpuStream_t s = 0) {
+      while (_setInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW) {
+         device_rehash(_setInfo->sizePower + 1, s);
+      }
+      if (tombstone_ratio() > 0.025) {
+         clean_tombstones(s);
+      }
+   }
+
+#endif
 
    void rehash() { rehash(_setInfo->sizePower); }
 
@@ -392,7 +657,7 @@ public:
    }
 
    HASHINATOR_DEVICEONLY
-   const_device_iterator device_begin() const {
+   const_device_iterator device_begin() const noexcept {
       for (size_t i = 0; i < buckets.size(); i++) {
          if (buckets[i] != EMPTYBUCKET && buckets[i] != TOMBSTONE) {
             return const_device_iterator(*this, i);
@@ -401,7 +666,103 @@ public:
       return device_end();
    }
 
-   void print_pair(const KEY_TYPE& i) const {
+   // Element access by iterator
+   HASHINATOR_DEVICEONLY
+   device_iterator device_find(KEY_TYPE key) {
+      int bitMask = (1 << _setInfo->sizePower) - 1; // For efficient modulo of the array size
+      auto hashIndex = hash(key);
+
+      // Try to find the matching bucket.
+      for (size_t i = 0; i < _setInfo->currentMaxBucketOverflow; i++) {
+         const KEY_TYPE& candidate = buckets[(hashIndex + i) & bitMask];
+
+         if (candidate == TOMBSTONE) {
+            continue;
+         }
+
+         if (candidate == key) {
+            // Found a match, return that
+            return device_iterator(*this, (hashIndex + i) & bitMask);
+         }
+
+         if (candidate.first == EMPTYBUCKET) {
+            // Found an empty bucket. Return empty.
+            return device_end();
+         }
+      }
+      // Not found
+      return device_end();
+   }
+
+   HASHINATOR_DEVICEONLY
+   const const_device_iterator device_find(KEY_TYPE key) const {
+      int bitMask = (1 << _setInfo->sizePower) - 1; // For efficient modulo of the array size
+      auto hashIndex = hash(key);
+
+      // Try to find the matching bucket.
+      for (size_t i = 0; i < _setInfo->currentMaxBucketOverflow; i++) {
+         const KEY_TYPE& candidate = buckets[(hashIndex + i) & bitMask];
+
+         if (candidate == TOMBSTONE) {
+            continue;
+         }
+
+         if (candidate == key) {
+            // Found a match, return that
+            return const_device_iterator(*this, (hashIndex + i) & bitMask);
+         }
+
+         if (candidate == EMPTYBUCKET) {
+            // Found an empty bucket. Return empty.
+            return device_end();
+         }
+      }
+      // Not found
+      return device_end();
+   }
+
+   HASHINATOR_DEVICEONLY
+   void insert_element(const KEY_TYPE& key, size_t& thread_overflowLookup) {
+      int bitMask = (1 << _setInfo->sizePower) - 1; // For efficient modulo of the array size
+      auto hashIndex = hash(key);
+      size_t i = 0;
+      while (i < buckets.size()) {
+         uint32_t vecindex = (hashIndex + i) & bitMask;
+         KEY_TYPE old = split::s_atomicCAS(&buckets[vecindex], EMPTYBUCKET, key);
+         // Key does not exist so we create it and incerement fill
+         if (old == EMPTYBUCKET) {
+            split::s_atomicAdd((unsigned int*)(&_setInfo->fill), 1);
+            thread_overflowLookup = i + 1;
+            return;
+         }
+         // Key exists so we overwrite it. Fill stays the same
+         if (old == key) {
+            thread_overflowLookup = i + 1;
+            return;
+         }
+         i++;
+      }
+      assert(false && "Hashmap completely overflown");
+   }
+
+   HASHINATOR_DEVICEONLY
+   hash_pair<device_iterator, bool> device_insert(KEY_TYPE newEntry) {
+      bool found = device_find(newEntry) != device_end();
+      if (!found) {
+         add_element(newEntry);
+      }
+      return hash_pair<device_iterator, bool>(device_find(newEntry.first), !found);
+   }
+
+   HASHINATOR_DEVICEONLY
+   void add_element(const KEY_TYPE& key) {
+      size_t thread_overflowLookup = 0;
+      insert_element(key, thread_overflowLookup);
+      atomicMax((unsigned long long*)&(_setInfo->currentMaxBucketOverflow),
+                nextOverflow(thread_overflowLookup, defaults::WARPSIZE / defaults::elementsPerWarp));
+   }
+
+   void print_pair(const KEY_TYPE& i) const noexcept {
       size_t currentSizePower = _setInfo->sizePower;
       const size_t hashIndex = HashFunction::_hash(i, currentSizePower);
       const int bitMask = (1 << (currentSizePower)) - 1;
@@ -421,7 +782,7 @@ public:
       }
    }
 
-   void dump_buckets() const {
+   void dump_buckets() const noexcept {
       printf("Hashinator Stats \n");
       printf("Fill= %zu, LoadFactor=%f \n", _setInfo->fill, load_factor());
       printf("Tombstones= %zu\n", _setInfo->tombstoneCounter);
@@ -432,7 +793,7 @@ public:
    }
 
    HASHINATOR_HOSTDEVICE
-   void stats() const {
+   void stats() const noexcept{
       printf("Hashinator Stats \n");
       printf("Bucket size= %lu\n", buckets.size());
       printf("Fill= %lu, LoadFactor=%f \n", _setInfo->fill, load_factor());
@@ -456,11 +817,49 @@ public:
    HASHINATOR_HOSTDEVICE
    size_t tombstone_count() const noexcept { return _setInfo->tombstoneCounter; }
 
+   HASHINATOR_HOSTDEVICE
+   float tombstone_ratio() const noexcept {
+      if (tombstone_count() == 0) {
+         return 0.0;
+      }
+      return (float)_setInfo->tombstoneCounter / (float)buckets.size();
+   }
+
    bool contains(const KEY_TYPE& key) const noexcept { return (find(key) == end()) ? false : true; }
 
    bool empty() const noexcept { return begin() == end(); }
 
    size_t count(const KEY_TYPE& key) const noexcept { return contains(key) ? 1 : 0; }
+
+#ifdef HASHINATOR_CPU_ONLY_MODE
+   void clear(){
+      buckets = split::SplitVector<KEY_TYPE>(1 << _setInfo->sizePower, {EMPTYBUCKET});
+      *_setInfo = SetInfo(_setInfo->sizePower);
+      return;
+   }
+#else
+   void clear(targets t = targets::host, split_gpuStream_t s = 0, bool prefetches = true) {
+      switch (t) {
+      case targets::host:
+         buckets = split::SplitVector<KEY_TYPE>(1 << _setInfo->sizePower, {EMPTYBUCKET});
+         *_setInfo = SetInfo(_setInfo->sizePower);
+         break;
+      case targets::device:
+         if (prefetches) {
+            buckets.optimizeGPU(s);
+         }
+         DeviceHasher::reset_all_set(buckets.data(), buckets.size(), s);
+         _setInfo->fill = 0;
+         set_status((_setInfo->fill == 0) ? success : fail);
+         break;
+      default:
+         clear(targets::host);
+         break;
+      }
+      return;
+   }
+#endif
+
 
    iterator find(const KEY_TYPE& key) noexcept {
       const int bitMask = (1 << _setInfo->sizePower) - 1;
@@ -504,6 +903,7 @@ public:
 
    hash_pair<iterator, bool> insert(const KEY_TYPE& key) noexcept {
       // try to find key
+      performCleanupTasks();
       iterator it = find(key);
 
       // if the key already exists we mutate it
@@ -555,12 +955,57 @@ public:
       }
       return ++pos; // return next valid element;
    }
+
+   void resize(int newSizePower, targets t = targets::host, split_gpuStream_t s = 0) {
+      switch (t) {
+      case targets::host:
+         rehash(newSizePower);
+         break;
+      case targets::device:
+         device_rehash(newSizePower, s);
+         break;
+      default:
+         resize(newSizePower, targets::host);
+         break;
+      }
+      return;
+   }
    
-
-   void insert_fast(const KEY_TYPE* keys, size_t len){
-
+   void insert(KEY_TYPE* keys,size_t len,float targetLF = 0.5, split_gpuStream_t s = 0, bool prefetches = true) {
+      // TODO fix these if paths or at least annotate them .
+      if (len == 0) {
+         set_status(status::success);
+         return;
+      }
+      if (prefetches) {
+         buckets.optimizeGPU(s);
+      }
+      int64_t neededPowerSize = std::ceil(std::log2((_setInfo->fill + len) * (1.0 / targetLF)));
+      if (neededPowerSize > _setInfo->sizePower) {
+         resize(neededPowerSize, targets::device, s);
+      }
+      _setInfo->currentMaxBucketOverflow = _setInfo->currentMaxBucketOverflow;
+      DeviceHasher::insert_set(keys, buckets.data(), _setInfo->sizePower, _setInfo->currentMaxBucketOverflow,
+                           &_setInfo->currentMaxBucketOverflow, &_setInfo->fill, len, &_setInfo->err, s);
+      return;
    }
 
+   // Uses Hasher's erase_kernel to delete  elements
+   void erase(KEY_TYPE* keys, size_t len, split_gpuStream_t s = 0) {
+      if (len == 0) {
+         set_status(status::success);
+         return;
+      }
+      buckets.optimizeGPU(s);
+      // Remember the last number of tombstones
+      size_t tbStore = tombstone_count();
+      DeviceHasher::erase_set(keys, buckets.data(), &_setInfo->tombstoneCounter, _setInfo->sizePower,
+                          _setInfo->currentMaxBucketOverflow, len, s);
+      size_t tombstonesAdded = tombstone_count() - tbStore;
+      // Fill should be decremented by the number of tombstones added;
+      _setInfo->fill -= tombstonesAdded;
+      return;
+   }
 
 
 }; // Unordered_Set
