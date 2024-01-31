@@ -215,6 +215,7 @@ TEST(Unordered_UnitTest , Resize){
    auto sizePower = s->getSizePower();
    s->resize(sizePower+1,targets::host);
    expect_true(s->size()==priorFill);
+   delete s;
 }
 
 TEST(Unordered_UnitTest , LoadFactorReduction){
