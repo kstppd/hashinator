@@ -600,14 +600,14 @@ public:
     *
     * @return Pointer to the data.
     */
-   HOSTDEVICE T* data() noexcept { return &(_data[0]); }
+   HOSTDEVICE T* data() noexcept { return _data; }
 
    /**
     * @brief Returns a const raw pointer to the data stored in the SplitVector.
     *
     * @return Const pointer to the data.
     */
-   HOSTDEVICE const T* data() const noexcept { return &(_data[0]); }
+   HOSTDEVICE const T* data() const noexcept { return _data; }
 
    /**
     * @brief Reallocates data to a bigger chunk of memory.
