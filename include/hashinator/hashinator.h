@@ -1127,6 +1127,9 @@ public:
       // Extract element **keys** matching the Pattern Rule(element)==true;
       split::tools::copy_keys_if<hash_pair<KEY_TYPE, VAL_TYPE>, KEY_TYPE, Rule, defaults::MAX_BLOCKSIZE,
                                  defaults::WARPSIZE>(buckets, elements, rule, s);
+      //FIXME: there is an issue where paging to host occurs and following calls to hashmap operations take a hit.
+      //temp fix: call optimizeGPU() here
+      optimizeGPU(s);
       return elements.size();
    }
    template <typename Rule>
