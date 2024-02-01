@@ -688,7 +688,7 @@ uint32_t copy_if_raw(T* input, T* output, size_t size, Rule rule,
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    return numel;
 }
-   
+
 /**
  * @brief Same as copy_keys_if but using raw memory
  */
@@ -896,6 +896,6 @@ size_t copy_if(T* input, T* output, size_t size, Rule rule, void* stack, size_t 
    auto len = copy_if_raw(input, output, size, rule, nBlocks, mPool, s);
    return len;
 }
-   
+
 } // namespace tools
 } // namespace split

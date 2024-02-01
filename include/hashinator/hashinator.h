@@ -1298,7 +1298,6 @@ public:
 
    // Uses Hasher's erase_kernel to delete all elements
    void erase(KEY_TYPE* keys, size_t len, split_gpuStream_t s = 0) {
-      //buckets.optimizeGPU(s);
       // Remember the last numeber of tombstones
       size_t tbStore = tombstone_count();
       DeviceHasher::erase(keys, buckets.data(), &_mapInfo->tombstoneCounter, _mapInfo->sizePower,
