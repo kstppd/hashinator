@@ -4,7 +4,10 @@
 #include <unordered_set>
 #include <random>
 #include "../../include/hashinator/hashinator.h"
-constexpr int R = 10;
+#include <nvToolsExt.h>
+#define PROFILE_START(msg)   nvtxRangePushA((msg))
+#define PROFILE_END() nvtxRangePop()
+constexpr int R = 50;
 
 using namespace std::chrono;
 using namespace Hashinator;
@@ -16,6 +19,8 @@ typedef split::SplitVector<val_type> val_vec;
 using hashmap= Hashmap<key_type,val_type>;
 
 
+static void *stack=nullptr;
+static size_t bytes = 1024*1024;
 
 auto generateNonDuplicatePairs(vector& src,const size_t size)->void {
     std::unordered_set<int> keys;
@@ -61,17 +66,36 @@ auto timeMe(Fn fn, Args && ... args){
    start = std::chrono::high_resolution_clock::now();
    fn(args...);
    stop = std::chrono::high_resolution_clock::now();
-   auto duration = duration_cast<milliseconds>(stop- start).count();
+   auto duration = duration_cast<microseconds>(stop- start).count();
    total_time+=duration;
    return total_time;
 }
 
 void benchInsert(hashmap& hmap,key_type* gpuKeys, val_type* gpuVals,int sz){
+   hmap.optimizeGPU();
    hmap.insert(gpuKeys,gpuVals,1<<sz,1);
+   return ;
+}
+
+void benchRetrieve(hashmap& hmap,key_type* gpuKeys, val_type* gpuVals,int sz){
+   hmap.optimizeGPU();
    hmap.retrieve(gpuKeys,gpuVals,1<<sz);
+   return ;
+}
+
+void benchExtract(hashmap& hmap,key_vec& spare,int sz){
+   ( void )sz;
+   spare.optimizeGPU();
+   hmap.optimizeGPU();
+   //hmap.extractAllKeys(spare,stack,bytes);
+   hmap.extractAllKeys(spare);
+   return ;
+}
+
+void benchErase(hashmap& hmap,key_type* gpuKeys, val_type* gpuVals,int sz){
+   (void)gpuVals;
+   hmap.optimizeGPU();
    hmap.erase(gpuKeys,1<<sz);
-   hmap.stats();
-   hmap.clear();
    return ;
 }
 
@@ -92,24 +116,57 @@ int main(int argc, char* argv[]){
    key_vec cpu_keys;
    val_vec cpu_vals;
    generateNonDuplicatePairs(cpu_keys,cpu_vals,1<<sz);
-   std::cout<<"Generated "<<cpu_keys.size()<<" unique keys!"<<std::endl;
+   //std::cout<<"Generated "<<cpu_keys.size()<<" unique keys!"<<std::endl;
 
    key_type* gpuKeys;
+   key_vec  spare;
    val_type* gpuVals;
    split_gpuMalloc((void **) &gpuKeys, (1<<sz)*sizeof(key_type));
+   split_gpuMalloc((void **) &stack, bytes);
    split_gpuMalloc((void **) &gpuVals, (1<<sz)*sizeof(val_type));
    split_gpuMemcpy(gpuKeys,cpu_keys.data(),(1<<sz)*sizeof(key_type),split_gpuMemcpyHostToDevice);
    split_gpuMemcpy(gpuVals,cpu_vals.data(),(1<<sz)*sizeof(key_type),split_gpuMemcpyHostToDevice);
+   spare.resize(1<<sz);
 
-   double t={0};
+   double t_insert={0};
+   double t_retrieve={0};
+   double t_extract={0};
+   double t_erase={0};
+
    for (int i =0; i<R; i++){
       hmap.optimizeGPU();
-      t+=timeMe(benchInsert,hmap,gpuKeys,gpuVals,sz);
-   }
-   std::cout<<"Done in "<<t/R<<" ms"<<std::endl;
 
+      PROFILE_START("insert");
+      t_insert+=timeMe(benchInsert,hmap,gpuKeys,gpuVals,sz);
+      cudaDeviceSynchronize();
+      PROFILE_END();
+   
+      PROFILE_START("extract");
+      t_extract+=timeMe(benchExtract,hmap,spare,sz);
+      cudaDeviceSynchronize();
+      PROFILE_END();
+    
+      PROFILE_START("retrieve");
+      t_retrieve+=timeMe(benchRetrieve,hmap,gpuKeys,gpuVals,sz);
+      cudaDeviceSynchronize();
+      PROFILE_END();
+      
+      PROFILE_START("erase");
+      t_erase+=timeMe(benchErase,hmap,gpuKeys,gpuVals,sz);
+      cudaDeviceSynchronize();
+      PROFILE_END();
+      
+      hmap.clear();
+   }
+   t_insert/=(float)R;
+   t_retrieve/=(float)R;
+   t_extract/=(float)R;
+   t_erase/=(float)R;
+
+   printf("%d %d %d %d %d\n",sz,(int)t_insert,(int)t_retrieve,(int)t_extract,(int)t_erase);
    split_gpuFree(gpuKeys);
    split_gpuFree(gpuVals);
+   split_gpuFree(stack);
    return 0;
 
 }

@@ -23,7 +23,7 @@ compaction2_unit = executable('compaction2_test', 'unit_tests/stream_compaction/
 compaction3_unit = executable('compaction3_test', 'unit_tests/stream_compaction/unit.cu', cuda_args:'--default-stream=per-thread',link_args : ['-fopenmp'],dependencies :gtest_dep)
 pointer_unit = executable('pointer_test', 'unit_tests/pointer_test/main.cu',dependencies :gtest_dep )
 hybridCPU = executable('hybrid_cpu', 'unit_tests/hybrid/main.cu',cpp_args:'-DHASHINATOR_CPU_ONLY_MODE',dependencies :gtest_dep )
-hashinator_bench = executable('bench', 'unit_tests/benchmark/main.cu', dependencies :gtest_dep)
+hashinator_bench = executable('bench', 'unit_tests/benchmark/main.cu', dependencies :gtest_dep,link_args:'-lnvToolsExt')
 deletion_mechanism = executable('deletion', 'unit_tests/delete_by_compaction/main.cu', dependencies :gtest_dep)
 insertion_mechanism = executable('insertion', 'unit_tests/insertion_mechanism/main.cu', dependencies :gtest_dep)
 tombstoneTest = executable('tbPerf', 'unit_tests/benchmark/tbPerf.cu', dependencies :gtest_dep)
