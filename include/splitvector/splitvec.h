@@ -638,12 +638,131 @@ public:
     */
    HOSTDEVICE const T* data() const noexcept { return _data; }
 
+#ifdef SPLIT_CPU_ONLY_MODE
    /**
     * @brief Reallocates data to a bigger chunk of memory.
     *
     * @param requested_space The size of the requested space.
     */
-   HOSTONLY void reallocate(size_t requested_space, split_gpuStream_t stream = 0) {
+   void reallocate(size_t requested_space) {
+      if (requested_space == 0) {
+         if (_data != nullptr) {
+            _deallocate_and_destroy(capacity(), _data);
+         }
+         _data = nullptr;
+         *_capacity = 0;
+         *_size = 0;
+         return;
+      }
+      T* _new_data;
+      _new_data = _allocate_and_construct(requested_space, T());
+      if (_new_data == nullptr) {
+         _deallocate_and_destroy(requested_space, _new_data);
+         this->_deallocate();
+         throw std::bad_alloc();
+      }
+
+      // Copy over
+      for (size_t i = 0; i < size(); i++) {
+         _new_data[i] = _data[i];
+      }
+
+      // Deallocate old space
+      _deallocate_and_destroy(capacity(), _data);
+
+      // Swap pointers & update capacity
+      // Size remains the same ofc
+      _data = _new_data;
+      *_capacity = requested_space;
+      return;
+   }
+
+   /**
+    * @brief Reserves memory for the SplitVector.
+    *
+    * @param requested_space The size of the requested space.
+    * @param eco Indicates whether to allocate exactly the requested space.
+    * Supports only host reserving.
+    * Will never reduce the vector's size.
+    * Memory location will change so any old pointers/iterators
+    * will be invalidated after a call.
+    */
+   void reserve(size_t requested_space, bool eco = false) {
+      size_t current_space = *_capacity;
+      // Vector was default initialized
+      if (_data == nullptr) {
+         _deallocate();
+         _allocate(requested_space);
+         *_size = 0;
+         return;
+      }
+      // Nope.
+      if (requested_space <= current_space) {
+         for (size_t i = size(); i < requested_space; ++i) {
+            _allocator.construct(&_data[i], T());
+         }
+         return;
+      }
+      // If the users passes eco=true we allocate
+      // exactly what was requested
+      if (!eco) {
+         requested_space *= _alloc_multiplier;
+      }
+      reallocate(requested_space);
+      return;
+   }
+
+   /**
+    * @brief Resize the SplitVector to a new size.
+    *
+    * @param newSize The new size of the SplitVector.
+    * @param eco Indicates whether to allocate exactly the requested space.
+    * Supports only host resizing.
+    * If new size is smaller than the current size we just reduce size but
+    * the capacity remains the same
+    * Memory location will change so any old pointers/iterators
+    * will be invalid from now on.
+    */
+   void resize(size_t newSize, bool eco = false) {
+      // Let's reserve some space and change our size
+      if (newSize <= size()) {
+         *_size = newSize;
+         return;
+      }
+      reserve(newSize, eco);
+      *_size = newSize;
+   }
+
+   /**
+    * @brief Increase the capacity of the SplitVector by 1.
+    */
+   void grow() { reserve(capacity() + 1); }
+
+   /**
+    * @brief Reduce the capacity of the SplitVector to match its size.
+    */
+   HOSTONLY
+   void shrink_to_fit(split_gpuStream_t stream = 0) {
+      size_t curr_cap = *_capacity;
+      size_t curr_size = *_size;
+
+      if (curr_cap == curr_size) {
+         return;
+      }
+
+      reallocate(curr_size,stream);
+      return;
+   }
+
+#else
+
+   /**
+    * @brief Reallocates data to a bigger chunk of memory.
+    *
+    * @param requested_space The size of the requested space.
+    */
+   HOSTONLY
+   void reallocate(size_t requested_space, split_gpuStream_t stream = 0) {
       if (requested_space == 0) {
          if (_data != nullptr) {
             _deallocate_and_destroy(capacity(), _data);
@@ -679,9 +798,6 @@ public:
          SPLIT_CHECK_ERR(split_gpuMemcpy(__new_data, __data, __size * sizeof(T), split_gpuMemcpyDeviceToDevice));
          SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
       }
-      // for (size_t i = 0; i < size(); i++) {
-      //    _new_data[i] = _data[i];
-      // }
 
       // Deallocate old space
       _deallocate_and_destroy(__old_capacity, __data);
@@ -751,7 +867,6 @@ public:
       *_size = newSize;
    }
 
-#ifndef SPLIT_CPU_ONLY_MODE
    /**
     * @brief Resize the SplitVector on the device.
     *
@@ -767,13 +882,14 @@ public:
       }
       *_size = newSize;
    }
-#endif
 
    /**
     * @brief Increase the capacity of the SplitVector by 1.
     */
    HOSTONLY
-   void grow(split_gpuStream_t stream = 0) { reserve(capacity() + 1, false, stream); }
+   void grow(split_gpuStream_t stream = 0) {
+      reserve(capacity() + 1, false, stream);
+   }
 
    /**
     * @brief Reduce the capacity of the SplitVector to match its size.
@@ -790,6 +906,9 @@ public:
       reallocate(curr_size,stream);
       return;
    }
+
+#endif
+
 
    /**
     * @brief Remove the last element from the SplitVector.
