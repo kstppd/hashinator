@@ -741,16 +741,15 @@ public:
    /**
     * @brief Reduce the capacity of the SplitVector to match its size.
     */
-   HOSTONLY
-   void shrink_to_fit(split_gpuStream_t stream = 0) {
+   void shrink_to_fit() {
       size_t curr_cap = *_capacity;
       size_t curr_size = *_size;
-
+      
       if (curr_cap == curr_size) {
          return;
       }
-
-      reallocate(curr_size,stream);
+      
+      reallocate(curr_size);
       return;
    }
 
