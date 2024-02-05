@@ -615,47 +615,6 @@ void split_prefix_scan_raw(T* input, T* output, GPU_Mempool& mPool, const size_t
    }
 }
 
-/**
- * @brief Same as copy_if but using raw memory
- */
-template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
-uint32_t copy_if_raw(T* input, T* output, size_t inputSize, Rule rule, size_t nBlocks, GPU_Mempool& mPool,
-                     split_gpuStream_t s = 0) {
-
-   uint32_t* d_counts;
-   uint32_t* d_offsets;
-   d_counts = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   SPLIT_CHECK_ERR(split_gpuMemsetAsync(d_counts, 0, nBlocks * sizeof(uint32_t), s));
-
-   // Phase 1 -- Calculate per warp workload
-   size_t _size = input.size();
-   split::tools::scan_reduce_raw<<<nBlocks, BLOCKSIZE, 0, s>>>(input.data(), d_counts, rule, _size);
-   d_offsets = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   SPLIT_CHECK_ERR(split_gpuMemsetAsync(d_offsets, 0, nBlocks * sizeof(uint32_t), s));
-
-   // Step 2 -- Exclusive Prefix Scan on offsets
-   if (nBlocks == 1) {
-      split_prefix_scan_raw<uint32_t, 2, WARP>(d_counts, d_offsets, mPool, nBlocks, s);
-   } else {
-      split_prefix_scan_raw<uint32_t, BLOCKSIZE, WARP>(d_counts, d_offsets, mPool, nBlocks, s);
-   }
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-
-   // Step 3 -- Compaction
-   input.optimizeGPU(s);
-   uint32_t* retval = (uint32_t*)mPool.allocate(sizeof(uint32_t));
-   split::tools::split_compact_raw<T, Rule, BLOCKSIZE, WARP>
-       <<<nBlocks, BLOCKSIZE, 2 * (BLOCKSIZE / WARP) * sizeof(unsigned int), s>>>(
-           input.data(), d_counts, d_offsets, output, rule, _size, nBlocks, retval);
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   uint32_t numel;
-   SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&numel, retval, sizeof(uint32_t), split_gpuMemcpyDeviceToHost, s));
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   return numel;
-}
-
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 uint32_t copy_if_raw(T* input, T* output, size_t size, Rule rule,
                      size_t nBlocks, GPU_Mempool& mPool, split_gpuStream_t s = 0) {
@@ -693,48 +652,6 @@ uint32_t copy_if_raw(T* input, T* output, size_t size, Rule rule,
 }
 
 /**
- * @brief Same as copy_keys_if but using raw memory
- */
-template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
-size_t copy_keys_if_raw(T* input, U* output, size_t inputSize, Rule rule, size_t nBlocks, GPU_Mempool& mPool,
-                        split_gpuStream_t s = 0) {
-
-   uint32_t* d_counts;
-   uint32_t* d_offsets;
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   d_counts = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   SPLIT_CHECK_ERR(split_gpuMemsetAsync(d_counts, 0, nBlocks * sizeof(uint32_t), s));
-
-   // Phase 1 -- Calculate per warp workload
-   size_t _size = input.size();
-   split::tools::scan_reduce_raw<<<nBlocks, BLOCKSIZE, 0, s>>>(input.data(), d_counts, rule, _size);
-   d_offsets = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   SPLIT_CHECK_ERR(split_gpuMemsetAsync(d_offsets, 0, nBlocks * sizeof(uint32_t), s));
-
-   // Step 2 -- Exclusive Prefix Scan on offsets
-   if (nBlocks == 1) {
-      split_prefix_scan_raw<uint32_t, 2, WARP>(d_counts, d_offsets, mPool, nBlocks, s);
-   } else {
-      split_prefix_scan_raw<uint32_t, BLOCKSIZE, WARP>(d_counts, d_offsets, mPool, nBlocks, s);
-   }
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-
-   // Step 3 -- Compaction
-   input.optimizeGPU(s);
-   uint32_t* retval = (uint32_t*)mPool.allocate(sizeof(uint32_t));
-   split::tools::split_compact_keys_raw<T, U, Rule, BLOCKSIZE, WARP>
-       <<<nBlocks, BLOCKSIZE, 2 * (BLOCKSIZE / WARP) * sizeof(unsigned int), s>>>(
-           input.data(), d_counts, d_offsets, output, rule, _size, nBlocks, retval);
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   uint32_t numel;
-   SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&numel, retval, sizeof(uint32_t), split_gpuMemcpyDeviceToHost, s));
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   return numel;
-}
-
-/**
  * @brief Estimates memory needed for compacting the input splitvector
  */
 template <typename T, int BLOCKSIZE = 1024>
@@ -742,20 +659,6 @@ template <typename T, int BLOCKSIZE = 1024>
 estimateMemoryForCompaction(const split::SplitVector<T, split::split_unified_allocator<T>>& input) noexcept {
    // Figure out Blocks to use
    size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
-   size_t nBlocks = nextPow2(_s);
-   if (nBlocks == 0) {
-      nBlocks += 1;
-   }
-
-   // Allocate with Mempool
-   return 8 * nBlocks * sizeof(uint32_t);
-}
-
-template <int BLOCKSIZE = 1024>
-[[nodiscard]] size_t
-estimateMemoryForCompaction(const size_t inputSize) noexcept {
-   // Figure out Blocks to use
-   size_t _s = std::ceil((float(inputSize)) / (float)BLOCKSIZE);
    size_t nBlocks = nextPow2(_s);
    if (nBlocks == 0) {
       nBlocks += 1;
