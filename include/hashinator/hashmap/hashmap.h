@@ -151,7 +151,17 @@ public:
       return *this;
    }
 
-   Hashmap& operator=(Hashmap<KEY_TYPE, VAL_TYPE>&& other) {
+   /** Copy assign but using a provided stream */
+   void overwrite(const Hashmap<KEY_TYPE,VAL_TYPE>& other, split_gpuStream_t stream = 0) {
+      if (this == &other) {
+         return;
+      }
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(_mapInfo,other._mapInfo, sizeof(MapInfo), split_gpuMemcpyDeviceToDevice, stream));
+      buckets.overwrite(other.buckets);
+      return;
+   }
+
+   Hashmap& operator=(Hashmap<KEY_TYPE,VAL_TYPE>&& other) {
       if (this == &other) {
          return *this;
       }
@@ -450,12 +460,33 @@ public:
    }
 #endif
 
-   // Try to grow our buckets until we achieve a targetLF load factor
+#ifdef HASHINATOR_CPU_ONLY_MODE
+// Try to grow our buckets until we achieve a targetLF load factor
    void resize_to_lf(float targetLF = 0.5) {
       while (load_factor() > targetLF) {
          rehash(_mapInfo->sizePower + 1);
       }
    }
+#else
+   // Try to grow our buckets until we achieve a targetLF load factor
+   void resize_to_lf(float targetLF = 0.5, targets t = targets::host, split_gpuStream_t s = 0) {
+      while (load_factor() > targetLF) {
+         switch (t) {
+            case targets::host:
+               rehash(_mapInfo->sizePower + 1);
+               break;
+            case targets::device:
+               device_rehash(_mapInfo->sizePower + 1, s);
+               break;
+            default:
+               std::cerr << "Defaulting to host rehashing" << std::endl;
+               resize(_mapInfo->sizePower + 1, targets::host);
+               break;
+         }
+      }
+      return;
+   }
+#endif
 
 #ifdef HASHINATOR_CPU_ONLY_MODE
    void resize(int newSizePower) { rehash(newSizePower); }
@@ -1268,7 +1299,6 @@ public:
 
    // Uses Hasher's erase_kernel to delete all elements
    void erase(KEY_TYPE* keys, size_t len, split_gpuStream_t s = 0) {
-      buckets.optimizeGPU(s);
       // Remember the last numeber of tombstones
       size_t tbStore = tombstone_count();
       DeviceHasher::erase(keys, buckets.data(), &_mapInfo->tombstoneCounter, _mapInfo->sizePower,
