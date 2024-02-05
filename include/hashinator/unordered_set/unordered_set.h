@@ -837,7 +837,7 @@ public:
       return (float)_setInfo->tombstoneCounter / (float)buckets.size();
    }
 
-   bool contains(const KEY_TYPE& key) const noexcept { return (find(key) == end()) ? false : true; }
+   bool contains(const KEY_TYPE& key) const noexcept { return (find(key) != end()) ; }
 
    bool empty() const noexcept { return begin() == end(); }
 
@@ -1053,6 +1053,206 @@ public:
       return;
    }
 
+#endif
+   
+#ifndef HASHINATOR_CPU_ONLY_MODE
+   template <bool skipOverWrites = false>
+   HASHINATOR_DEVICEONLY void warpInsert(const KEY_TYPE& candidateKey, const size_t w_tid) noexcept {
+
+      const int sizePower = _setInfo->sizePower;
+      const int bitMask = (1 << (sizePower)) - 1;
+      const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
+      const size_t optimalindex = (hashIndex)&bitMask;
+      const auto submask = SPLIT_VOTING_MASK;
+      bool warpDone = false;
+      uint64_t threadOverflow = 1;
+
+#ifdef HASHINATOR_DEBUG
+// Safety check: make sure everyone has the same key/val and all threads are here.
+#ifdef __CUDACC__
+      assert(__activemask() == SPLIT_VOTING_MASK && "Tried to warpInsert with part of warp predicated off");
+#endif
+      KEY_TYPE storeKey = split::s_shuffle(candidateKey, 0, SPLIT_VOTING_MASK);
+      bool isSafe = (split::s_warpVote(candidateKey == storeKey, SPLIT_VOTING_MASK) == SPLIT_VOTING_MASK);
+      assert(isSafe && "Tried to warpInsert with different keys in the same warp");
+#endif
+
+      for (size_t i = 0; i < (1 << sizePower); i += defaults::WARPSIZE) {
+         // Check if this virtual warp is done.
+         if (warpDone) {
+            break;
+         }
+
+         // Get the position we should be looking into
+         size_t probingindex = ((hashIndex + i + w_tid) & bitMask);
+         auto target = buckets[probingindex];
+
+         // vote for available emptybuckets in warp region
+         // Note that this has to be done before voting for already existing elements (below)
+         auto mask = split::s_warpVote(target == EMPTYBUCKET, submask);
+
+         // Check if this elements already exists
+         auto already_exists = split::s_warpVote(target == candidateKey, submask);
+         if (already_exists) {
+            int winner = split::s_findFirstSig(already_exists) - 1;
+            if (w_tid == winner) {
+               warpDone = 1;
+            }
+         }
+
+         // If any duplicate was there now is the time for the whole Virtual warp to find out!
+         warpDone = split::s_warpVote(warpDone > 0, submask) & submask;
+
+         while (mask && !warpDone) {
+            int winner = split::s_findFirstSig(mask) - 1;
+            if (w_tid == winner) {
+               KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex], EMPTYBUCKET, candidateKey);
+               if (old == EMPTYBUCKET) {
+                  threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex + 1);
+                  warpDone = 1;
+                  split::s_atomicAdd(&_setInfo->fill, 1);
+                  if (threadOverflow > _setInfo->currentMaxBucketOverflow) {
+                     split::s_atomicExch((unsigned long long*)(&_setInfo->currentMaxBucketOverflow),
+                                         (unsigned long long)nextOverflow(threadOverflow, defaults::WARPSIZE));
+                  }
+               } else if (old == candidateKey) {
+                  warpDone = 1;
+               }
+            }
+            // If any of the virtual warp threads are done the the whole
+            // Virtual warp is done
+            warpDone = split::s_warpVote(warpDone > 0, submask);
+            mask ^= (1UL << winner);
+         }
+      }
+   }
+
+   template <bool skipOverWrites = false>
+   HASHINATOR_DEVICEONLY bool warpInsert_V(const KEY_TYPE& candidateKey,const size_t w_tid) noexcept {
+
+      const int sizePower = _setInfo->sizePower;
+      const int bitMask = (1 << (sizePower)) - 1;
+      const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
+      const size_t optimalindex = (hashIndex)&bitMask;
+      const auto submask = SPLIT_VOTING_MASK;
+      bool warpDone = false;
+      uint64_t threadOverflow = 1;
+      int localCount = 0;
+
+#ifdef HASHINATOR_DEBUG
+// Safety check: make sure everyone has the same key/val and all threads are here.
+#ifdef __CUDACC__
+      assert(__activemask() == SPLIT_VOTING_MASK && "Tried to warpInsert_V with part of warp predicated off");
+#endif
+      KEY_TYPE storeKey = split::s_shuffle(candidateKey, 0, SPLIT_VOTING_MASK);
+      KEY_TYPE storeVal = split::s_shuffle(candidateVal, 0, SPLIT_VOTING_MASK);
+      bool isSafe = (split::s_warpVote(candidateKey == storeKey, SPLIT_VOTING_MASDK) == SPLIT_VOTING_MASK;
+      assert(isSafe && "Tried to warpInsert_V with different keys in the same warp");
+#endif
+
+      for (size_t i = 0; i < (1 << sizePower); i += defaults::WARPSIZE) {
+         // Check if this virtual warp is done.
+         if (warpDone) {
+            break;
+         }
+
+         // Get the position we should be looking into
+         size_t probingindex = ((hashIndex + i + w_tid) & bitMask);
+         auto target = buckets[probingindex];
+
+         // vote for available emptybuckets in warp region
+         // Note that this has to be done before voting for already existing elements (below)
+         auto mask = split::s_warpVote(target == EMPTYBUCKET, submask);
+
+         // Check if this elements already exists
+         auto already_exists = split::s_warpVote(target == candidateKey, submask);
+         if (already_exists) {
+            int winner = split::s_findFirstSig(already_exists) - 1;
+            if (w_tid == winner) {
+               warpDone = 1;
+            }
+         }
+
+         // If any duplicate was there now is the time for the whole Virtual warp to find out!
+         warpDone = split::s_warpVote(warpDone > 0, submask) & submask;
+
+         while (mask && !warpDone) {
+            int winner = split::s_findFirstSig(mask) - 1;
+            if (w_tid == winner) {
+               KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex], EMPTYBUCKET, candidateKey);
+               if (old == EMPTYBUCKET) {
+                  threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex + 1);
+                  warpDone = 1;
+                  localCount = 1;
+                  split::s_atomicAdd(&_setInfo->fill, 1);
+                  if (threadOverflow > _setInfo->currentMaxBucketOverflow) {
+                     split::s_atomicExch((unsigned long long*)(&_setInfo->currentMaxBucketOverflow),
+                                         (unsigned long long)nextOverflow(threadOverflow, defaults::WARPSIZE));
+                  }
+               } else if (old == candidateKey) {
+                  warpDone = 1;
+               }
+            }
+            // If any of the virtual warp threads are done the the whole
+            // Virtual warp is done
+            warpDone = split::s_warpVote(warpDone > 0, submask);
+            mask ^= (1UL << winner);
+         }
+      }
+
+      auto res = split::s_warpVote(localCount > 0, submask);
+      return (res > 0);
+   }
+
+   HASHINATOR_DEVICEONLY
+   void warpErase(const KEY_TYPE& candidateKey, const size_t w_tid) noexcept {
+
+      const int sizePower = _setInfo->sizePower;
+      const size_t maxoverflow = _setInfo->currentMaxBucketOverflow;
+      const int bitMask = (1 << (sizePower)) - 1;
+      const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
+      const auto submask = SPLIT_VOTING_MASK;
+      bool warpDone = false;
+      int winner = 0;
+
+#ifdef HASHINATOR_DEBUG
+// Safety check: make sure everyone has the same key/val and all threads are here.
+#ifdef __CUDACC__
+      assert(__activemask() == SPLIT_VOTING_MASK && "Tried to warpFind with part of warp predicated off");
+#endif
+      KEY_TYPE storeKey = split::s_shuffle(candidateKey, 0, SPLIT_VOTING_MASK);
+      bool isSafe = split::s_warpVote(candidateKey == storeKey, SPLIT_VOTING_MASK) == SPLIT_VOTING_MASK;
+      assert(isSafe && "Tried to warpFind with different keys/vals in the same warp");
+#endif
+
+      for (size_t i = 0; i < maxoverflow; i += defaults::WARPSIZE) {
+
+         if (warpDone) {
+            break;
+         }
+
+         // Get the position we should be looking into
+         size_t probingindex = ((hashIndex + i + w_tid) & bitMask);
+         const auto maskExists =
+             split::s_warpVote(buckets[probingindex] == candidateKey, SPLIT_VOTING_MASK) & submask;
+         const auto emptyFound =
+             split::s_warpVote(buckets[probingindex] == EMPTYBUCKET, SPLIT_VOTING_MASK) & submask;
+         // If we encountered empty and the key is not in the range of this warp that means the key is not in hashmap.
+         if (!maskExists && emptyFound) {
+            warpDone = true;
+         }
+         if (maskExists) {
+            winner = split::s_findFirstSig(maskExists) - 1;
+            if (w_tid == winner) {
+               buckets[probingindex] = TOMBSTONE;
+               split::s_atomicAdd(&_setInfo->tombstoneCounter, 1);
+               split::s_atomicSub((unsigned int*)&_setInfo->fill, 1);
+            }
+            warpDone = true;
+         }
+      }
+      return;
+   }
 #endif
 
 }; // Unordered_Set

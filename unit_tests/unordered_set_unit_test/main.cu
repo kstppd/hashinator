@@ -6,8 +6,10 @@
 #define expect_true EXPECT_TRUE
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
-#define SMALL_SIZE (1<<10)
-#define LARGE_SIZE ( 1<<20 )
+#define SMALL 10
+#define LARGE 20 
+#define SMALL_SIZE (1<<SMALL)
+#define LARGE_SIZE ( 1<<LARGE )
 
 using namespace Hashinator;
 typedef uint32_t key_type;
@@ -115,6 +117,9 @@ TEST(Unordered_UnitTest , Insert_Erase_Kernel){
    UnorderedSet s;
    s.insert(v.data(),v.size()) ;
    expect_true(s.size()==LARGE_SIZE);
+   for (const auto& key:v){
+      expect_true(s.contains(key));
+   }
    s.erase(v.data(),v.size()) ;
    expect_true(s.size()==0);
 }
@@ -326,6 +331,80 @@ TEST(Unordered_UnitTest , DeviceKernelWrite){
    expect_true( s->tombstone_count()==SMALL_SIZE/2);
    s->performCleanupTasks();
    expect_true( s->tombstone_count()==0);
+   delete s;
+}
+
+__global__
+void gpu_write_warpWide(UnorderedSet* set,key_type* src,size_t N ){
+   size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+   const size_t wid = index / Hashinator::defaults::WARPSIZE;
+   const size_t w_tid = index % defaults::WARPSIZE;
+   if (wid < N ){
+      key_type key= src[wid];
+      set->warpInsert(key,w_tid);
+   }
+}
+
+__global__
+void gpu_erase_warpWide(UnorderedSet* set,key_type* src,size_t N){
+   size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+   const size_t wid = index / Hashinator::defaults::WARPSIZE;
+   const size_t w_tid = index % defaults::WARPSIZE;
+   if (wid < N ){
+      key_type key= src[wid];
+      set->warpErase(key,w_tid);
+   }
+}
+
+TEST(Unordered_UnitTest ,WarpInsert){
+   vector v;
+   for (uint32_t i = 0 ; i < LARGE_SIZE;++i){
+      v.push_back(i);
+   }
+   size_t N = v.size();
+   size_t blocksize=1024;
+   size_t blocks=N/blocksize;
+   size_t warpsize     =  Hashinator::defaults::WARPSIZE;
+   size_t threadsNeeded  =  N*warpsize; 
+   blocks = threadsNeeded/blocksize;
+   UnorderedSet* s = new UnorderedSet(LARGE+1);
+   gpu_write_warpWide<<<blocks,blocksize>>>(s,v.data(),v.size());
+   split_gpuDeviceSynchronize();
+   for (const auto& key:v){
+      expect_true(s->contains(key));
+   }
+   delete s;
+}
+
+
+TEST(Unordered_UnitTest ,WarpInsertErase){
+   vector v;
+   for (uint32_t i = 0 ; i < LARGE_SIZE;++i){
+      v.push_back(i);
+   }
+   size_t N = v.size();
+   size_t blocksize=1024;
+   size_t blocks=N/blocksize;
+   size_t warpsize     =  Hashinator::defaults::WARPSIZE;
+   size_t threadsNeeded  =  N*warpsize; 
+   blocks = threadsNeeded/blocksize;
+   UnorderedSet* s = new UnorderedSet;
+   s->resize(LARGE+1);
+   gpu_write_warpWide<<<blocks,blocksize>>>(s,v.data(),v.size());
+   split_gpuDeviceSynchronize();
+   for (const auto& key:v){
+      expect_true(s->contains(key));
+   }
+
+   gpu_erase_warpWide<<<blocks,blocksize>>>(s,v.data(),v.size());
+   split_gpuDeviceSynchronize();
+   for (const auto& key:v){
+      expect_false(s->contains(key));
+   }
+   expect_true(s->size()==0);
+   split_gpuDeviceSynchronize();
+
+
    delete s;
 }
 
