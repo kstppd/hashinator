@@ -2,8 +2,7 @@
 #include <stdlib.h>
 #include <chrono>
 #include <unordered_set>
-#include <random>
-#include "../../include/hashinator/hashinator.h"
+#include "../../include/hashinator/hashmap/hashmap.h"
 
 constexpr int R = 2;
 using namespace std::chrono;

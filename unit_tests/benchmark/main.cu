@@ -3,11 +3,11 @@
 #include <chrono>
 #include <unordered_set>
 #include <random>
-#include "../../include/hashinator/hashinator.h"
+#include "../../include/hashinator/hashmap/hashmap.h"
+constexpr int R = 10;
 #include <nvToolsExt.h>
 #define PROFILE_START(msg)   nvtxRangePushA((msg))
 #define PROFILE_END() nvtxRangePop()
-constexpr int R = 50;
 
 using namespace std::chrono;
 using namespace Hashinator;

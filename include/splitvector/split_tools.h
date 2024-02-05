@@ -623,14 +623,14 @@ uint32_t copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& i
    uint32_t* d_offsets;
    d_counts = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   SPLIT_CHECK_ERR(split_gpuMemsetAsync(d_counts, 0, nBlocks * sizeof(uint32_t),s));
+   SPLIT_CHECK_ERR(split_gpuMemsetAsync(d_counts, 0, nBlocks * sizeof(uint32_t), s));
 
    // Phase 1 -- Calculate per warp workload
    size_t _size = input.size();
    split::tools::scan_reduce_raw<<<nBlocks, BLOCKSIZE, 0, s>>>(input.data(), d_counts, rule, _size);
    d_offsets = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   SPLIT_CHECK_ERR(split_gpuMemsetAsync(d_offsets, 0, nBlocks * sizeof(uint32_t),s));
+   SPLIT_CHECK_ERR(split_gpuMemsetAsync(d_offsets, 0, nBlocks * sizeof(uint32_t), s));
 
    // Step 2 -- Exclusive Prefix Scan on offsets
    if (nBlocks == 1) {
@@ -641,6 +641,7 @@ uint32_t copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& i
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
 
    // Step 3 -- Compaction
+   input.optimizeGPU(s);
    uint32_t* retval = (uint32_t*)mPool.allocate(sizeof(uint32_t));
    split::tools::split_compact_raw<T, Rule, BLOCKSIZE, WARP>
        <<<nBlocks, BLOCKSIZE, 2 * (BLOCKSIZE / WARP) * sizeof(unsigned int), s>>>(
@@ -700,14 +701,14 @@ size_t copy_keys_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    d_counts = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   SPLIT_CHECK_ERR(split_gpuMemsetAsync(d_counts, 0, nBlocks * sizeof(uint32_t),s));
+   SPLIT_CHECK_ERR(split_gpuMemsetAsync(d_counts, 0, nBlocks * sizeof(uint32_t), s));
 
    // Phase 1 -- Calculate per warp workload
    size_t _size = input.size();
    split::tools::scan_reduce_raw<<<nBlocks, BLOCKSIZE, 0, s>>>(input.data(), d_counts, rule, _size);
    d_offsets = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   SPLIT_CHECK_ERR(split_gpuMemsetAsync(d_offsets, 0, nBlocks * sizeof(uint32_t),s));
+   SPLIT_CHECK_ERR(split_gpuMemsetAsync(d_offsets, 0, nBlocks * sizeof(uint32_t), s));
 
    // Step 2 -- Exclusive Prefix Scan on offsets
    if (nBlocks == 1) {
@@ -718,6 +719,7 @@ size_t copy_keys_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
 
    // Step 3 -- Compaction
+   input.optimizeGPU(s);
    uint32_t* retval = (uint32_t*)mPool.allocate(sizeof(uint32_t));
    split::tools::split_compact_keys_raw<T, U, Rule, BLOCKSIZE, WARP>
        <<<nBlocks, BLOCKSIZE, 2 * (BLOCKSIZE / WARP) * sizeof(unsigned int), s>>>(

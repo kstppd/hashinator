@@ -481,7 +481,7 @@ public:
       // This is done because _capacity would page-fault otherwise as pointed by Markus
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), split_gpuCpuDeviceId, stream));
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
-      if (*_capacity==0){
+      if (*_capacity == 0) {
          return;
       }
 
@@ -501,7 +501,7 @@ public:
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), split_gpuCpuDeviceId, stream));
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_size, sizeof(size_t), split_gpuCpuDeviceId, stream));
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
-      if (*_capacity==0){
+      if (*_capacity == 0) {
          return;
       }
       SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_data, capacity() * sizeof(T), split_gpuCpuDeviceId, stream));
@@ -525,9 +525,7 @@ public:
     *         Splitvector
     */
    HOSTDEVICE
-   [[nodiscard]] inline Residency getResidency()const noexcept{
-      return _location;
-   }
+   [[nodiscard]] inline Residency getResidency() const noexcept { return _location; }
 
    /**
     * @brief Copies metadata to a provided destination SplitInfo structure.
@@ -1476,7 +1474,7 @@ public:
       const int64_t end = p1.data() - begin().data();
       const int64_t range = end - start;
 
-      const size_t sz=size();
+      const size_t sz = size();
       if constexpr (!std::is_trivial<T>::value) {
          for (int64_t i = start; i < end; i++) {
             _data[i].~T();
