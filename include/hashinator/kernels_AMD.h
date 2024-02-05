@@ -725,8 +725,8 @@ __global__ void retrieve_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KE
 /*
  * Resets all elements in dst to EMPTY
  * */
-template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max()>
-__global__ void reset_all_to_empty_set(hash_pair<KEY_TYPE, VAL_TYPE>* dst, const size_t len) {
+template <typename KEY_TYPE, KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max()>
+__global__ void reset_all_to_empty_set(KEY_TYPE* dst, const size_t len) {
    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
    // Early exit here
    if (tid >= len) {
