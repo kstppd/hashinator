@@ -3,7 +3,7 @@
  * Description: Set of tools used by SplitVector
  *
  * This file defines the following classes or functions:
- *    --split::tools::Cuda_mempool
+ *    --split::tools::GPU_Mempool
  *    --split::tools::copy_if_raw
  *    --split::tools::copy_if
  *    --split::tools::scan_reduce_raw
@@ -31,6 +31,9 @@
  * */
 #pragma once
 #include "gpu_wrappers.h"
+#ifndef SPLIT_CPU_ONLY_MODE
+#include "devicevec.h"
+#endif
 #define NUM_BANKS 32 // TODO depends on device
 #define LOG_NUM_BANKS 5
 #define CONFLICT_FREE_OFFSET(n) ((n) >> LOG_NUM_BANKS)
@@ -500,7 +503,7 @@ __global__ void split_compact_raw(T* input, uint32_t* counts, uint32_t* offsets,
  * It uses async mallocs
  *
  */
-class Cuda_mempool {
+class GPU_Mempool {
 private:
    size_t total_bytes;
    size_t bytes_used;
@@ -509,24 +512,24 @@ private:
    bool isOwner;
 
 public:
-   explicit Cuda_mempool(size_t bytes, split_gpuStream_t str) {
+   explicit GPU_Mempool(size_t bytes, split_gpuStream_t str) {
       s = str;
       SPLIT_CHECK_ERR(split_gpuMallocAsync(&_data, bytes, s));
       total_bytes = bytes;
       bytes_used = 0;
       isOwner = true;
    }
-   explicit Cuda_mempool(void* ptr, size_t bytes) {
+   explicit GPU_Mempool(void* ptr, size_t bytes) {
       total_bytes = bytes;
       bytes_used = 0;
       isOwner = false;
       _data = ptr;
    }
 
-   Cuda_mempool() = delete;
-   Cuda_mempool(const Cuda_mempool& other) = delete;
-   Cuda_mempool(Cuda_mempool&& other) = delete;
-   ~Cuda_mempool() {
+   GPU_Mempool() = delete;
+   GPU_Mempool(const GPU_Mempool& other) = delete;
+   GPU_Mempool(GPU_Mempool&& other) = delete;
+   ~GPU_Mempool() {
       if (isOwner) {
          SPLIT_CHECK_ERR(split_gpuFreeAsync(_data, s));
       }
@@ -565,7 +568,7 @@ __global__ void scan_reduce_raw(T* input, uint32_t* output, Rule rule, size_t si
  * @brief Same as split_prefix_scan but with raw memory
  */
 template <typename T, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
-void split_prefix_scan_raw(T* input, T* output, Cuda_mempool& mPool, const size_t input_size, split_gpuStream_t s = 0) {
+void split_prefix_scan_raw(T* input, T* output, GPU_Mempool& mPool, const size_t input_size, split_gpuStream_t s = 0) {
 
    // Scan is performed in half Blocksizes
    size_t scanBlocksize = BLOCKSIZE / 2;
@@ -616,8 +619,8 @@ void split_prefix_scan_raw(T* input, T* output, Cuda_mempool& mPool, const size_
  * @brief Same as copy_if but using raw memory
  */
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
-uint32_t copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& input, T* output, Rule rule,
-                     size_t nBlocks, Cuda_mempool& mPool, split_gpuStream_t s = 0) {
+uint32_t copy_if_raw(T* input, T* output, size_t inputSize, Rule rule, size_t nBlocks, GPU_Mempool& mPool,
+                     split_gpuStream_t s = 0) {
 
    uint32_t* d_counts;
    uint32_t* d_offsets;
@@ -655,7 +658,7 @@ uint32_t copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& i
 
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 uint32_t copy_if_raw(T* input, T* output, size_t size, Rule rule,
-                     size_t nBlocks, Cuda_mempool& mPool, split_gpuStream_t s = 0) {
+                     size_t nBlocks, GPU_Mempool& mPool, split_gpuStream_t s = 0) {
 
    uint32_t* d_counts;
    uint32_t* d_offsets;
@@ -693,8 +696,8 @@ uint32_t copy_if_raw(T* input, T* output, size_t size, Rule rule,
  * @brief Same as copy_keys_if but using raw memory
  */
 template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
-size_t copy_keys_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& input, U* output, Rule rule,
-                        size_t nBlocks, Cuda_mempool& mPool, split_gpuStream_t s = 0) {
+size_t copy_keys_if_raw(T* input, U* output, size_t inputSize, Rule rule, size_t nBlocks, GPU_Mempool& mPool,
+                        split_gpuStream_t s = 0) {
 
    uint32_t* d_counts;
    uint32_t* d_offsets;
@@ -763,6 +766,22 @@ estimateMemoryForCompaction(const size_t inputSize) noexcept {
 }
 
 /**
+ * @brief Estimates memory needed for compacting the input splitvector
+ */
+template <int BLOCKSIZE = 1024>
+[[nodiscard]] size_t estimateMemoryForCompaction(const size_t inputSize) noexcept {
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(inputSize)) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+
+   // Allocate with Mempool
+   return 8 * nBlocks * sizeof(uint32_t);
+}
+
+/**
  * @brief Same as copy_if but only for Hashinator keys
  */
 template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
@@ -779,8 +798,8 @@ void copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& inpu
 
    // Allocate with Mempool
    const size_t memory_for_pool = 8 * nBlocks * sizeof(uint32_t);
-   Cuda_mempool mPool(memory_for_pool, s);
-   auto len = copy_keys_if_raw(input, output.data(), rule, nBlocks, mPool, s);
+   GPU_Mempool mPool(memory_for_pool, s);
+   auto len = copy_keys_if_raw(input.data(), output.data(), input.size(), rule, nBlocks, mPool, s);
    output.erase(&output[len], output.end());
 }
 
@@ -812,14 +831,14 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
 
    // Allocate with Mempool
    const size_t memory_for_pool = 8 * nBlocks * sizeof(uint32_t);
-   Cuda_mempool mPool(memory_for_pool, s);
-   auto len = copy_if_raw(input, output.data(), rule, nBlocks, mPool, s);
+   GPU_Mempool mPool(memory_for_pool, s);
+   auto len = copy_if_raw(input.data(), output.data(), input.size(), rule, nBlocks, mPool, s);
    output.erase(&output[len], output.end());
 }
 
 template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 void copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
-                  split::SplitVector<U, split::split_unified_allocator<U>>& output, Rule rule, Cuda_mempool&& mPool,
+                  split::SplitVector<U, split::split_unified_allocator<U>>& output, Rule rule, GPU_Mempool&& mPool,
                   split_gpuStream_t s = 0) {
 
    // Figure out Blocks to use
@@ -828,13 +847,14 @@ void copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& inpu
    if (nBlocks == 0) {
       nBlocks += 1;
    }
-   auto len = copy_keys_if_raw(input, output.data(), rule, nBlocks, std::forward<Cuda_mempool>(mPool), s);
+   auto len =
+       copy_keys_if_raw(input.data(), output.data(), input.size(), rule, nBlocks, std::forward<GPU_Mempool>(mPool), s);
    output.erase(&output[len], output.end());
 }
 
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
-             split::SplitVector<T, split::split_unified_allocator<T>>& output, Rule rule, Cuda_mempool&& mPool,
+             split::SplitVector<T, split::split_unified_allocator<T>>& output, Rule rule, GPU_Mempool&& mPool,
              split_gpuStream_t s = 0) {
 
    // Figure out Blocks to use
@@ -843,7 +863,7 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
    if (nBlocks == 0) {
       nBlocks += 1;
    }
-   auto len = copy_if_raw(input, output.data(), rule, nBlocks, mPool, s);
+   auto len = copy_if_raw(input.data(), output.data(), input.size(), rule, nBlocks, mPool, s);
    output.erase(&output[len], output.end());
 }
 
@@ -859,8 +879,8 @@ void copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& inpu
       nBlocks += 1;
    }
    assert(stack && "Invalid stack!");
-   Cuda_mempool mPool(stack, max_size);
-   auto len = copy_keys_if_raw(input, output.data(), rule, nBlocks, mPool, s);
+   GPU_Mempool mPool(stack, max_size);
+   auto len = copy_keys_if_raw(input.data(), output.data(), input.size(), rule, nBlocks, mPool, s);
    output.erase(&output[len], output.end());
 }
 
@@ -876,25 +896,69 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
       nBlocks += 1;
    }
    assert(stack && "Invalid stack!");
-   Cuda_mempool mPool(stack, max_size);
-   auto len = copy_if_raw(input, output.data(), rule, nBlocks, mPool, s);
+   GPU_Mempool mPool(stack, max_size);
+   auto len = copy_if_raw(input.data(), output.data(), input.size(), rule, nBlocks, mPool, s);
    output.erase(&output[len], output.end());
 }
 
+#ifndef SPLIT_CPU_ONLY_MODE
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
-size_t copy_if(T* input, T* output, size_t size, Rule rule, void* stack, size_t max_size,
-               split_gpuStream_t s = 0) {
+void copy_if(split::DeviceVector<T>& input,
+                split::DeviceVector<T>& output, Rule rule, void* stack, size_t max_size,
+                split_gpuStream_t s = 0) {
 
    // Figure out Blocks to use
-   size_t _s = std::ceil((float(size)) / (float)BLOCKSIZE);
+   size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
    size_t nBlocks = nextPow2(_s);
    if (nBlocks == 0) {
       nBlocks += 1;
    }
    assert(stack && "Invalid stack!");
-   Cuda_mempool mPool(stack, max_size);
-   auto len = copy_if_raw(input, output, size, rule, nBlocks, mPool, s);
-   return len;
+   GPU_Mempool mPool(stack, max_size);
+   auto len = copy_if_raw(input.data(), output.data(), input.size(), rule, nBlocks, mPool, s);
+   output.erase(output.data()+len, output.end());
+}
+#endif
+
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+[[nodiscard]] size_t copy_if(T* input, T* output, size_t inputSize, Rule rule, GPU_Mempool& mPool,
+                             split_gpuStream_t s = 0) {
+
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(inputSize)) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+   return copy_if_raw(input, output, inputSize, rule, nBlocks, mPool, s);
+}
+
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+[[nodiscard]] size_t copy_if(T* input, T* output, size_t inputSize, Rule rule, void* stack, size_t max_size,split_gpuStream_t s = 0) {
+
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(inputSize)) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+   assert(stack && "Invalid stack!");
+   GPU_Mempool mPool(stack, max_size);
+   return copy_if_raw(input, output, inputSize, rule, nBlocks, mPool, s);
+}
+
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+[[nodiscard]] size_t copy_if(T* input, T* output, size_t inputSize, Rule rule, split_gpuStream_t s = 0) {
+
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(inputSize)) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+   size_t mem = estimateMemoryForCompaction(inputSize);
+   GPU_Mempool mPool(mem, s);
+   return copy_if_raw(input, output, inputSize, rule, nBlocks, mPool, s);
 }
 
 } // namespace tools

@@ -128,6 +128,91 @@ public:
    void destroy(pointer p) { p->~value_type(); }
 };
 
+/**
+ * @brief Custom allocator for device only memory
+ * @tparam T Type of the allocated objects.
+ */
+template <class T>
+class split_device_allocator {
+public:
+   typedef T value_type;
+   typedef value_type* pointer;
+   typedef const value_type* const_pointer;
+   typedef value_type& reference;
+   typedef const value_type& const_reference;
+   typedef ptrdiff_t difference_type;
+   typedef size_t size_type;
+   template <class U>
+   struct rebind {
+      typedef split_device_allocator<U> other;
+   };
+   /**
+    * @brief Default constructor.
+    */
+   split_device_allocator() throw() {}
+
+   /**
+    * @brief Copy constructor.
+    */
+   split_device_allocator(split_device_allocator const&) throw() {}
+
+   /**
+    * @brief Copy constructor with different type.
+    */
+   template <class U>
+   split_device_allocator(split_device_allocator<U> const&) throw() {}
+   pointer address(reference x) const { return &x; }
+   const_pointer address(const_reference x) const { return &x; }
+
+   pointer allocate(size_type n, const void* /*hint*/ = 0) {
+      T* ret;
+      assert(n && "allocate 0");
+      SPLIT_CHECK_ERR(split_gpuMalloc((void**)&ret, n * sizeof(value_type)));
+      if (ret == nullptr) {
+         throw std::bad_alloc();
+      }
+      return ret;
+   }
+
+   pointer allocate(size_type n, split_gpuStream_t stream, const void* /*hint*/ = 0) {
+      T* ret;
+      SPLIT_CHECK_ERR(split_gpuMallocAsync((void**)&ret, n * sizeof(value_type),stream));
+      return ret;
+   }
+
+
+   static void* allocate_raw(size_type n, const void* /*hint*/ = 0) {
+      void* ret;
+      SPLIT_CHECK_ERR(split_gpuMalloc((void**)&ret, n));
+      if (ret == nullptr) {
+         throw std::bad_alloc();
+      }
+      return ret;
+   }
+
+   static void* allocate_raw(size_type n, split_gpuStream_t stream, const void* /*hint*/ = 0) {
+      void* ret;
+      SPLIT_CHECK_ERR(split_gpuMallocAsync((void**)&ret, n,stream));
+      return ret;
+   }
+
+   void deallocate(void* p) { SPLIT_CHECK_ERR(split_gpuFree(p)); }
+
+   void deallocate(void* p,split_gpuStream_t stream) { SPLIT_CHECK_ERR(split_gpuFreeAsync(p,stream)); }
+
+   size_type max_size() const throw() {
+      size_type max = static_cast<size_type>(-1) / sizeof(value_type);
+      return (max > 0 ? max : 1);
+   }
+
+   template <typename U, typename... Args>
+   __host__ __device__ void construct(U* p, Args&&... args) {
+      ::new (p) U(std::forward<Args>(args)...);
+   }
+
+   void destroy(pointer p) { p->~value_type(); }
+};
+
 #endif
 
 /**
