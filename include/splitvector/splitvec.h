@@ -524,10 +524,10 @@ public:
     * @brief  Returns the residency information of this
     *         Splitvector
     */
-   HOSTDEVICE
-   [[nodiscard]] inline Residency getResidency()const noexcept{
-      return _location;
-   }
+   // HOSTDEVICE
+   // [[nodiscard]] inline Residency getResidency()const noexcept{
+   //    return _location;
+   // }
 
    /**
     * @brief Copies metadata to a provided destination SplitInfo structure.
