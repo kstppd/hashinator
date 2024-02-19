@@ -644,6 +644,7 @@ uint32_t copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& i
            input.data(), d_counts, d_offsets, output, rule, _size, nBlocks, retval);
    uint32_t numel;
    SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&numel, retval, sizeof(uint32_t), split_gpuMemcpyDeviceToHost, s));
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    return numel;
 }
 
@@ -675,6 +676,7 @@ uint32_t copy_if_raw(T* input, T* output, size_t size, Rule rule,
          input, d_counts, d_offsets, output, rule, size, nBlocks, retval);
    uint32_t numel;
    SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&numel, retval, sizeof(uint32_t), split_gpuMemcpyDeviceToHost, s));
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    return numel;
 }
 
@@ -710,6 +712,7 @@ size_t copy_keys_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>
            input.data(), d_counts, d_offsets, output, rule, _size, nBlocks, retval);
    uint32_t numel;
    SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&numel, retval, sizeof(uint32_t), split_gpuMemcpyDeviceToHost, s));
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    return numel;
 }
 
@@ -797,7 +800,6 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
    const size_t memory_for_pool = 8 * nBlocks * sizeof(uint32_t);
    Cuda_mempool mPool(memory_for_pool, s);
    auto len = copy_if_raw(input, output.data(), rule, nBlocks, mPool, s);
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    output.erase(&output[len], output.end());
 }
 
@@ -813,7 +815,6 @@ void copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& inpu
       nBlocks += 1;
    }
    auto len = copy_keys_if_raw(input, output.data(), rule, nBlocks, std::forward<Cuda_mempool>(mPool), s);
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    output.erase(&output[len], output.end());
 }
 
@@ -829,7 +830,6 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
       nBlocks += 1;
    }
    auto len = copy_if_raw(input, output.data(), rule, nBlocks, mPool, s);
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    output.erase(&output[len], output.end());
 }
 
@@ -847,7 +847,6 @@ void copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& inpu
    assert(stack && "Invalid stack!");
    Cuda_mempool mPool(stack, max_size);
    auto len = copy_keys_if_raw(input, output.data(), rule, nBlocks, mPool, s);
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    output.erase(&output[len], output.end());
 }
 
@@ -865,7 +864,6 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
    assert(stack && "Invalid stack!");
    Cuda_mempool mPool(stack, max_size);
    auto len = copy_if_raw(input, output.data(), rule, nBlocks, mPool, s);
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    output.erase(&output[len], output.end());
 }
 
@@ -882,7 +880,6 @@ size_t copy_if(T* input, T* output, size_t size, Rule rule, void* stack, size_t 
    assert(stack && "Invalid stack!");
    Cuda_mempool mPool(stack, max_size);
    auto len = copy_if_raw(input, output, size, rule, nBlocks, mPool, s);
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    return len;
 }
 
