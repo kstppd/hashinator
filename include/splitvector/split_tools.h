@@ -886,5 +886,68 @@ size_t copy_if(T* input, T* output, size_t size, Rule rule, void* stack, size_t 
    return len;
 }
 
+template <typename T, typename Rule> 
+__global__ void blockCompact(T* input,T* output,size_t inputSize,Rule rule) 
+{
+   __shared__ uint32_t warpSums[WARPLENGTH];
+   constexpr int VIRTUALWARP = WARPLENGTH;
+   const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
+   const size_t wid = tid /WARPLENGTH;
+   const size_t w_tid = tid % WARPLENGTH;
+   //full warp votes for rule-> mask = [01010101010101010101010101010101] 
+   const int active=rule(input[tid]); 
+   const auto mask = split::s_warpVote(active==1,SPLIT_VOTING_MASK);
+   const auto warpCount=s_pop_count(mask);
+   if (w_tid==0){
+      warpSums[wid]= (wid==0)?0:warpCount;
+   }
+   __syncthreads();
+   //Prefix scan WarpSums on the first warp
+   if (wid==0){
+      auto value = warpSums[w_tid];
+       for (int d=1; d<32; d=2*d) {
+         int res= __shfl_up_sync(SPLIT_VOTING_MASK, value,d);
+         if (tid%32 >= d) value+= res;
+      }
+   warpSums[w_tid]=value;
+   }
+   __syncthreads();
+   auto offset= (wid==0)?0:warpSums[wid];
+   auto pp=s_pop_count(mask>>(static_cast<uint32_t>(std::min(WARPLENGTH,(int)inputSize))-w_tid));
+   const auto warpTidWriteIndex  =offset + pp;
+   if(active){
+      output[warpTidWriteIndex]=input[tid];
+   }
+}
+
+
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+size_t copy_if_small(T* input, T* output, size_t size, Rule rule, void* stack, size_t max_size,
+               split_gpuStream_t s = 0) {
+
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(size)) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+   assert(stack && "Invalid stack!");
+   Cuda_mempool mPool(stack, max_size);
+   auto len = copy_if_raw(input, output, size, rule, nBlocks, mPool, s);
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   return len;
+}
+
+template <typename T, typename Rule>
+size_t copy_if_small2(T* input, T* output, size_t size, Rule rule, void* stack, size_t max_size,
+               split_gpuStream_t s = 0) {
+   (void)stack;
+   (void)max_size;
+   // Figure out Blocks to use
+   split::tools::blockCompact<<<1,size>>>(input,output,size,rule);
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   return 0;
+}
+
 } // namespace tools
 } // namespace split

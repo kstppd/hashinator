@@ -112,28 +112,28 @@ int main(int argc, char* argv[]){
    hmap.memAdvise(cudaMemAdviseSetAccessedBy,device);
    hmap.optimizeGPU();
    hmap.optimizeGPU();
-   vector cpu_src;
-   key_vec cpu_keys;
-   val_vec cpu_vals;
-   generateNonDuplicatePairs(cpu_keys,cpu_vals,1<<sz);
-   //std::cout<<"Generated "<<cpu_keys.size()<<" unique keys!"<<std::endl;
-
-   key_type* gpuKeys;
-   key_vec  spare;
-   val_type* gpuVals;
-   split_gpuMalloc((void **) &gpuKeys, (1<<sz)*sizeof(key_type));
-   split_gpuMalloc((void **) &stack, bytes);
-   split_gpuMalloc((void **) &gpuVals, (1<<sz)*sizeof(val_type));
-   split_gpuMemcpy(gpuKeys,cpu_keys.data(),(1<<sz)*sizeof(key_type),split_gpuMemcpyHostToDevice);
-   split_gpuMemcpy(gpuVals,cpu_vals.data(),(1<<sz)*sizeof(key_type),split_gpuMemcpyHostToDevice);
-   spare.resize(1<<sz);
-
    double t_insert={0};
    double t_retrieve={0};
    double t_extract={0};
    double t_erase={0};
 
    for (int i =0; i<R; i++){
+   vector cpu_src;
+   key_vec cpu_keys;
+   val_vec cpu_vals;
+   generateNonDuplicatePairs(cpu_keys,cpu_vals,1<<sz);
+   //std::cout<<"Generated "<<cpu_keys.size()<<" unique keys!"<<std::endl;
+
+
+   key_vec  spare;
+   spare.resize(1<<sz);
+   key_type* gpuKeys;
+   val_type* gpuVals;
+   split_gpuMalloc((void **) &gpuKeys, (1<<sz)*sizeof(key_type));
+   split_gpuMalloc((void **) &stack, bytes);
+   split_gpuMalloc((void **) &gpuVals, (1<<sz)*sizeof(val_type));
+   split_gpuMemcpy(gpuKeys,cpu_keys.data(),(1<<sz)*sizeof(key_type),split_gpuMemcpyHostToDevice);
+   split_gpuMemcpy(gpuVals,cpu_vals.data(),(1<<sz)*sizeof(key_type),split_gpuMemcpyHostToDevice);
       hmap.optimizeGPU();
 
       PROFILE_START("insert");
@@ -157,6 +157,9 @@ int main(int argc, char* argv[]){
       PROFILE_END();
       
       hmap.clear();
+   split_gpuFree(gpuKeys);
+   split_gpuFree(gpuVals);
+   split_gpuFree(stack);
    }
    t_insert/=(float)R;
    t_retrieve/=(float)R;
@@ -164,9 +167,6 @@ int main(int argc, char* argv[]){
    t_erase/=(float)R;
 
    printf("%d %d %d %d %d\n",sz,(int)t_insert,(int)t_retrieve,(int)t_extract,(int)t_erase);
-   split_gpuFree(gpuKeys);
-   split_gpuFree(gpuVals);
-   split_gpuFree(stack);
    return 0;
 
 }

@@ -41,11 +41,17 @@ void fillVec(T& vec,size_t sz){
 }
 
 
-void stream_compaction_split(splitvector& v,splitvector& output,  type_t* stack, size_t sz){
+void stream_compaction_split_old(splitvector& v,splitvector& output,  type_t* stack, size_t sz){
    auto pred =[]__host__ __device__ (type_t  element)->bool{ return (element%2)==0 ;};
-   split::tools::copy_if(v.data(),output.data(),sz,pred,(void*)stack,sz);
+   auto len = split::tools::copy_if_small(v.data(),output.data(),sz,pred,(void*)stack,sz);
 }
 
+
+
+void stream_compaction_split(splitvector& v,splitvector& output,  type_t* stack, size_t sz){
+   auto pred =[]__host__ __device__ (type_t  element)->bool{ return (element%2)==0 ;};
+   auto len = split::tools::copy_if_small2(v.data(),output.data(),sz,pred,(void*)stack,sz);
+}
 void stream_compaction_thrust(thrustvector& v,thrustvector& output){
    auto pred =[]__host__ __device__ (type_t  element)->bool{ return (element%2)==0 ;};
    thrust::copy_if(thrust::device, v.begin(), v.end(), output.begin(), pred);
@@ -54,40 +60,47 @@ void stream_compaction_thrust(thrustvector& v,thrustvector& output){
 int main(int argc, char* argv[]){
 
 
-   int sz=10;
+
+   int sz=6;
    if (argc>=2){
       sz=atoi(argv[1]);
    }
-   size_t N = 1<<sz;
-   srand(1);
+   size_t N = 64;
    splitvector v0(N),v0_out(N);
-   thrustvector v1(N),v1_out(N);
+   srand(1);
    fillVec(v0,N);
-   fillVec(v1,N);
    splitvector stack(N);
+
    v0.optimizeGPU();
    v0_out.optimizeGPU();
    stack.optimizeGPU();
    split_gpuDeviceSynchronize();
-
    
    double t_split={0};
-   double t_thrust={0};
-   for (int i =0; i<R; i++){
+   double t_split_old={0};
 
-   v0.optimizeGPU();
-   v0_out.optimizeGPU();
-   stack.optimizeGPU();
-      PROFILE_START("THRUST");
-      stream_compaction_thrust(v1,v1_out);
-      t_thrust+=timeMe(stream_compaction_thrust,v1,v1_out);
-      PROFILE_END();
-
+   for (size_t i =0 ; i < R ; ++i){
       PROFILE_START("SPLIT");
-      stream_compaction_split(v0,v0_out,stack.data(),N);
       t_split+=timeMe(stream_compaction_split,v0,v0_out,stack.data(),N);
       PROFILE_END();
+      splitvector vv(v0_out);
+
+      PROFILE_START("SPLITOLD");
+      t_split_old+=timeMe(stream_compaction_split_old,v0,v0_out,stack.data(),N);
+      PROFILE_END();
+      assert(vv==v0_out);
    }
-   printf("%d\t%f\t%f\n",sz,t_split/R,t_thrust/R);;
+
+   printf("%d\t%f,%f\n",sz,t_split_old/R,t_split/R);
+
    return 0;
 }
+
+
+
+
+
+
+
+
+
