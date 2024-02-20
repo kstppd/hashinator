@@ -169,7 +169,7 @@ public:
 
    Unordered_Set(Unordered_Set&& other) noexcept {
       preallocate_device_handles();
-      *_setInfo = other.SetInfo;
+      _setInfo = other._setInfo;
       other._setInfo = nullptr;
       buckets = std::move(other.buckets);
    }

@@ -7,7 +7,7 @@ EXTRA=  --std=c++17
 EXTRA+= -gencode arch=compute_60,code=sm_60  
 EXTRA+=  -DHASHMAPDEBUG --expt-relaxed-constexpr  --expt-extended-lambda -lpthread
 GTEST= -L/home/kstppd/libs/googletest/build/lib  -I/home/kstppd/libs/googletest/googletest/include -lgtest -lgtest_main -lpthread
-OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o stream_compaction2.o delete_mechanism.o insertion_mechanism.o hybrid_cpu.o hybrid_gpu.o pointer_test.o benchmark.o benchmarkLF.o tbPerf.o realistic.o preallocated.o
+OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o stream_compaction2.o delete_mechanism.o insertion_mechanism.o hybrid_cpu.o hybrid_gpu.o pointer_test.o benchmark.o benchmarkLF.o tbPerf.o realistic.o preallocated.o gtest_unordered.o
 
 
 default: tests
@@ -35,6 +35,9 @@ allclean:
 
 gtest_hashmap.o: hashmap_unit_test/main.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o gtest_hashmap hashmap_unit_test/main.cu
+
+gtest_unordered.o: unordered_set_unit_test/main.cu
+	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o gtest_unordered unordered_set_unit_test/main.cu
 
 benchmark.o: benchmark/main.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o benchmark_hashinator benchmark/main.cu
