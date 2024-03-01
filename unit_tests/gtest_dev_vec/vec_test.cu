@@ -357,11 +357,7 @@ bool run_compcation_test2_streams(size_t sz){
    SPLIT_CHECK_ERR (split_gpuStreamCreate(&s2));
    vector* output1 = new vector(v->size());
    vector* output2 = new vector(v->size());
-   output1->setStream(s1);
-   output2->setStream(s2);
-   v->setStream(s1);
    const size_t len1 = split::tools::copy_if(v->data(),output1->data(),v->size(),predicate_on,stack,maxBytes,s1);
-   v->setStream(s2);
    const size_t len2 = split::tools::copy_if(v->data(),output2->data(),v->size(),predicate_off,stack,maxBytes,s2);
    auto r=v->size();
    delete v;

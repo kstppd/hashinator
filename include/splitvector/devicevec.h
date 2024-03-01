@@ -42,7 +42,6 @@ private:
    Meta* _meta = nullptr;
    T* _data = nullptr;
    Allocator _allocator;
-   mutable split_gpuStream_t _stream;
 
    void setupSpace(void* ptr) noexcept {
       _meta = reinterpret_cast<Meta*>(ptr);
@@ -50,11 +49,7 @@ private:
    }
 
    [[nodiscard]] void* _allocate(const size_t sz) {
-      void* _ptr =nullptr;      if (_stream == NULL) {
-         _ptr = _allocator.allocate_raw( sizeof(Meta) + sz*sizeof(T));
-      } else {
-         _ptr = _allocator.allocate_raw( sizeof(Meta) + sz*sizeof(T),_stream);
-      }
+      void* _ptr = _allocator.allocate_raw( sizeof(Meta) + sz*sizeof(T));
       return _ptr;
    }
 
@@ -62,11 +57,7 @@ private:
       if (_ptr == nullptr) {
          return;
       }
-      if (_stream == NULL) {
-         _allocator.deallocate((_ptr));
-      } else {
-         _allocator.deallocate(_ptr,_stream);
-      }
+      _allocator.deallocate((_ptr));
       _ptr = nullptr;
    }
 
@@ -86,57 +77,37 @@ private:
    }
 
    HOSTONLY
-   inline Meta getMeta() const noexcept {
+   inline Meta getMeta(split_gpuStream_t s=0) const noexcept {
       Meta buffer;
-      if (_stream == NULL) {
-         SPLIT_CHECK_ERR(split_gpuMemcpy(&buffer, _meta, sizeof(Meta), split_gpuMemcpyDeviceToHost));
-      } else {
-         SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&buffer, _meta, sizeof(Meta), split_gpuMemcpyDeviceToHost, _stream));
-      }
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&buffer, _meta, sizeof(Meta), split_gpuMemcpyDeviceToHost,s));
       return buffer;
    }
 
    HOSTONLY
-   inline void getMeta(Meta& buffer) const noexcept {
-      if (_stream == NULL) {
-         SPLIT_CHECK_ERR(split_gpuMemcpy(&buffer, _meta, sizeof(Meta), split_gpuMemcpyDeviceToHost));
-      } else {
-         SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&buffer, _meta, sizeof(Meta), split_gpuMemcpyDeviceToHost, _stream));
-      }
+   inline void getMeta(Meta& buffer,split_gpuStream_t s=0) const noexcept {
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&buffer, _meta, sizeof(Meta), split_gpuMemcpyDeviceToHost, s));
    }
 
    HOSTONLY
-   inline void setMeta(const Meta& buffer) noexcept {
-      if (_stream == NULL) {
-         SPLIT_CHECK_ERR(split_gpuMemcpy(_meta, &buffer, sizeof(Meta), split_gpuMemcpyHostToDevice));
-      } else {
-         SPLIT_CHECK_ERR(split_gpuMemcpyAsync(_meta, &buffer, sizeof(Meta), split_gpuMemcpyHostToDevice, _stream));
-      }
+   inline void setMeta(const Meta& buffer,split_gpuStream_t s=0) noexcept {
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(_meta, &buffer, sizeof(Meta), split_gpuMemcpyHostToDevice, s));
    }
 
    HOSTONLY
-   inline T getElementFromDevice(const size_t index) const noexcept {
+   inline T getElementFromDevice(const size_t index,split_gpuStream_t s=0) const noexcept {
       T retval;
-      if (_stream == NULL) {
-         SPLIT_CHECK_ERR(split_gpuMemcpy(&retval, &_data[index], sizeof(T), split_gpuMemcpyDeviceToHost));
-      } else {
-         SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&retval, &_data[index], sizeof(T), split_gpuMemcpyDeviceToHost, _stream));
-      }
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&retval, &_data[index], sizeof(T), split_gpuMemcpyDeviceToHost, s));
       return retval;
    }
 
    HOSTONLY
-   inline void setElementFromHost(const size_t index, const T& val) noexcept {
-      if (_stream == NULL) {
-         SPLIT_CHECK_ERR(split_gpuMemcpy(&_data[index], &val, sizeof(T), split_gpuMemcpyHostToDevice));
-      } else {
-         SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&_data[index], &val, sizeof(T), split_gpuMemcpyHostToDevice, _stream));
-      }
+   inline void setElementFromHost(const size_t index, const T& val,split_gpuStream_t s=0) noexcept {
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&_data[index], &val, sizeof(T), split_gpuMemcpyHostToDevice, s));
       return;
    }
 
 public:
-   DeviceVector(size_t sz = 0) : _stream(NULL) {
+   DeviceVector(size_t sz = 0) {
       void* ptr = _allocate(sz);
       setupSpace(ptr);
       size_t s = sz;
@@ -144,14 +115,14 @@ public:
       SPLIT_CHECK_ERR(split_gpuMemcpy(&_meta->capacity, &sz, sizeof(size_t), split_gpuMemcpyHostToDevice));
    }
 
-   DeviceVector(size_t sz, split_gpuStream_t s) : _stream(s) {
+   DeviceVector(size_t sz, split_gpuStream_t s) {
       void* ptr = _allocate(sz);
       setupSpace(ptr);
       SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&_meta->size, &sz, sizeof(size_t), split_gpuMemcpyHostToDevice, s));
       SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&_meta->capacity, &sz, sizeof(size_t), split_gpuMemcpyHostToDevice, s));
    }
 
-   DeviceVector(const DeviceVector<T>& other) : _stream(NULL) {
+   DeviceVector(const DeviceVector<T>& other) {
       Meta otherMeta = other.getMeta();
       void* ptr = _allocate(otherMeta.size);
       setupSpace(ptr);
@@ -161,41 +132,32 @@ public:
       return;
    }
 
-   DeviceVector(const DeviceVector<T>& other, split_gpuStream_t s) : _stream(s) {
+   DeviceVector(const DeviceVector<T>& other, split_gpuStream_t s) {
       Meta otherMeta = other.getMeta();
       void* ptr = _allocate(otherMeta.size);
       setupSpace(ptr);
       Meta newMeta{.size = otherMeta.size, .capacity = otherMeta.size};
       setMeta(newMeta);
       SPLIT_CHECK_ERR(
-          split_gpuMemcpyAsync(_data, other._data, otherMeta.size * sizeof(T), split_gpuMemcpyDeviceToDevice, s));
+          split_gpuMemcpy(_data, other._data, otherMeta.size * sizeof(T), split_gpuMemcpyDeviceToDevice));
       return;
    }
 
-   DeviceVector(const DeviceVector<T>&& other) : _stream(NULL) {
+   DeviceVector(const DeviceVector<T>&& other)  {
       _meta = other._meta;
       _data = other._data;
       other._meta = nullptr;
       other._data = nullptr;
    }
 
-   DeviceVector(const DeviceVector<T>&& other, split_gpuStream_t s) : _stream(s) {
+   DeviceVector(const DeviceVector<T>&& other, split_gpuStream_t s) {
       _meta = other._meta;
       _data = other._data;
       other._meta = nullptr;
       other._data = nullptr;
    }
 
-   DeviceVector(const SplitVector<T>& vec) : _stream(NULL) {
-      void* ptr = _allocate(vec.size());
-      setupSpace(ptr);
-      Meta newMeta{.size = vec.size(), .capacity = vec.size()};
-      setMeta(newMeta);
-      SPLIT_CHECK_ERR(split_gpuMemcpy(_data, vec.data(), vec.size() * sizeof(T), split_gpuMemcpyHostToDevice));
-      return;
-   }
-
-   DeviceVector(const SplitVector<T>& vec, split_gpuStream_t s) : _stream(s) {
+   DeviceVector(const SplitVector<T>& vec,split_gpuStream_t s=0)  {
       void* ptr = _allocate(vec.size());
       setupSpace(ptr);
       Meta newMeta{.size = vec.size(), .capacity = vec.size()};
@@ -204,21 +166,12 @@ public:
       return;
    }
 
-   DeviceVector(const std::vector<T>& vec) : _stream(NULL) {
+   DeviceVector(const std::vector<T>& vec,split_gpuStream_t s=0){
       void* ptr = _allocate(vec.size());
       setupSpace(ptr);
       Meta newMeta{.size = vec.size(), .capacity = vec.size()};
       setMeta(newMeta);
-      SPLIT_CHECK_ERR(split_gpuMemcpy(_data, vec.data(), vec.size() * sizeof(T), split_gpuMemcpyHostToDevice));
-      return;
-   }
-
-   DeviceVector(const std::vector<T>& vec, split_gpuStream_t s) : _stream(s) {
-      void* ptr = _allocate(vec.size());
-      setupSpace(ptr);
-      Meta newMeta{.size = vec.size(), .capacity = vec.size()};
-      setMeta(newMeta);
-      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(_data, vec.data(), vec.size() * sizeof(T), split_gpuMemcpyHostToDevice, s));
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(_data, vec.data(), vec.size() * sizeof(T), split_gpuMemcpyHostToDevice,s));
       return;
    }
 
@@ -230,19 +183,11 @@ public:
    }
 
    HOSTONLY
-   void setStream(split_gpuStream_t s) const noexcept {_stream=s;}
-
-   HOSTONLY
    DeviceVector& operator=(const DeviceVector& other) {
       Meta otherMeta = other.getMeta();
       resize(otherMeta.size);
-      if (_stream == NULL) {
-         SPLIT_CHECK_ERR(split_gpuMemcpy(_meta, other._meta, sizeof(Meta) + otherMeta.size * sizeof(T),
+      SPLIT_CHECK_ERR(split_gpuMemcpy(_meta, other._meta, sizeof(Meta) + otherMeta.size * sizeof(T),
                                          split_gpuMemcpyDeviceToDevice));
-      } else {
-         SPLIT_CHECK_ERR(split_gpuMemcpyAsync(_meta, other._meta, sizeof(Meta) + otherMeta.size * sizeof(T),
-                                              split_gpuMemcpyDeviceToDevice, _stream));
-      }
       return *this;
    }
 
@@ -343,13 +288,8 @@ public:
       void* _new_data = _allocate(requested_space);
       const auto currentMeta = getMeta();
       size_t currentSize = currentMeta.size;
-      if (_stream == NULL) {
-         SPLIT_CHECK_ERR(
+      SPLIT_CHECK_ERR(
              split_gpuMemcpy(_new_data, _meta, sizeof(Meta) + currentSize * sizeof(T), split_gpuMemcpyDeviceToDevice));
-      } else {
-         SPLIT_CHECK_ERR(split_gpuMemcpyAsync(_new_data, _meta, sizeof(Meta) + currentSize * sizeof(T),
-                                              split_gpuMemcpyDeviceToDevice, _stream));
-      }
       _deallocate(_meta);
       setupSpace(_new_data);
       auto newMeta = currentMeta;
