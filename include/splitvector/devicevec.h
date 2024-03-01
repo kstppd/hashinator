@@ -24,7 +24,7 @@ private:
    struct __attribute__((__packed__)) Meta {
       size_t size;
       size_t capacity;
-      char padding[64 - 2 * sizeof(size_t)]={0}; // pad up to cache line
+      char padding[64 - 2 * sizeof(size_t)] = {0}; // pad up to cache line
       HOSTDEVICE
       inline size_t& operator[](MEMBER member) noexcept {
          switch (member) {
@@ -49,7 +49,7 @@ private:
    }
 
    [[nodiscard]] void* _allocate(const size_t sz) {
-      void* _ptr = _allocator.allocate_raw( sizeof(Meta) + sz*sizeof(T));
+      void* _ptr = _allocator.allocate_raw(sizeof(Meta) + sz * sizeof(T));
       return _ptr;
    }
 
@@ -77,31 +77,31 @@ private:
    }
 
    HOSTONLY
-   inline Meta getMeta(split_gpuStream_t s=0) const noexcept {
+   inline Meta getMeta(split_gpuStream_t s = 0) const noexcept {
       Meta buffer;
-      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&buffer, _meta, sizeof(Meta), split_gpuMemcpyDeviceToHost,s));
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&buffer, _meta, sizeof(Meta), split_gpuMemcpyDeviceToHost, s));
       return buffer;
    }
 
    HOSTONLY
-   inline void getMeta(Meta& buffer,split_gpuStream_t s=0) const noexcept {
+   inline void getMeta(Meta& buffer, split_gpuStream_t s = 0) const noexcept {
       SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&buffer, _meta, sizeof(Meta), split_gpuMemcpyDeviceToHost, s));
    }
 
    HOSTONLY
-   inline void setMeta(const Meta& buffer,split_gpuStream_t s=0) noexcept {
+   inline void setMeta(const Meta& buffer, split_gpuStream_t s = 0) noexcept {
       SPLIT_CHECK_ERR(split_gpuMemcpyAsync(_meta, &buffer, sizeof(Meta), split_gpuMemcpyHostToDevice, s));
    }
 
    HOSTONLY
-   inline T getElementFromDevice(const size_t index,split_gpuStream_t s=0) const noexcept {
+   inline T getElementFromDevice(const size_t index, split_gpuStream_t s = 0) const noexcept {
       T retval;
       SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&retval, &_data[index], sizeof(T), split_gpuMemcpyDeviceToHost, s));
       return retval;
    }
 
    HOSTONLY
-   inline void setElementFromHost(const size_t index, const T& val,split_gpuStream_t s=0) noexcept {
+   inline void setElementFromHost(const size_t index, const T& val, split_gpuStream_t s = 0) noexcept {
       SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&_data[index], &val, sizeof(T), split_gpuMemcpyHostToDevice, s));
       return;
    }
@@ -138,12 +138,11 @@ public:
       setupSpace(ptr);
       Meta newMeta{.size = otherMeta.size, .capacity = otherMeta.size};
       setMeta(newMeta);
-      SPLIT_CHECK_ERR(
-          split_gpuMemcpy(_data, other._data, otherMeta.size * sizeof(T), split_gpuMemcpyDeviceToDevice));
+      SPLIT_CHECK_ERR(split_gpuMemcpy(_data, other._data, otherMeta.size * sizeof(T), split_gpuMemcpyDeviceToDevice));
       return;
    }
 
-   DeviceVector(const DeviceVector<T>&& other)  {
+   DeviceVector(const DeviceVector<T>&& other) {
       _meta = other._meta;
       _data = other._data;
       other._meta = nullptr;
@@ -157,7 +156,7 @@ public:
       other._data = nullptr;
    }
 
-   DeviceVector(const SplitVector<T>& vec,split_gpuStream_t s=0)  {
+   DeviceVector(const SplitVector<T>& vec, split_gpuStream_t s = 0) {
       void* ptr = _allocate(vec.size());
       setupSpace(ptr);
       Meta newMeta{.size = vec.size(), .capacity = vec.size()};
@@ -166,12 +165,12 @@ public:
       return;
    }
 
-   DeviceVector(const std::vector<T>& vec,split_gpuStream_t s=0){
+   DeviceVector(const std::vector<T>& vec, split_gpuStream_t s = 0) {
       void* ptr = _allocate(vec.size());
       setupSpace(ptr);
       Meta newMeta{.size = vec.size(), .capacity = vec.size()};
       setMeta(newMeta);
-      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(_data, vec.data(), vec.size() * sizeof(T), split_gpuMemcpyHostToDevice,s));
+      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(_data, vec.data(), vec.size() * sizeof(T), split_gpuMemcpyHostToDevice, s));
       return;
    }
 
@@ -187,7 +186,7 @@ public:
       Meta otherMeta = other.getMeta();
       resize(otherMeta.size);
       SPLIT_CHECK_ERR(split_gpuMemcpy(_meta, other._meta, sizeof(Meta) + otherMeta.size * sizeof(T),
-                                         split_gpuMemcpyDeviceToDevice));
+                                      split_gpuMemcpyDeviceToDevice));
       return *this;
    }
 
@@ -289,7 +288,7 @@ public:
       const auto currentMeta = getMeta();
       size_t currentSize = currentMeta.size;
       SPLIT_CHECK_ERR(
-             split_gpuMemcpy(_new_data, _meta, sizeof(Meta) + currentSize * sizeof(T), split_gpuMemcpyDeviceToDevice));
+          split_gpuMemcpy(_new_data, _meta, sizeof(Meta) + currentSize * sizeof(T), split_gpuMemcpyDeviceToDevice));
       _deallocate(_meta);
       setupSpace(_new_data);
       auto newMeta = currentMeta;
