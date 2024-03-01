@@ -101,7 +101,7 @@ void benchErase(hashmap& hmap,key_type* gpuKeys, val_type* gpuVals,int sz){
 
 int main(int argc, char* argv[]){
 
-   int sz= 24;
+   int sz= 18;
    if (argc>=2){
       sz=atoi(argv[1]);
    }

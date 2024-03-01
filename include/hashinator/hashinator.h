@@ -1110,7 +1110,7 @@ public:
 
       // Allocate with Mempool
       const size_t memory_for_pool = 8 * nBlocks * sizeof(uint32_t);
-      split::tools::Cuda_mempool mPool(memory_for_pool, s);
+      split::tools::splitStackArena mPool(memory_for_pool, s);
       size_t retval =
           split::tools::copy_if_raw<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, defaults::MAX_BLOCKSIZE, defaults::WARPSIZE>(
               buckets, elements, rule, nBlocks, mPool, s);

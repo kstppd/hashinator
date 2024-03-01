@@ -67,7 +67,7 @@ void split_test_prefix(split_vector& input_split,split_vector& output_split,size
       input_split[i]=i;//tmp;
    }
 
-   //split::tools::Cuda_mempool mPool(1024*64);
+   //split::tools::splitStackArena mPool(1024*64);
 
 
    input_split.optimizeGPU();
