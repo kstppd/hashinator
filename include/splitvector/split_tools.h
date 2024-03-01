@@ -1010,7 +1010,6 @@ void copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& inpu
    const size_t memory_for_pool = 8 * nBlocks * sizeof(uint32_t);
    Cuda_mempool mPool(memory_for_pool, s);
    auto len = copy_keys_if_raw(input, output.data(), rule, nBlocks, mPool, s);
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    output.erase(&output[len], output.end());
 }
 
