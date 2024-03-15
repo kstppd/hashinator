@@ -1275,29 +1275,35 @@ public:
       if (neededPowerSize > _mapInfo->sizePower) {
          resize(neededPowerSize, targets::device, s);
       }
-      buckets.optimizeGPU(s);
       DeviceHasher::insert(src, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
                            &_mapInfo->currentMaxBucketOverflow, &_mapInfo->fill, len, &_mapInfo->err, s);
       return;
    }
 
    // Uses Hasher's retrieve_kernel to read all elements
-   void retrieve(KEY_TYPE* keys, VAL_TYPE* vals, size_t len, split_gpuStream_t s = 0) {
-      buckets.optimizeGPU(s);
+   void retrieve(KEY_TYPE* keys, VAL_TYPE* vals, size_t len, split_gpuStream_t s = 0,bool prefetches=true) {
+      if (prefetches){
+         buckets.optimizeGPU(s);
+      }
       DeviceHasher::retrieve(keys, vals, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow, len,
                              s);
       return;
    }
 
    // Uses Hasher's retrieve_kernel to read all elements
-   void retrieve(hash_pair<KEY_TYPE, VAL_TYPE>* src, size_t len, split_gpuStream_t s = 0) {
-      buckets.optimizeGPU(s);
+   void retrieve(hash_pair<KEY_TYPE, VAL_TYPE>* src, size_t len, split_gpuStream_t s = 0, bool prefetches=true) {
+      if (prefetches){
+         buckets.optimizeGPU(s);
+      }
       DeviceHasher::retrieve(src, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow, len, s);
       return;
    }
 
    // Uses Hasher's erase_kernel to delete all elements
-   void erase(KEY_TYPE* keys, size_t len, split_gpuStream_t s = 0) {
+   void erase(KEY_TYPE* keys, size_t len, split_gpuStream_t s = 0,bool prefetches=true) {
+      if (prefetches){
+         buckets.optimizeGPU(s);
+      }
       // Remember the last numeber of tombstones
       size_t tbStore = tombstone_count();
       DeviceHasher::erase(keys, buckets.data(), &_mapInfo->tombstoneCounter, _mapInfo->sizePower,
