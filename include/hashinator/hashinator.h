@@ -1116,6 +1116,12 @@ public:
               buckets, elements, rule, nBlocks, mPool, s);
       return retval;
    }
+   template <typename Rule>
+   void extractPatternLoop(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements, Rule rule, split_gpuStream_t s = 0) {
+      // Extract elements matching the Pattern Rule(element)==true;
+      split::tools::copy_if_loop<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, defaults::MAX_BLOCKSIZE,
+                                 defaults::WARPSIZE>(buckets, elements, rule, s);
+   }
 
    template <typename Rule>
    size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements, Rule rule, split_gpuStream_t s = 0,
