@@ -1144,6 +1144,12 @@ public:
                                  defaults::WARPSIZE>(buckets, elements, rule, stack, max_size, s);
       return elements.size();
    }
+   template <typename Rule>
+   void extractKeysByPatternLoop(split::SplitVector<KEY_TYPE>& elements, Rule rule, split_gpuStream_t s = 0) {
+      // Extract element **keys** matching the Pattern Rule(element)==true;
+      split::tools::copy_if_keys_loop<hash_pair<KEY_TYPE, VAL_TYPE>, KEY_TYPE, Rule, defaults::MAX_BLOCKSIZE,
+                                 defaults::WARPSIZE>(buckets, elements, rule, s);
+   }
 
    size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, split_gpuStream_t s = 0, bool prefetches = true) {
       // Extract all keys
@@ -1158,6 +1164,13 @@ public:
          return kval.first != EMPTYBUCKET && kval.first != TOMBSTONE;
       };
       return extractKeysByPattern(elements, rule, stack, max_size, s, prefetches);
+   }
+   void extractAllKeysLoop(split::SplitVector<KEY_TYPE>& elements, split_gpuStream_t s = 0) {
+      // Extract all keys
+      auto rule = [] __host__ __device__(const hash_pair<KEY_TYPE, VAL_TYPE>& kval) -> bool {
+         return kval.first != EMPTYBUCKET && kval.first != TOMBSTONE;
+      };
+      extractKeysByPatternLoop(elements, rule, s);
    }
 
    void clean_tombstones(split_gpuStream_t s = 0, bool prefetches = false) {
