@@ -720,8 +720,7 @@ template <typename T,typename U, typename Rule>
 __global__ void loop_compact_keys(
    split::SplitVector<T, split::split_unified_allocator<T>>& inputVec,
    split::SplitVector<U, split::split_unified_allocator<U>>& outputVec,
-   Rule rule) 
-{
+   Rule rule) {
    // WARNING! There's an implicit assumption here that WARPLENGTH is equal to blockDim.x/WARPLENGTH
    __shared__ uint32_t warpSums[WARPLENGTH];
    __shared__ uint32_t totalCount;
@@ -731,7 +730,7 @@ __global__ void loop_compact_keys(
    const size_t w_tid = tid % WARPLENGTH;
    //full warp votes for rule-> mask = [01010101010101010101010101010101] 
    int64_t remaining = inputVec.size();
-   size_t outputSize = 0;
+   uint32_t outputSize = 0;
    if (tid==0) {
       // Assumes sufficient capacity is available
       outputVec.device_resize(inputVec.size());
@@ -743,11 +742,7 @@ __global__ void loop_compact_keys(
    // Start loop
    while (remaining > 0) {
       int current = remaining > blockDim.x ? blockDim.x : remaining;
-      int active = 0; 
-      if (tid > current) {
-         active=rule((input[tid]));
-      }
-      __syncthreads();
+      const int active=(tid<current)?rule(input[tid]):false; 
       const auto mask = split::s_warpVote(active==1,SPLIT_VOTING_MASK);
       const auto warpCount=s_pop_count(mask);
       if (w_tid==0){
@@ -793,8 +788,7 @@ __global__ void loop_compact_keys(
    }
    __syncthreads();
    if (tid==0) {
-      // Assumes sufficient capacity is available
-      outputVec.device_resize(inputVec.size());
+      outputVec.device_resize(outputSize);
    }
 }
 #endif
@@ -893,6 +887,80 @@ __global__ void block_compact_keys(T* input,U* output,size_t inputSize,Rule rule
    const auto warpTidWriteIndex  =offset + pp;
    if(active){
       output[warpTidWriteIndex]=input[tid].first;
+   }
+}
+template <typename T,typename U,  typename Rule> 
+__global__ void loop_compact_keys(
+   split::SplitVector<T, split::split_unified_allocator<T>>& inputVec,
+   split::SplitVector<U, split::split_unified_allocator<U>>& outputVec,
+   Rule rule) {
+   // WARNING! There's an implicit assumption here about relationship between WARPLENGHT and blockDim.x!
+   __shared__ uint32_t warpSums[WARPLENGTH/2];
+   // blockIdx.x is always 0 for this kernel
+   const size_t tid = threadIdx.x;// + blockIdx.x * blockDim.x;
+   const size_t wid = tid /WARPLENGTH;
+   const size_t w_tid = tid % WARPLENGTH;
+   //full warp votes for rule-> mask = [01010101010101010101010101010101] 
+   int64_t remaining = inputVec.size();
+   uint32_t outputSize = 0;
+   if (tid==0) {
+      // Assumes sufficient capacity is available
+      outputVec.device_resize(inputVec.size());
+   }
+   __syncthreads();
+   // Initial pointers into data
+   T* input = inputVec.data();
+   U* output = outputVec.data();
+   // Start loop
+   while (remaining > 0) {
+      int current = remaining > blockDim.x ? blockDim.x : remaining;
+      const int active=(tid<current)?rule(input[tid]):false; 
+      const auto mask = split::s_warpVote(active==1,SPLIT_VOTING_MASK);
+      const auto warpCount=s_pop_count(mask);
+      if (w_tid==0){
+         warpSums[wid]=warpCount;
+      }
+      __syncthreads();
+      //Figure out the total here because we overwrite shared mem later
+      if (wid==0){
+         // ceil int division
+         int activeWARPS = nextPow2( 1 + ((current - 1) / WARPLENGTH));
+         auto reduceCounts=[activeWARPS](int localCount)->int{
+                              for (int i = activeWARPS / 2; i > 0; i = i / 2) {
+                                 localCount += split::s_shuffle_down(localCount, i, SPLIT_VOTING_MASK);
+                              }
+                              return localCount;
+                           };
+         auto localCount=warpSums[w_tid];
+         totalCount = reduceCounts(localCount);
+         if (w_tid==0){
+            outputSize += totalCount;
+         }
+      }
+      //Prefix scan WarpSums on the first warp
+      if (wid==0){
+         auto value = warpSums[w_tid];
+         for (int d=1; d<16; d=2*d) {
+            int res = split::s_shuffle_up(value,d,SPLIT_VOTING_MASK); 
+            if (tid%16 >= d) value+= res;
+         }
+         warpSums[w_tid]=value;
+      }
+      __syncthreads();
+      auto offset = (wid==0) ? 0 : warpSums[wid-1];
+      auto pp = s_pop_count(mask&((1ul<<w_tid) - 1ul ));
+      const auto warpTidWriteIndex = offset + pp;
+      if (active) {
+         output[warpTidWriteIndex] = input[tid].first;
+      }
+      // Next loop iteration:
+      input += current;
+      output += totalCount;
+      remaining -= current;
+   }
+   __syncthreads();
+   if (tid==0) {
+      outputVec.device_resize(outputSize);
    }
 }
 #endif

@@ -517,9 +517,9 @@ public:
       const_iterator it = find(i.first);
       int64_t overflow = llabs(it.getIndex() - optimalIndex);
       if (i.first == TOMBSTONE) {
-         std::cout << "[╀] ";
+         printf("[╀] ");
       } else if (i.first == EMPTYBUCKET) {
-         std::cout << "[▢] ";
+         printf("[▢] ");
       } else {
          if (overflow > 0) {
             printf("[%d,%d,\033[1;31m%li\033[0m] ", i.first, i.second, overflow);
@@ -537,7 +537,7 @@ public:
       for (int i = 0; i < buckets.size(); ++i) {
          print_pair(buckets[i]);
       }
-      std::cout << std::endl;
+      printf("\n");
    }
 
    HASHINATOR_HOSTDEVICE
