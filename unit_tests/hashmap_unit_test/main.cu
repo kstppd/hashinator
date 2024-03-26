@@ -27,9 +27,9 @@ typedef Hashmap<key_type,val_type> hashmap;
 
 struct Predicate{
    HASHINATOR_HOSTDEVICE
-   inline bool operator()( hash_pair<key_type,val_type>& element)const{
-      return element.second%2==0;
-   }
+      inline bool operator()( hash_pair<key_type,val_type>& element)const{
+         return element.second%2==0;
+      }
 };
 
 template <class Fn, class ... Args>
@@ -165,7 +165,7 @@ bool recover_all_elements(const hashmap& hmap, vector& src){
       if (!sane){ 
          return false; 
       }
-   //std::cout<<"Key validated "<<retval->first<<" "<<retval->second<<std::endl;
+      //std::cout<<"Key validated "<<retval->first<<" "<<retval->second<<std::endl;
    }
    return true;
 }
@@ -316,7 +316,7 @@ bool testWarpInsert(int power){
    size_t warpsize     =  Hashinator::defaults::WARPSIZE;
    size_t threadsNeeded  =  N*warpsize; 
    blocks = threadsNeeded/BLOCKSIZE;
- 
+
    bool cpuOK=true;
 
    //Create some input data
@@ -364,7 +364,7 @@ bool testWarpInsertUnorderedSet(int power){
    size_t warpsize     =  Hashinator::defaults::WARPSIZE;
    size_t threadsNeeded  =  N*warpsize; 
    blocks = threadsNeeded/BLOCKSIZE;
- 
+
    bool cpuOK=true;
 
    //Create some input data
@@ -383,7 +383,7 @@ bool testWarpInsertUnorderedSet(int power){
       return false;
    }
 
-   
+
    //Now we change the key values and increment them by 1 and we expect the same keys back because we are not supposed to overwrite
    vector src2(src);
    for (auto& i:src2){
@@ -429,7 +429,7 @@ bool testWarpInsert_V(int power){
    size_t warpsize     =  Hashinator::defaults::WARPSIZE;
    size_t threadsNeeded  =  N*warpsize; 
    blocks = threadsNeeded/BLOCKSIZE;
- 
+
    bool cpuOK=true;
 
    //Create some input data
@@ -457,7 +457,7 @@ bool testWarpErase(int power){
    size_t warpsize     =  Hashinator::defaults::WARPSIZE;
    size_t threadsNeeded  =  N*warpsize; 
    blocks = threadsNeeded/BLOCKSIZE;
- 
+
 
    //Create some input data
    vector src(N);
@@ -508,7 +508,7 @@ bool testWarpFind(int power){
    if (!cpuOK){
       return false;
    }
-   
+
    size_t warpsize     =  Hashinator::defaults::WARPSIZE;
    size_t threadsNeeded  =  N*warpsize; 
    blocks = threadsNeeded/BLOCKSIZE;
@@ -564,7 +564,7 @@ bool test_hashmap_1(int power){
          return false;
       }
    }
-   
+
    //Verify odd elements;
    cpuOK=recover_odd_elements(hmap,src);
    gpu_recover_odd_elements<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
@@ -645,7 +645,7 @@ bool test_hashmap_2(int power){
          return false;
       }
    }
-   
+
    //Verify odd elements;
    cpuOK=recover_odd_elements(hmap,src);
    gpu_recover_odd_elements<<<blocks,blocksize>>>(hmap,src.data(),src.size());
@@ -973,11 +973,11 @@ TEST(HashmapUnitTets ,Test_Resize_Perf_Device){
 
 template <typename T, typename U>
 struct Rule{
-Rule(){}
+   Rule(){}
    __host__ __device__
-   inline bool operator()( hash_pair<T,U>& element)const{
-      return element.first<1000;
-   }
+      inline bool operator()( hash_pair<T,U>& element)const{
+         return element.first<1000;
+      }
 };
 
 
@@ -1013,7 +1013,7 @@ TEST(HashmapUnitTets ,Test_ErrorCodes_ExtractKeysByPatternNoAllocations){
    size_t mem=2*sizeof(key_type)*(1<<sz);
    SPLIT_CHECK_ERR (split_gpuMallocManaged( (void**)&buffer ,mem));
    hmap.extractKeysByPattern(out2, Rule<key_type,key_type>(),buffer,mem);
-   
+
    expect_true(out1==out2);
    SPLIT_CHECK_ERR (split_gpuFree(buffer));
 }
@@ -1037,25 +1037,25 @@ TEST(HashmapUnitTets ,Test_Copy_Metadata){
 }
 
 std::vector<key_type> generateUniqueRandomKeys(size_t size, size_t range=std::numeric_limits<int>::max()) {
-    std::vector<key_type> elements;
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<int> dist(1, range);
+   std::vector<key_type> elements;
+   std::random_device rd;
+   std::mt19937 gen(rd());
+   std::uniform_int_distribution<int> dist(1, range);
 
-    for (size_t i = 0; i < size; ++i) {
-        key_type randomNum = i;//dist(gen);
-        if (std::find(elements.begin(), elements.end(), randomNum) == elements.end()) {
-            elements.push_back(randomNum);
-        } else {
-            --i;  
-        }
-    }
-    return elements;
+   for (size_t i = 0; i < size; ++i) {
+      key_type randomNum = i;//dist(gen);
+      if (std::find(elements.begin(), elements.end(), randomNum) == elements.end()) {
+         elements.push_back(randomNum);
+      } else {
+         --i;  
+      }
+   }
+   return elements;
 }
 
 void insertDuplicates(std::vector<key_type>& vec, key_type element, size_t count) {
    if (count>0){
-    vec.insert(vec.end(), count, element);
+      vec.insert(vec.end(), count, element);
    }
    srand(time(NULL));
    std::random_shuffle(vec.begin(),vec.end());
@@ -1084,7 +1084,14 @@ TEST(HashmapUnitTets ,Test_Duplicate_Insertion){
    }
 }
 
-
+TEST(HashmapUnitTets ,EMPTY_TOMBSTONE_values){
+   Hashmap<key_type,val_type,42,42> hmap;
+   const auto tombstone = hmap.get_tombstone();
+   const auto emptybucket = hmap.get_emptybucket();
+   expect_true(tombstone==emptybucket);
+   //These can be also checked during compile time 
+   static_assert(tombstone==emptybucket);
+}
 
 int main(int argc, char* argv[]){
    srand(time(NULL));

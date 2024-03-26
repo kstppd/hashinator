@@ -417,6 +417,12 @@ public:
    size_t bucket_count() const { return buckets.size(); }
 
    HASHINATOR_HOSTDEVICE
+   constexpr KEY_TYPE get_emptybucket() const { return EMPTYBUCKET; }
+
+   HASHINATOR_HOSTDEVICE
+   constexpr KEY_TYPE get_tombstone() const { return TOMBSTONE; }
+
+   HASHINATOR_HOSTDEVICE
    float load_factor() const { return (float)size() / bucket_count(); }
 
    HASHINATOR_HOSTDEVICE
