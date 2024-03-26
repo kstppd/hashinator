@@ -1122,6 +1122,13 @@ public:
       split::tools::copy_if_loop<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, defaults::MAX_BLOCKSIZE,
                                  defaults::WARPSIZE>(buckets, elements, rule, s);
    }
+   void extractLoop(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements, split_gpuStream_t s = 0) {
+      // Extract all valid elements
+      auto rule = [] __host__ __device__(const hash_pair<KEY_TYPE, VAL_TYPE>& kval) -> bool {
+         return kval.first != EMPTYBUCKET && kval.first != TOMBSTONE;
+      };
+      extractPatternLoop(elements, rule, s);
+   }
 
    template <typename Rule>
    size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements, Rule rule, split_gpuStream_t s = 0,
