@@ -925,7 +925,7 @@ public:
       }
 
       auto res = split::s_warpVote(localCount > 0, submask);
-      return (res > 0);
+      return (res != 0);
    }
 
    HASHINATOR_DEVICEONLY
