@@ -739,12 +739,9 @@ __global__ void loop_compact(
    // Start loop
    while (remaining > 0) {
       int current = remaining > blockDim.x ? blockDim.x : remaining;
-      if (outputSize + blockSize > capacity) {
-         printf("loop_compact at size %lu ran out of capacity %lu!\n",(long unsigned)(outputSize+blockSize),(long unsigned)capacity);
-         return;
-      }
       if (tid==0) {
-         // Assumes sufficient capacity is available. TODO graceful exit.
+         // Assumes sufficient capacity is available.
+         assert((outputSize + blockSize <= capacity) && "loop_compact ran out of capacity!");
          // Grows the size of outputVec in increments of blockSize.
          outputVec.device_resize(outputSize + blockSize);
       }
@@ -822,12 +819,9 @@ __global__ void loop_compact_keys(
    // Start loop
    while (remaining > 0) {
       int current = remaining > blockDim.x ? blockDim.x : remaining;
-      if (outputSize + blockSize > capacity) {
-         printf("loop_compact at size %lu ran out of capacity %lu!\n",(long unsigned)(outputSize+blockSize),(long unsigned)capacity);
-         return;
-      }
       if (tid==0) {
-         // Assumes sufficient capacity is available. TODO graceful exit.
+         // Assumes sufficient capacity is available.
+         assert((outputSize + blockSize <= capacity) && "loop_compact_keys ran out of capacity!");
          // Grows the size of outputVec in increments of blockSize.
          outputVec.device_resize(outputSize + blockSize);
       }
