@@ -981,24 +981,29 @@ __global__ void loop_compact(
    Rule rule) {
    // WARNING! There's an implicit assumption here about relationship between WARPLENGHT and blockDim.x!
    __shared__ uint32_t warpSums[WARPLENGTH/2];
+   __shared__ uint32_t totalCount;
    // blockIdx.x is always 0 for this kernel
+   const size_t blockSize = blockDim.x;
    const size_t tid = threadIdx.x;// + blockIdx.x * blockDim.x;
    const size_t wid = tid /WARPLENGTH;
    const size_t w_tid = tid % WARPLENGTH;
    //full warp votes for rule-> mask = [01010101010101010101010101010101] 
    int64_t remaining = inputVec.size();
+   const uint capacity = outputVec.capacity();
    uint32_t outputSize = 0;
-   if (tid==0) {
-      // Assumes sufficient capacity is available
-      outputVec.device_resize(inputVec.size());
-   }
-   __syncthreads();
    // Initial pointers into data
    T* input = inputVec.data();
    T* output = outputVec.data();
    // Start loop
    while (remaining > 0) {
       int current = remaining > blockDim.x ? blockDim.x : remaining;
+      if (tid==0) {
+         // Assumes sufficient capacity is available.
+         assert((outputSize + blockSize <= capacity) && "loop_compact ran out of capacity!");
+         // Grows the size of outputVec in increments of blockSize.
+         outputVec.device_resize(outputSize + blockSize);
+      }
+      __syncthreads();
       const int active=(tid<current)?rule(input[tid]):false; 
       const auto mask = split::s_warpVote(active==1,SPLIT_VOTING_MASK);
       const auto warpCount=s_pop_count(mask);
@@ -1045,6 +1050,7 @@ __global__ void loop_compact(
    }
    __syncthreads();
    if (tid==0) {
+      // Resize to final correct output size.
       outputVec.device_resize(outputSize);
    }
 }
@@ -1055,24 +1061,29 @@ __global__ void loop_compact_keys(
    Rule rule) {
    // WARNING! There's an implicit assumption here about relationship between WARPLENGHT and blockDim.x!
    __shared__ uint32_t warpSums[WARPLENGTH/2];
+   __shared__ uint32_t totalCount;
    // blockIdx.x is always 0 for this kernel
+   const size_t blockSize = blockDim.x;
    const size_t tid = threadIdx.x;// + blockIdx.x * blockDim.x;
    const size_t wid = tid /WARPLENGTH;
    const size_t w_tid = tid % WARPLENGTH;
    //full warp votes for rule-> mask = [01010101010101010101010101010101] 
    int64_t remaining = inputVec.size();
+   const uint capacity = outputVec.capacity();
    uint32_t outputSize = 0;
-   if (tid==0) {
-      // Assumes sufficient capacity is available
-      outputVec.device_resize(inputVec.size());
-   }
-   __syncthreads();
    // Initial pointers into data
    T* input = inputVec.data();
    U* output = outputVec.data();
    // Start loop
    while (remaining > 0) {
       int current = remaining > blockDim.x ? blockDim.x : remaining;
+      if (tid==0) {
+         // Assumes sufficient capacity is available.
+         assert((outputSize + blockSize <= capacity) && "loop_compact_keys ran out of capacity!");
+         // Grows the size of outputVec in increments of blockSize.
+         outputVec.device_resize(outputSize + blockSize);
+      }
+      __syncthreads();
       const int active=(tid<current)?rule(input[tid]):false; 
       const auto mask = split::s_warpVote(active==1,SPLIT_VOTING_MASK);
       const auto warpCount=s_pop_count(mask);
@@ -1119,6 +1130,7 @@ __global__ void loop_compact_keys(
    }
    __syncthreads();
    if (tid==0) {
+      // Resize to final correct output size.
       outputVec.device_resize(outputSize);
    }
 }
