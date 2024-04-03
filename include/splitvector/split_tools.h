@@ -600,7 +600,7 @@ void split_prefix_scan_raw(T* input, T* output, splitStackArena& mPool, const si
    }
 }
 
-template <typename T, typename Rule> 
+template <typename T, typename Rule,size_t BLOCKSIZE=1024> 
 __global__ void block_compact(T* input,T* output,size_t inputSize,Rule rule,uint32_t *retval) 
 {
    // This must be equal to at least both WARPLENGTH and MAX_BLOCKSIZE/WARPLENGTH
@@ -608,7 +608,7 @@ __global__ void block_compact(T* input,T* output,size_t inputSize,Rule rule,uint
    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
    const size_t wid = tid / WARPLENGTH;
    const size_t w_tid = tid % WARPLENGTH;
-   const uint warpsPerBlock = Hashinator::defaults::MAX_BLOCKSIZE / WARPLENGTH;
+   const uint warpsPerBlock = BLOCKSIZE / WARPLENGTH;
    // zero init shared buffer
    if (wid==0) {
       warpSums[w_tid] = 0;
@@ -658,7 +658,7 @@ __global__ void block_compact(T* input,T* output,size_t inputSize,Rule rule,uint
    }
 }
 
-template <typename T,typename U,  typename Rule> 
+template <typename T,typename U,  typename Rule,size_t BLOCKSIZE=1024> 
 __global__ void block_compact_keys(T* input,U* output,size_t inputSize,Rule rule,uint32_t *retval) 
 {
    // This must be equal to at least both WARPLENGTH and MAX_BLOCKSIZE/WARPLENGTH
@@ -666,7 +666,7 @@ __global__ void block_compact_keys(T* input,U* output,size_t inputSize,Rule rule
    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
    const size_t wid = tid / WARPLENGTH;
    const size_t w_tid = tid % WARPLENGTH;
-   const uint warpsPerBlock = Hashinator::defaults::MAX_BLOCKSIZE / WARPLENGTH;
+   const uint warpsPerBlock = BLOCKSIZE / WARPLENGTH;
    // zero init shared buffer
    if (wid==0) {
       warpSums[w_tid] = 0;
@@ -716,7 +716,7 @@ __global__ void block_compact_keys(T* input,U* output,size_t inputSize,Rule rule
    }
 }
 
-template <typename T,  typename Rule> 
+template <typename T,  typename Rule, size_t BLOCKSIZE=1024> 
 __global__ void loop_compact(
    split::SplitVector<T, split::split_unified_allocator<T>>& inputVec,
    split::SplitVector<T, split::split_unified_allocator<T>>& outputVec,
@@ -729,7 +729,7 @@ __global__ void loop_compact(
    const size_t tid = threadIdx.x;// + blockIdx.x * blockDim.x;
    const size_t wid = tid / WARPLENGTH;
    const size_t w_tid = tid % WARPLENGTH;
-   const uint warpsPerBlock = Hashinator::defaults::MAX_BLOCKSIZE / WARPLENGTH;
+   const uint warpsPerBlock = BLOCKSIZE / WARPLENGTH;
    // zero init shared buffer
    if (wid==0) {
       warpSums[w_tid] = 0;
@@ -805,7 +805,7 @@ __global__ void loop_compact(
       outputVec.device_resize(outputSize);
    }
 }
-template <typename T,typename U,  typename Rule> 
+template <typename T,typename U,  typename Rule,size_t BLOCKSIZE=1024> 
 __global__ void loop_compact_keys(
    split::SplitVector<T, split::split_unified_allocator<T>>& inputVec,
    split::SplitVector<U, split::split_unified_allocator<U>>& outputVec,
@@ -818,7 +818,7 @@ __global__ void loop_compact_keys(
    const size_t tid = threadIdx.x;// + blockIdx.x * blockDim.x;
    const size_t wid = tid / WARPLENGTH;
    const size_t w_tid = tid % WARPLENGTH;
-   const uint warpsPerBlock = Hashinator::defaults::MAX_BLOCKSIZE / WARPLENGTH;
+   const uint warpsPerBlock = BLOCKSIZE / WARPLENGTH;
    // zero init shared buffer
    if (wid==0) {
       warpSums[w_tid] = 0;
