@@ -127,7 +127,7 @@ bool run_test_small_loop_variant(size_t size){
 }
 
 TEST(StremCompaction , Compaction_Tests_Linear){
-   for (size_t s=1024; s< 3000; s++ ){
+   for (size_t s=32; s< 3000; s++ ){
       bool a = run_test_small(s);
       expect_true(a);
    }
