@@ -658,7 +658,7 @@ __global__ void block_compact(T* input,T* output,size_t inputSize,Rule rule,uint
    }
 }
 
-template <typename T,typename U,  typename Rule, size_t BLOCKSIZE=1024>
+template <typename T,typename U, typename Rule, size_t BLOCKSIZE=1024>
 __global__ void block_compact_keys(T* input,U* output,size_t inputSize,Rule rule,uint32_t *retval) 
 {
    // This must be equal to at least both WARPLENGTH and MAX_BLOCKSIZE/WARPLENGTH

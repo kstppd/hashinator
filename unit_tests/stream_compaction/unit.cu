@@ -104,9 +104,39 @@ bool run_test_small(size_t size){
    return retval;
 }
 
+bool run_test_small_loop_variant(size_t size){
+   //std::cout<<"Testing with vector size: "<<size<<std::endl;
+   vector v;
+   fill_vec(v,size);
+   auto predicate_on =[]__host__ __device__ (test_t element)->bool{ return element.flag == 1 ;};
+   auto predicate_off =[]__host__ __device__ (test_t element)->bool{ return element.flag == 0 ;};
+   vector output1(v.size());
+   vector output2(v.size());
+
+   split::tools::copy_if_loop(v,output1,predicate_on);
+   split::tools::copy_if_loop(v,output2,predicate_off);
+
+   bool sane1 = checkFlags(output1,1);
+   bool sane2 = checkFlags(output2,0);
+   bool sane3 = ((output1.size()+output2.size())==v.size());
+   bool sane4 =(  output1.size() ==count );
+   bool sane5 = ( output2.size() ==v.size()-count );
+   //printf( " %d - %d - %d - %d - %d\n",sane1,sane2,sane3,sane4,sane5 );  
+   bool retval =  sane1 && sane2 && sane3 && sane4 && sane5;
+   return retval;
+}
+
 TEST(StremCompaction , Compaction_Tests_Linear){
-   for (size_t s=1024; s< 3000; s++ ){
+   for (size_t s=32; s< 3000; s++ ){
       bool a = run_test_small(s);
+      expect_true(a);
+   }
+
+}
+
+TEST(StremCompaction , Compaction_Tests_Linear_Loop_Variant){
+   for (size_t s=32; s< 1024; s++ ){
+      bool a = run_test_small_loop_variant(s);
       expect_true(a);
    }
 
