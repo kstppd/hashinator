@@ -7,6 +7,7 @@
 #include "../../include/splitvector/splitvec.h"
 #include "../../include/splitvector/split_tools.h"
 #include "include/common.h"
+#include "include/splitvector/archMacros.h"
 #define expect_true EXPECT_TRUE
 #define expect_false EXPECT_FALSE
 #define expect_eq EXPECT_EQ
@@ -117,6 +118,7 @@ bool run_test_small_loop_variant(size_t size){
 
    split::tools::copy_if_loop(*v,*output1,predicate_on);
    split::tools::copy_if_loop(*v,*output2,predicate_off);
+   split_gpuDeviceSynchronize();
 
    bool sane1 = checkFlags(*output1,1);
    bool sane2 = checkFlags(*output2,0);
