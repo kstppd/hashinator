@@ -56,6 +56,28 @@ constexpr inline size_t nextOverflow(size_t currentOverflow, size_t virtualWarp)
     return ((remainder)==0)?currentOverflow: currentOverflow + (virtualWarp - remainder);
 }
 
+inline bool isDeviceAccessible(void* ptr){
+#ifdef __NVCC__
+    cudaPointerAttributes attributes;
+    cudaPointerGetAttributes(&attributes, ptr);
+    if (attributes.type != cudaMemoryType::cudaMemoryTypeManaged &&
+        attributes.type != cudaMemoryType::cudaMemoryTypeDevice) {
+       return false;
+    }
+    return true;
+#endif
+
+#ifdef __HIP__
+    hipPointerAttribute_t attributes;
+    hipPointerGetAttributes(&attributes, ptr);
+    if (attributes.type != hipMemoryType::hipMemoryTypeManaged &&
+        attributes.type != hipMemoryType::hipMemoryTypeDevice) {
+       return false;
+    }
+    return true;
+#endif
+}
+
 /**
  * @brief Enum for error checking in Hahsinator.
  */

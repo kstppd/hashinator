@@ -31,6 +31,7 @@
  * */
 #pragma once
 #include "gpu_wrappers.h"
+#include "include/common.h"
 #define NUM_BANKS 32 // TODO depends on device
 #define LOG_NUM_BANKS 5
 #define CONFLICT_FREE_OFFSET(n) ((n) >> LOG_NUM_BANKS)
@@ -725,7 +726,6 @@ __global__ void loop_compact(
    __shared__ uint32_t warpSums[WARPLENGTH];
    __shared__ uint32_t outputCount;
    // blockIdx.x is always 0 for this kernel
-   const size_t blockSize = blockDim.x;
    const size_t tid = threadIdx.x;// + blockIdx.x * blockDim.x;
    const size_t wid = tid / WARPLENGTH;
    const size_t w_tid = tid % WARPLENGTH;
@@ -810,7 +810,6 @@ __global__ void loop_compact_keys(
    __shared__ uint32_t warpSums[WARPLENGTH];
    __shared__ uint32_t outputCount;
    // blockIdx.x is always 0 for this kernel
-   const size_t blockSize = blockDim.x;
    const size_t tid = threadIdx.x;// + blockIdx.x * blockDim.x;
    const size_t wid = tid / WARPLENGTH;
    const size_t w_tid = tid % WARPLENGTH;
@@ -998,7 +997,7 @@ uint32_t copy_if_raw(T* input, T* output, size_t size, Rule rule,
 
 /**
  * @brief Extraction routines using just a single block.
-   These method assumes splitvectors are fully allocated on UM or Device.
+   These methods assume splitvectors are fully allocated on UM or Device.
  */
 
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
@@ -1007,17 +1006,9 @@ void copy_if_loop(
    split::SplitVector<T, split::split_unified_allocator<T>>& output,
    Rule rule, split_gpuStream_t s = 0) {
    #ifndef NDEBUG
-   cudaPointerAttributes attributes;
-   SPLIT_CHECK_ERR(cudaPointerGetAttributes(&attributes,&input));
-   if (attributes.type   != cudaMemoryType::cudaMemoryTypeManaged && 
-       attributes.type != cudaMemoryType::cudaMemoryTypeDevice){
-      assert(false && "This method supports splitvectors dynamically allocated on device or unified memory!");
-   }
-   SPLIT_CHECK_ERR(cudaPointerGetAttributes(&attributes,&output));
-   if (attributes.type   != cudaMemoryType::cudaMemoryTypeManaged && 
-       attributes.type != cudaMemoryType::cudaMemoryTypeDevice){
-      assert(false && "This method supports splitvectors dynamically allocated on device or unified memory!");
-   }
+   bool input_ok = isDeviceAccessible( reinterpret_cast<void*>(&input));
+   bool output_ok= isDeviceAccessible( reinterpret_cast<void*>(&output));
+   assert( (input_ok && output_ok) && "This method supports splitvectors dynamically allocated on device or unified memory!");
    #endif
    split::tools::loop_compact<<<1,BLOCKSIZE,0,s>>>(input,output,rule);
 }
@@ -1028,17 +1019,9 @@ void copy_if_keys_loop(
    split::SplitVector<U, split::split_unified_allocator<U>>& output,
    Rule rule, split_gpuStream_t s = 0) {
    #ifndef NDEBUG
-   cudaPointerAttributes attributes;
-   SPLIT_CHECK_ERR(cudaPointerGetAttributes(&attributes,&input));
-   if (attributes.type   != cudaMemoryType::cudaMemoryTypeManaged && 
-       attributes.type != cudaMemoryType::cudaMemoryTypeDevice){
-      assert(false && "This method supports splitvectors dynamically allocated on device or unified memory!");
-   }
-   SPLIT_CHECK_ERR(cudaPointerGetAttributes(&attributes,&output));
-   if (attributes.type   != cudaMemoryType::cudaMemoryTypeManaged && 
-       attributes.type != cudaMemoryType::cudaMemoryTypeDevice){
-      assert(false && "This method supports splitvectors dynamically allocated on device or unified memory!");
-   }
+   bool input_ok = isDeviceAccessible( reinterpret_cast<void*>(&input));
+   bool output_ok= isDeviceAccessible( reinterpret_cast<void*>(&output));
+   assert( (input_ok && output_ok) && "This method supports splitvectors dynamically allocated on device or unified memory!");
    #endif
    split::tools::loop_compact_keys<<<1,BLOCKSIZE,0,s>>>(input,output,rule);
 }
