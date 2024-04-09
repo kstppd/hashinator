@@ -523,9 +523,9 @@ public:
       const_iterator it = find(i.first);
       int64_t overflow = llabs(it.getIndex() - optimalIndex);
       if (i.first == TOMBSTONE) {
-         std::cout << "[╀] ";
+         printf("[╀] ");
       } else if (i.first == EMPTYBUCKET) {
-         std::cout << "[▢] ";
+         printf("[▢] ");
       } else {
          if (overflow > 0) {
             printf("[%d,%d,\033[1;31m%li\033[0m] ", i.first, i.second, overflow);
@@ -543,7 +543,7 @@ public:
       for (int i = 0; i < buckets.size(); ++i) {
          print_pair(buckets[i]);
       }
-      std::cout << std::endl;
+      printf("\n");
    }
 
    HASHINATOR_HOSTDEVICE
@@ -1122,6 +1122,19 @@ public:
               buckets.data(), elements, buckets.size(), rule, nBlocks, mPool, s);
       return retval;
    }
+   template <typename Rule>
+   void extractPatternLoop(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements, Rule rule, split_gpuStream_t s = 0) {
+      // Extract elements matching the Pattern Rule(element)==true;
+      split::tools::copy_if_loop<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, defaults::MAX_BLOCKSIZE,
+                                 defaults::WARPSIZE>(buckets, elements, rule, s);
+   }
+   void extractLoop(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements, split_gpuStream_t s = 0) {
+      // Extract all valid elements
+      auto rule = [] __host__ __device__(const hash_pair<KEY_TYPE, VAL_TYPE>& kval) -> bool {
+         return kval.first != EMPTYBUCKET && kval.first != TOMBSTONE;
+      };
+      extractPatternLoop(elements, rule, s);
+   }
 
    template <typename Rule>
    size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements, Rule rule, split_gpuStream_t s = 0,
@@ -1150,6 +1163,12 @@ public:
                                  defaults::WARPSIZE>(buckets, elements, rule, stack, max_size, s);
       return elements.size();
    }
+   template <typename Rule>
+   void extractKeysByPatternLoop(split::SplitVector<KEY_TYPE>& elements, Rule rule, split_gpuStream_t s = 0) {
+      // Extract element **keys** matching the Pattern Rule(element)==true;
+      split::tools::copy_if_keys_loop<hash_pair<KEY_TYPE, VAL_TYPE>, KEY_TYPE, Rule, defaults::MAX_BLOCKSIZE,
+                                 defaults::WARPSIZE>(buckets, elements, rule, s);
+   }
 
    size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, split_gpuStream_t s = 0, bool prefetches = true) {
       // Extract all keys
@@ -1165,6 +1184,13 @@ public:
          return kval.first != EMPTYBUCKET && kval.first != TOMBSTONE;
       };
       return extractKeysByPattern(elements, rule, stack, max_size, s, prefetches);
+   }
+   void extractAllKeysLoop(split::SplitVector<KEY_TYPE>& elements, split_gpuStream_t s = 0) {
+      // Extract all keys
+      auto rule = [] __host__ __device__(const hash_pair<KEY_TYPE, VAL_TYPE>& kval) -> bool {
+         return kval.first != EMPTYBUCKET && kval.first != TOMBSTONE;
+      };
+      extractKeysByPatternLoop(elements, rule, s);
    }
 
    void clean_tombstones(split_gpuStream_t s = 0, bool prefetches = false) {
