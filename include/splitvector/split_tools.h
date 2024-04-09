@@ -1230,5 +1230,34 @@ size_t copy_if(T* input, T* output, size_t size, Rule rule, void* stack, size_t 
    auto len = copy_if_raw(input, output, size, rule, nBlocks, mPool, s);
    return len;
 }
+
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+[[nodiscard]] size_t copy_if(T* input, T* output, size_t inputSize, Rule rule, splitStackArena& mPool,
+                             split_gpuStream_t s = 0) {
+
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(inputSize)) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+   return copy_if_raw(input, output, inputSize, rule, nBlocks, mPool, s);
+}
+
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+[[nodiscard]] size_t copy_if(T* input, T* output, size_t inputSize, Rule rule, split_gpuStream_t s = 0) {
+
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(inputSize)) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+   size_t mem = estimateMemoryForCompaction(inputSize);
+   splitStackArena mPool(mem, s);
+   return copy_if_raw(input, output, inputSize, rule, nBlocks, mPool, s);
+}
+
+
 } // namespace tools
 } // namespace split

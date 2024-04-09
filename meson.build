@@ -18,6 +18,7 @@ endif
 hashinator_unit = executable('hashmap_test', 'unit_tests/hashmap_unit_test/main.cu',dependencies :gtest_dep )
 splitvector_device_unit = executable('splitvector_device_test', 'unit_tests/gtest_vec_device/vec_test.cu',dependencies :gtest_dep )
 splitvector_host_unit = executable('splitvector_host_test', 'unit_tests/gtest_vec_host/vec_test.cu',dependencies :gtest_dep )
+splitvector_device_vector_unit = executable('splitvector_device_vector_test', 'unit_tests/gtest_dev_vec/vec_test.cu',dependencies :gtest_dep )
 compaction_unit = executable('compaction_test', 'unit_tests/stream_compaction/race.cu',dependencies :gtest_dep )
 compaction2_unit = executable('compaction2_test', 'unit_tests/stream_compaction/preallocated.cu', cuda_args:['--default-stream=per-thread','-Xcompiler','-fopenmp'],link_args : ['-fopenmp'],dependencies :gtest_dep)
 compaction3_unit = executable('compaction3_test', 'unit_tests/stream_compaction/unit.cu', cuda_args:'--default-stream=per-thread',link_args : ['-fopenmp'],dependencies :gtest_dep)
@@ -30,12 +31,17 @@ insertion_mechanism = executable('insertion', 'unit_tests/insertion_mechanism/ma
 tombstoneTest = executable('tbPerf', 'unit_tests/benchmark/tbPerf.cu', dependencies :gtest_dep)
 realisticTest = executable('realistic', 'unit_tests/benchmark/realistic.cu', dependencies :gtest_dep)
 hybridGPU = executable('hybrid_gpu', 'unit_tests/hybrid/main.cu',dependencies :gtest_dep )
+unordered_set_unit = executable('unordered_set_test', 'unit_tests/unordered_set_unit_test/main.cu',dependencies :gtest_dep )
+unordered_set_unit_cpu = executable('unordered_set_test_cpu', 'unit_tests/unordered_set_unit_test/main.cpp',dependencies :gtest_dep )
 
 
 #Test-Runner
 test('HashinatorTest', hashinator_unit)
+test('UnorderedSetTest', unordered_set_unit)
+test('UnorderedSetTestCPU', unordered_set_unit_cpu)
 test('SplitVectorDeviceTest', splitvector_device_unit)
 test('SplitVectorHostTest', splitvector_host_unit)
+test('SplitVectorDeviceVectorTest',splitvector_device_vector_unit)
 test('CompactionTest',  compaction_unit)
 test('CompactionTest2',  compaction2_unit)
 test('CompactionTest3',  compaction3_unit)

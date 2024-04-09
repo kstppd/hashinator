@@ -6,7 +6,7 @@
 #ifndef SPLIT_CPU_ONLY_MODE
 #define  SPLIT_CPU_ONLY_MODE
 #endif
-#include "../../include/splitvector/splitvec.h"
+#include "../../../include/splitvector/splitvec.h"
 
 #define expect_true EXPECT_TRUE
 #define expect_false EXPECT_FALSE

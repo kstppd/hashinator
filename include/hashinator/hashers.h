@@ -23,6 +23,7 @@
 #include "../splitvector/gpu_wrappers.h"
 #include "defaults.h"
 #include "hashfunctions.h"
+#include "hash_pair.h"
 #ifdef __NVCC__
 #include "kernels_NVIDIA.h"
 #endif
@@ -159,6 +160,68 @@ public:
       reset_all_to_empty<KEY_TYPE, VAL_TYPE, EMPTYBUCKET><<<blocksNeeded, defaults::MAX_BLOCKSIZE, 0, s>>>(dst, len);
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    }
+
+
+   /* ----------------------------------- Members used by Hashinator::Unordered_Set -----------------------------------*/
+
+
+   static void insert_set(KEY_TYPE* keys, KEY_TYPE* buckets, int sizePower,size_t maxoverflow, size_t* d_overflow,
+                      size_t* d_fill, size_t len, status* err,split_gpuStream_t s = 0) {
+      //Make sure this is being used by Unordered_Set
+      static_assert(std::is_same<void,VAL_TYPE>::value);
+      size_t blocks, blockSize;
+      *err = status::success;
+      launchParams(len, blocks, blockSize);
+      Hashinator::Hashers::insert_set_kernel<KEY_TYPE, EMPTYBUCKET, HashFunction, defaults::WARPSIZE,elementsPerWarp>
+          <<<blocks, blockSize, 0, s>>>(keys, buckets, sizePower, maxoverflow, d_overflow, d_fill, len, err);
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+#ifndef NDEBUG
+      if (*err == status::fail) {
+         std::cerr << "***** Hashinator Runtime Warning ********" << std::endl;
+         std::cerr << "Warning: Hashmap completely overflown in Device Insert.\nNot all ellements were "
+                      "inserted!\nConsider resizing before calling insert"
+                   << std::endl;
+         std::cerr << "******************************" << std::endl;
+      }
+#endif
+   }
+
+   // Delete wrapper
+   static void erase_set(KEY_TYPE* keys, KEY_TYPE* buckets, size_t* d_tombstoneCounter, int sizePower,
+                     size_t maxoverflow, size_t len, split_gpuStream_t s = 0) {
+
+      //Make sure this is being used by Unordered_Set
+      static_assert(std::is_same<void,VAL_TYPE>::value);
+      size_t blocks, blockSize;
+      launchParams(len, blocks, blockSize);
+      Hashinator::Hashers::delete_set_kernel<KEY_TYPE, EMPTYBUCKET, TOMBSTONE, HashFunction, defaults::WARPSIZE,
+                                         elementsPerWarp>
+          <<<blocks, blockSize, 0, s>>>(keys, buckets, d_tombstoneCounter, sizePower, maxoverflow, len);
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   }
+
+   // Reset wrapper
+   static void reset_set(KEY_TYPE* src, KEY_TYPE* dst, const int sizePower,size_t maxoverflow,
+                        size_t len, split_gpuStream_t s = 0) {
+      //Make sure this is being used by Unordered_Set
+      static_assert(std::is_same<void,VAL_TYPE>::value);
+      size_t blocks, blockSize;
+      launchParams(len, blocks, blockSize);
+      Hashinator::Hashers::reset_to_empty_set<KEY_TYPE, EMPTYBUCKET, HashFunction, defaults::WARPSIZE,
+                                          elementsPerWarp>
+          <<<blocks, blockSize, 0, s>>>(src, dst, sizePower, maxoverflow, len);
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   }
+   // Reset wrapper for all elements
+   static void reset_all_set(KEY_TYPE* dst, size_t len, split_gpuStream_t s = 0) {
+      //Make sure this is being used by Unordered_Set
+      static_assert(std::is_same<void,VAL_TYPE>::value);
+      size_t blocksNeeded = len / defaults::MAX_BLOCKSIZE;
+      blocksNeeded = blocksNeeded + (blocksNeeded == 0);
+      reset_all_to_empty_set<KEY_TYPE, EMPTYBUCKET><<<blocksNeeded, defaults::MAX_BLOCKSIZE, 0, s>>>(dst, len);
+      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   }
+
 
 private:
    static void launchParams(size_t N, size_t& blocks, size_t& blockSize) {
