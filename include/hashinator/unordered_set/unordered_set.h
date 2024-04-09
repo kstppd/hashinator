@@ -333,7 +333,7 @@ public:
       split::tools::Cuda_mempool mPool(memory_for_pool, s);
       size_t retval =
           split::tools::copy_if_raw<KEY_TYPE, Rule, defaults::MAX_BLOCKSIZE, defaults::WARPSIZE>(
-              buckets, elements, rule, nBlocks, mPool, s);
+              buckets.data(), elements, buckets.size(), rule, nBlocks, mPool, s);
       return retval;
    }
 
