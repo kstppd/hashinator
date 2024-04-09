@@ -417,6 +417,12 @@ public:
    size_t bucket_count() const { return buckets.size(); }
 
    HASHINATOR_HOSTDEVICE
+   constexpr KEY_TYPE get_emptybucket() const { return EMPTYBUCKET; }
+
+   HASHINATOR_HOSTDEVICE
+   constexpr KEY_TYPE get_tombstone() const { return TOMBSTONE; }
+
+   HASHINATOR_HOSTDEVICE
    float load_factor() const { return (float)size() / bucket_count(); }
 
    HASHINATOR_HOSTDEVICE
@@ -1110,7 +1116,7 @@ public:
 
       // Allocate with Mempool
       const size_t memory_for_pool = 8 * nBlocks * sizeof(uint32_t);
-      split::tools::Cuda_mempool mPool(memory_for_pool, s);
+      split::tools::splitStackArena mPool(memory_for_pool, s);
       size_t retval =
           split::tools::copy_if_raw<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, defaults::MAX_BLOCKSIZE, defaults::WARPSIZE>(
               buckets.data(), elements, buckets.size(), rule, nBlocks, mPool, s);
@@ -1276,29 +1282,35 @@ public:
       if (neededPowerSize > _mapInfo->sizePower) {
          resize(neededPowerSize, targets::device, s);
       }
-      buckets.optimizeGPU(s);
       DeviceHasher::insert(src, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
                            &_mapInfo->currentMaxBucketOverflow, &_mapInfo->fill, len, &_mapInfo->err, s);
       return;
    }
 
    // Uses Hasher's retrieve_kernel to read all elements
-   void retrieve(KEY_TYPE* keys, VAL_TYPE* vals, size_t len, split_gpuStream_t s = 0) {
-      buckets.optimizeGPU(s);
+   void retrieve(KEY_TYPE* keys, VAL_TYPE* vals, size_t len, split_gpuStream_t s = 0,bool prefetches=true) {
+      if (prefetches){
+         buckets.optimizeGPU(s);
+      }
       DeviceHasher::retrieve(keys, vals, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow, len,
                              s);
       return;
    }
 
    // Uses Hasher's retrieve_kernel to read all elements
-   void retrieve(hash_pair<KEY_TYPE, VAL_TYPE>* src, size_t len, split_gpuStream_t s = 0) {
-      buckets.optimizeGPU(s);
+   void retrieve(hash_pair<KEY_TYPE, VAL_TYPE>* src, size_t len, split_gpuStream_t s = 0, bool prefetches=true) {
+      if (prefetches){
+         buckets.optimizeGPU(s);
+      }
       DeviceHasher::retrieve(src, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow, len, s);
       return;
    }
 
    // Uses Hasher's erase_kernel to delete all elements
-   void erase(KEY_TYPE* keys, size_t len, split_gpuStream_t s = 0) {
+   void erase(KEY_TYPE* keys, size_t len, split_gpuStream_t s = 0,bool prefetches=true) {
+      if (prefetches){
+         buckets.optimizeGPU(s);
+      }
       // Remember the last numeber of tombstones
       size_t tbStore = tombstone_count();
       DeviceHasher::erase(keys, buckets.data(), &_mapInfo->tombstoneCounter, _mapInfo->sizePower,

@@ -3,11 +3,11 @@
 #include <chrono>
 #include <unordered_set>
 #include <random>
-constexpr int R = 10;
 #include "../../include/hashinator/hashmap/hashmap.h"
 #include <nvToolsExt.h>
 #define PROFILE_START(msg)   nvtxRangePushA((msg))
 #define PROFILE_END() nvtxRangePop()
+constexpr int R = 50;
 
 using namespace std::chrono;
 using namespace Hashinator;
@@ -99,101 +99,74 @@ void benchErase(hashmap& hmap,key_type* gpuKeys, val_type* gpuVals,int sz){
    return ;
 }
 
-
-__global__
-void gpu_recover_warpWide(hashmap* hmap,key_type*keys ,val_type* vals,size_t N  ){
-
-   size_t index = blockIdx.x * blockDim.x + threadIdx.x;
-   const size_t wid = index / Hashinator::defaults::WARPSIZE;
-   const size_t w_tid = index % defaults::WARPSIZE;
-   if (wid < N ){
-      key_type key=keys[wid];
-      hmap->warpFind(key,vals[wid],w_tid);
-   }
-}
-
-void benchRetrieveWarpWide(hashmap* hmap,key_type* gpuKeys, val_type* gpuVals,int sz){
-   constexpr size_t warpsize =  Hashinator::defaults::WARPSIZE;
-   size_t threadsNeeded =(1<<sz)*warpsize; 
-   constexpr size_t blocksize=1024;
-   size_t blocks = threadsNeeded/blocksize;
-   blocks+=(blocks==0);
-   gpu_recover_warpWide<<<blocks,blocksize>>>(hmap,gpuKeys,gpuVals,sz);
-   split_gpuDeviceSynchronize();
-}
-
 int main(int argc, char* argv[]){
 
-   int sz= 24;
+   int sz= 18;
    if (argc>=2){
       sz=atoi(argv[1]);
    }
-   hashmap*hmap=new hashmap(sz+1);
+   hashmap hmap(sz+1);
    int device;
    split_gpuGetDevice(&device);
-   hmap->optimizeGPU();
-   hmap->optimizeGPU();
+   hmap.memAdvise(cudaMemAdviseSetPreferredLocation,device);
+   hmap.memAdvise(cudaMemAdviseSetAccessedBy,device);
+   hmap.optimizeGPU();
+   hmap.optimizeGPU();
+   double t_insert={0};
+   double t_retrieve={0};
+   double t_extract={0};
+   double t_erase={0};
+
+   for (int i =0; i<R; i++){
    vector cpu_src;
    key_vec cpu_keys;
    val_vec cpu_vals;
    generateNonDuplicatePairs(cpu_keys,cpu_vals,1<<sz);
    //std::cout<<"Generated "<<cpu_keys.size()<<" unique keys!"<<std::endl;
 
-   key_type* gpuKeys;
+
    key_vec  spare;
+   spare.resize(1<<sz);
+   key_type* gpuKeys;
    val_type* gpuVals;
    split_gpuMalloc((void **) &gpuKeys, (1<<sz)*sizeof(key_type));
    split_gpuMalloc((void **) &stack, bytes);
    split_gpuMalloc((void **) &gpuVals, (1<<sz)*sizeof(val_type));
    split_gpuMemcpy(gpuKeys,cpu_keys.data(),(1<<sz)*sizeof(key_type),split_gpuMemcpyHostToDevice);
    split_gpuMemcpy(gpuVals,cpu_vals.data(),(1<<sz)*sizeof(key_type),split_gpuMemcpyHostToDevice);
-   spare.resize(1<<sz);
-
-   double t_insert={0};
-   double t_retrieveWarpWide={0};
-   double t_retrieve={0};
-   double t_extract={0};
-   double t_erase={0};
-
-   for (int i =0; i<R; i++){
-      hmap->optimizeGPU();
+      hmap.optimizeGPU();
 
       PROFILE_START("insert");
-      t_insert+=timeMe(benchInsert,*hmap,gpuKeys,gpuVals,sz);
+      t_insert+=timeMe(benchInsert,hmap,gpuKeys,gpuVals,sz);
       cudaDeviceSynchronize();
       PROFILE_END();
    
       PROFILE_START("extract");
-      t_extract+=timeMe(benchExtract,*hmap,spare,sz);
+      t_extract+=timeMe(benchExtract,hmap,spare,sz);
       cudaDeviceSynchronize();
       PROFILE_END();
-
+    
       PROFILE_START("retrieve");
-      t_retrieve+=timeMe(benchRetrieve,*hmap,gpuKeys,gpuVals,sz);
-      cudaDeviceSynchronize();
-      PROFILE_END();
-
-      PROFILE_START("retrieveWarpWide");
-      t_retrieveWarpWide+=timeMe(benchRetrieveWarpWide,hmap,gpuKeys,gpuVals,sz);
+      t_retrieve+=timeMe(benchRetrieve,hmap,gpuKeys,gpuVals,sz);
       cudaDeviceSynchronize();
       PROFILE_END();
       
       PROFILE_START("erase");
-      t_erase+=timeMe(benchErase,*hmap,gpuKeys,gpuVals,sz);
+      t_erase+=timeMe(benchErase,hmap,gpuKeys,gpuVals,sz);
       cudaDeviceSynchronize();
       PROFILE_END();
       
-      hmap->clear();
+      hmap.clear();
+   split_gpuFree(gpuKeys);
+   split_gpuFree(gpuVals);
+   split_gpuFree(stack);
    }
    t_insert/=(float)R;
    t_retrieve/=(float)R;
    t_extract/=(float)R;
    t_erase/=(float)R;
 
-   printf("%d %d %d %d %d %d\n",sz,(int)t_insert,(int)t_retrieve,(int)t_retrieveWarpWide,(int)t_extract,(int)t_erase);
-   split_gpuFree(gpuKeys);
-   split_gpuFree(gpuVals);
-   split_gpuFree(stack);
+   printf("%d %d %d %d %d\n",sz,(int)t_insert,(int)t_retrieve,(int)t_extract,(int)t_erase);
    return 0;
 
 }
