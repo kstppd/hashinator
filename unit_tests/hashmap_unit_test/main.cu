@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <chrono>
 #include <random>
-#include "../../include/hashinator/hashmap/hashmap.h"
+#include "../../include/hashinator/hashmap.h"
 #include <gtest/gtest.h>
 #include <random>
 #include <algorithm>

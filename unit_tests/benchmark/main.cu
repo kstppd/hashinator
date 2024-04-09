@@ -3,7 +3,7 @@
 #include <chrono>
 #include <unordered_set>
 #include <random>
-#include "../../include/hashinator/hashmap/hashmap.h"
+#include "../../include/hashinator/hashmap.h"
 #include <nvToolsExt.h>
 #define PROFILE_START(msg)   nvtxRangePushA((msg))
 #define PROFILE_END() nvtxRangePop()

@@ -3,7 +3,7 @@
 #define SPLIT_CPU_ONLY_MODE
 #define HASHINATOR_CPU_ONLY_MODE
 
-#include "../../include/hashinator/unordered_set/unordered_set.h"
+#include "../../include/hashinator/unordered_set.h"
 #include <gtest/gtest.h>
 #include <unordered_set>
 

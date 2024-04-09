@@ -3,7 +3,7 @@
 #include <chrono>
 #include <unordered_set>
 #include <random>
-#include "../../include/hashinator/hashmap/hashmap.h"
+#include "../../include/hashinator/hashmap.h"
 constexpr int R = 10;
 
 using namespace std::chrono;

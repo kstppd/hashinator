@@ -23,18 +23,18 @@
 #ifdef HASHINATOR_CPU_ONLY_MODE
 #define SPLIT_CPU_ONLY_MODE
 #endif
-#include "../../common.h"
-#include "../../splitvector/gpu_wrappers.h"
-#include "../../splitvector/split_allocators.h"
-#include "../../splitvector/splitvec.h"
-#include "../defaults.h"
-#include "../hash_pair.h"
-#include "../hashfunctions.h"
+#include "../common.h"
+#include "../splitvector/gpu_wrappers.h"
+#include "../splitvector/split_allocators.h"
+#include "../splitvector/splitvec.h"
+#include "defaults.h"
+#include "hash_pair.h"
+#include "hashfunctions.h"
 #include <algorithm>
 #include <stdexcept>
 #ifndef HASHINATOR_CPU_ONLY_MODE
-#include "../../splitvector/split_tools.h"
-#include "../hashers.h"
+#include "../splitvector/split_tools.h"
+#include "hashers.h"
 #endif
 #define UNUSED(x) (void)(x)
 namespace Hashinator {
