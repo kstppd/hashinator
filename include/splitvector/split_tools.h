@@ -31,17 +31,21 @@
  * */
 #pragma once
 #include "gpu_wrappers.h"
+#include "include/common.h"
 #define NUM_BANKS 32 // TODO depends on device
 #define LOG_NUM_BANKS 5
 #define CONFLICT_FREE_OFFSET(n) ((n) >> LOG_NUM_BANKS)
 #ifdef __NVCC__
 #define SPLIT_VOTING_MASK 0xFFFFFFFF // 32-bit wide for split_gpu warps
 #define WARPLENGTH 32
+#define MASKTYPE uint32_t
+#define ONE 1
 #endif
 #ifdef __HIP__
 #define SPLIT_VOTING_MASK 0xFFFFFFFFFFFFFFFFull // 64-bit wide for amd warps
 #define WARPLENGTH 64
-
+#define MASKTYPE uint64_t 
+#define ONE 1ul
 #endif
 
 namespace split {
@@ -226,11 +230,7 @@ __global__ void split_compact(split::SplitVector<T, split::split_unified_allocat
    const bool tres = rule(input->at(tid));
 
    auto mask = split::s_warpVote(tres, SPLIT_VOTING_MASK);
-#ifdef __NVCC__
-   uint32_t n_neighbors = mask & ((1 << w_tid) - 1);
-#else
-   uint64_t n_neighbors = mask & ((1ul << w_tid) - 1);
-#endif
+   MASKTYPE n_neighbors = mask & ((ONE << w_tid) - ONE);
    auto total_valid_in_warp = split::s_pop_count(mask);
    if (w_tid == 0) {
       buffer[widb] = total_valid_in_warp;
@@ -277,11 +277,7 @@ __global__ void split_compact_keys(split::SplitVector<T, split::split_unified_al
    const bool tres = rule(input->at(tid));
 
    auto mask = split::s_warpVote(tres, SPLIT_VOTING_MASK);
-#ifdef __NVCC__
-   uint32_t n_neighbors = mask & ((1 << w_tid) - 1);
-#else
-   uint64_t n_neighbors = mask & ((1ul << w_tid) - 1);
-#endif
+   MASKTYPE n_neighbors = mask & ((ONE << w_tid) - ONE);
    auto total_valid_in_warp = split::s_pop_count(mask);
    if (w_tid == 0) {
       buffer[widb] = total_valid_in_warp;
@@ -327,11 +323,7 @@ __global__ void split_compact_keys_raw(T* input, uint32_t* counts, uint32_t* off
    const bool tres = rule(input[tid]);
 
    auto mask = split::s_warpVote(tres, SPLIT_VOTING_MASK);
-#ifdef __NVCC__
-   uint32_t n_neighbors = mask & ((1 << w_tid) - 1);
-#else
-   uint64_t n_neighbors = mask & ((1ul << w_tid) - 1);
-#endif
+   MASKTYPE n_neighbors = mask & ((ONE << w_tid) - ONE);
    auto total_valid_in_warp = split::s_pop_count(mask);
    if (w_tid == 0) {
       buffer[widb] = total_valid_in_warp;
@@ -466,11 +458,7 @@ __global__ void split_compact_raw(T* input, uint32_t* counts, uint32_t* offsets,
    const bool tres = rule(input[tid]);
 
    auto mask = split::s_warpVote(tres, SPLIT_VOTING_MASK);
-#ifdef __NVCC__
-   uint32_t n_neighbors = mask & ((1 << w_tid) - 1);
-#else
-   uint64_t n_neighbors = mask & ((1ul << w_tid) - 1);
-#endif
+   MASKTYPE n_neighbors = mask & ((ONE << w_tid) - ONE);
    auto total_valid_in_warp = split::s_pop_count(mask);
    if (w_tid == 0) {
       buffer[widb] = total_valid_in_warp;
@@ -613,204 +601,290 @@ void split_prefix_scan_raw(T* input, T* output, splitStackArena& mPool, const si
    }
 }
 
-
-
-#ifdef __NVCC__
-template <typename T, typename Rule> 
+template <typename T, typename Rule, size_t BLOCKSIZE=1024>
 __global__ void block_compact(T* input,T* output,size_t inputSize,Rule rule,uint32_t *retval) 
 {
+   // This must be equal to at least both WARPLENGTH and MAX_BLOCKSIZE/WARPLENGTH
    __shared__ uint32_t warpSums[WARPLENGTH];
    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
-   const size_t wid = tid /WARPLENGTH;
+   const size_t wid = tid / WARPLENGTH;
    const size_t w_tid = tid % WARPLENGTH;
+   const uint warpsPerBlock = BLOCKSIZE / WARPLENGTH;
+   // zero init shared buffer
+   if (wid==0) {
+      warpSums[w_tid] = 0;
+   }
+   __syncthreads();
    //full warp votes for rule-> mask = [01010101010101010101010101010101] 
-   const int active=(tid<inputSize)?rule(input[tid]):false; 
-   const auto mask = split::s_warpVote(active==1,SPLIT_VOTING_MASK);
-   const auto warpCount=s_pop_count(mask);
-   if (w_tid==0){
-      warpSums[wid]=warpCount;
+   const int active = (tid<inputSize) ? rule(input[tid]) : false; 
+   const auto mask = split::s_warpVote(active==1, SPLIT_VOTING_MASK);
+   const auto warpCount = s_pop_count(mask);
+   if (w_tid==0) {
+      warpSums[wid] = warpCount;
    }
    __syncthreads();
    //Figure out the total here because we overwrite shared mem later
-   if (wid==0){
-      int activeWARPS=nextPow2( static_cast<int>( ceilf(static_cast<float>(inputSize)/WARPLENGTH) ));
-      auto reduceCounts=[activeWARPS](int localCount)->int{
+   if (wid==0) {
+      // ceil int division
+      int activeWARPS = nextPow2( 1 + ((inputSize - 1) / WARPLENGTH));
+      auto reduceCounts = [activeWARPS](int localCount)->int{
          for (int i = activeWARPS / 2; i > 0; i = i / 2) {
             localCount += split::s_shuffle_down(localCount, i, SPLIT_VOTING_MASK);
          }
          return localCount;
       };
-      auto localCount=warpSums[w_tid];
+      auto localCount = warpSums[w_tid];
       int totalCount = reduceCounts(localCount);
-      if (w_tid==0){
+      if (w_tid==0) {
          *retval=(uint32_t)(totalCount);
       }
    }
    //Prefix scan WarpSums on the first warp
-   if (wid==0){
+   if (wid==0) {
       auto value = warpSums[w_tid];
-       for (int d=1; d<32; d=2*d) {
-         int res= __shfl_up_sync(SPLIT_VOTING_MASK, value,d);
-         if (tid%32 >= d) value+= res;
-      }
-   warpSums[w_tid]=value;
+       for (int d=1; d<warpsPerBlock; d=2*d) {
+         int res = split::s_shuffle_up(value, d, SPLIT_VOTING_MASK); 
+         if (tid % warpsPerBlock >= d) {
+            value+= res;
+         }
+       }
+   warpSums[w_tid] = value;
    }
    __syncthreads();
-   auto offset= (wid==0)?0:warpSums[wid-1];
-   auto pp=s_pop_count(mask&((1<<w_tid) -1 ));
-   const auto warpTidWriteIndex  =offset + pp;
-   if(active){
-      output[warpTidWriteIndex]=input[tid];
+   auto offset = (wid==0) ? 0 : warpSums[wid-1];
+   auto pp = s_pop_count(mask&((ONE<<w_tid) - ONE ));
+   const auto warpTidWriteIndex = offset + pp;
+   if (active) {
+      output[warpTidWriteIndex] = input[tid];
    }
 }
 
-//Single kernel block compaction. Only works for powers of 2 inputs
-template <typename T,typename U, typename Rule> 
+template <typename T,typename U, typename Rule, size_t BLOCKSIZE=1024>
 __global__ void block_compact_keys(T* input,U* output,size_t inputSize,Rule rule,uint32_t *retval) 
 {
+   // This must be equal to at least both WARPLENGTH and MAX_BLOCKSIZE/WARPLENGTH
    __shared__ uint32_t warpSums[WARPLENGTH];
    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
-   const size_t wid = tid /WARPLENGTH;
+   const size_t wid = tid / WARPLENGTH;
    const size_t w_tid = tid % WARPLENGTH;
+   const uint warpsPerBlock = BLOCKSIZE / WARPLENGTH;
+   // zero init shared buffer
+   if (wid==0) {
+      warpSums[w_tid] = 0;
+   }
+   __syncthreads();
    //full warp votes for rule-> mask = [01010101010101010101010101010101] 
-   const int active=rule((input[tid])); 
-   const auto mask = split::s_warpVote(active==1,SPLIT_VOTING_MASK);
-   const auto warpCount=s_pop_count(mask);
-   if (w_tid==0){
-      warpSums[wid]=warpCount;
+   const int active = (tid<inputSize) ? rule(input[tid]) : false; 
+   const auto mask = split::s_warpVote(active==1, SPLIT_VOTING_MASK);
+   const auto warpCount = s_pop_count(mask);
+   if (w_tid==0) {
+      warpSums[wid] = warpCount;
    }
    __syncthreads();
    //Figure out the total here because we overwrite shared mem later
-   if (wid==0){
-      int activeWARPS=nextPow2( static_cast<int>( ceilf(static_cast<float>(inputSize)/WARPLENGTH) ));
-      auto reduceCounts=[activeWARPS](int localCount)->int{
+   if (wid==0) {
+      // ceil int division
+      int activeWARPS = nextPow2( 1 + ((inputSize - 1) / WARPLENGTH));
+      auto reduceCounts = [activeWARPS](int localCount)->int{
          for (int i = activeWARPS / 2; i > 0; i = i / 2) {
             localCount += split::s_shuffle_down(localCount, i, SPLIT_VOTING_MASK);
          }
          return localCount;
       };
-      auto localCount=warpSums[w_tid];
+      auto localCount = warpSums[w_tid];
       int totalCount = reduceCounts(localCount);
-      if (w_tid==0){
+      if (w_tid==0) {
          *retval=(uint32_t)(totalCount);
       }
    }
    //Prefix scan WarpSums on the first warp
-   if (wid==0){
+   if (wid==0) {
       auto value = warpSums[w_tid];
-       for (int d=1; d<32; d=2*d) {
-         int res= __shfl_up_sync(SPLIT_VOTING_MASK, value,d);
-         if (tid%32 >= d) value+= res;
-      }
-   warpSums[w_tid]=value;
-   }
-   __syncthreads();
-   auto offset=(wid==0)?0:warpSums[wid-1];
-   auto pp=s_pop_count(mask&((1<<w_tid) -1 ));
-   const auto warpTidWriteIndex  =offset + pp;
-   if(active){
-      output[warpTidWriteIndex]=input[tid].first;
-   }
-}
-#endif
-
-#ifdef __HIP__
-template <typename T, typename Rule> 
-__global__ void block_compact(T* input,T* output,size_t inputSize,Rule rule,uint32_t *retval) 
-{
-   __shared__ uint32_t warpSums[WARPLENGTH/2];
-   const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
-   const size_t wid = tid /WARPLENGTH;
-   const size_t w_tid = tid % WARPLENGTH;
-   //full warp votes for rule-> mask = [01010101010101010101010101010101] 
-   const int active=(tid<inputSize)?rule(input[tid]):false; 
-   const auto mask = split::s_warpVote(active==1,SPLIT_VOTING_MASK);
-   const auto warpCount=s_pop_count(mask);
-   if (w_tid==0){
-      warpSums[wid]=warpCount;
-   }
-   __syncthreads();
-   //Figure out the total here because we overwrite shared mem later
-   if (wid==0){
-      int activeWARPS=nextPow2( static_cast<int>( ceilf(static_cast<float>(inputSize)/WARPLENGTH) ));
-      auto reduceCounts=[activeWARPS](int localCount)->int{
-         for (int i = activeWARPS / 2; i > 0; i = i / 2) {
-            localCount += split::s_shuffle_down(localCount, i, SPLIT_VOTING_MASK);
+       for (int d=1; d<warpsPerBlock; d=2*d) {
+         int res = split::s_shuffle_up(value, d, SPLIT_VOTING_MASK); 
+         if (tid % warpsPerBlock >= d) {
+            value+= res;
          }
-         return localCount;
-      };
-      auto localCount=warpSums[w_tid];
-      int totalCount = reduceCounts(localCount);
-      if (w_tid==0){
-         *retval=(uint32_t)(totalCount);
-      }
-   }
-   //Prefix scan WarpSums on the first warp
-   if (wid==0){
-      auto value = warpSums[w_tid];
-       for (int d=1; d<16; d=2*d) {
-         int res = split::s_shuffle_up(value,d,SPLIT_VOTING_MASK); 
-         if (tid%16 >= d) value+= res;
-      }
-   warpSums[w_tid]=value;
+       }
+   warpSums[w_tid] = value;
    }
    __syncthreads();
-   auto offset= (wid==0)?0:warpSums[wid-1];
-   auto pp=s_pop_count(mask&((1ul<<w_tid) - 1ul ));
-   const auto warpTidWriteIndex  =offset + pp;
-   if(active){
-      output[warpTidWriteIndex]=input[tid];
+   auto offset = (wid==0) ? 0 : warpSums[wid-1];
+   auto pp = s_pop_count(mask&((ONE<<w_tid) - ONE ));
+   const auto warpTidWriteIndex = offset + pp;
+   if(active) {
+      output[warpTidWriteIndex] = input[tid].first;
    }
 }
 
-template <typename T,typename U,  typename Rule> 
-__global__ void block_compact_keys(T* input,U* output,size_t inputSize,Rule rule,uint32_t *retval) 
-{
-   __shared__ uint32_t warpSums[WARPLENGTH/2];
-   const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
-   const size_t wid = tid /WARPLENGTH;
+template <typename T, typename Rule, size_t BLOCKSIZE=1024>
+__global__ void loop_compact(
+   split::SplitVector<T, split::split_unified_allocator<T>>& inputVec,
+   split::SplitVector<T, split::split_unified_allocator<T>>& outputVec,
+   Rule rule) {
+   // This must be equal to at least both WARPLENGTH and MAX_BLOCKSIZE/WARPLENGTH
+   __shared__ uint32_t warpSums[WARPLENGTH];
+   __shared__ uint32_t outputCount;
+   // blockIdx.x is always 0 for this kernel
+   const size_t tid = threadIdx.x;// + blockIdx.x * blockDim.x;
+   const size_t wid = tid / WARPLENGTH;
    const size_t w_tid = tid % WARPLENGTH;
+   const uint warpsPerBlock = BLOCKSIZE / WARPLENGTH;
+   // zero init shared buffer
+   if (wid==0) {
+      warpSums[w_tid] = 0;
+   }
+   __syncthreads();
    //full warp votes for rule-> mask = [01010101010101010101010101010101] 
-   const int active=(tid<inputSize)?rule(input[tid]):false; 
-   const auto mask = split::s_warpVote(active==1,SPLIT_VOTING_MASK);
-   const auto warpCount=s_pop_count(mask);
-   if (w_tid==0){
-      warpSums[wid]=warpCount;
-   }
-   __syncthreads();
-   //Figure out the total here because we overwrite shared mem later
-   if (wid==0){
-      int activeWARPS=nextPow2( static_cast<int>( ceilf(static_cast<float>(inputSize)/WARPLENGTH) ));
-      auto reduceCounts=[activeWARPS](int localCount)->int{
-         for (int i = activeWARPS / 2; i > 0; i = i / 2) {
-            localCount += split::s_shuffle_down(localCount, i, SPLIT_VOTING_MASK);
+   int64_t remaining = inputVec.size();
+   const uint capacity = outputVec.capacity();
+   uint32_t outputSize = 0;
+   // Initial pointers into data
+   T* input = inputVec.data();
+   T* output = outputVec.data();
+   // Start loop
+   while (remaining > 0) {
+      int current = remaining > blockDim.x ? blockDim.x : remaining;
+      __syncthreads();
+      const int active = (tid<current) ? rule(input[tid]) : false; 
+      const auto mask = split::s_warpVote(active==1, SPLIT_VOTING_MASK);
+      const auto warpCount = s_pop_count(mask);
+      if (w_tid==0) {
+         warpSums[wid] = warpCount;
+      }
+      __syncthreads();
+      //Figure out the total here because we overwrite shared mem later
+      if (wid==0) {
+         // ceil int division
+         int activeWARPS = nextPow2( 1 + ((current - 1) / WARPLENGTH));
+         auto reduceCounts = [activeWARPS](int localCount)->int{
+                              for (int i = activeWARPS / 2; i > 0; i = i / 2) {
+                                 localCount += split::s_shuffle_down(localCount, i, SPLIT_VOTING_MASK);
+                              }
+                              return localCount;
+                           };
+         auto localCount = warpSums[w_tid];
+         int totalCount = reduceCounts(localCount);
+         if (w_tid==0) {
+            outputCount = totalCount;
+            outputSize += totalCount;
+            assert((outputSize <= capacity) && "loop_compact ran out of capacity!");
+            outputVec.device_resize(outputSize);
          }
-         return localCount;
-      };
-      auto localCount=warpSums[w_tid];
-      int totalCount = reduceCounts(localCount);
-      if (w_tid==0){
-         *retval=(uint32_t)(totalCount);
       }
-   }
-   //Prefix scan WarpSums on the first warp
-   if (wid==0){
-      auto value = warpSums[w_tid];
-       for (int d=1; d<16; d=2*d) {
-         int res = split::s_shuffle_up(value,d,SPLIT_VOTING_MASK); 
-         if (tid%16 >= d) value+= res;
+      //Prefix scan WarpSums on the first warp
+      if (wid==0) {
+         auto value = warpSums[w_tid];
+         for (int d=1; d<warpsPerBlock; d=2*d) {
+            int res = split::s_shuffle_up(value,d,SPLIT_VOTING_MASK); 
+            if (tid%warpsPerBlock >= d) {
+               value+= res;
+            }
+         }
+         warpSums[w_tid] = value;
       }
-   warpSums[w_tid]=value;
+      __syncthreads();
+      auto offset = (wid==0) ? 0 : warpSums[wid-1];
+      auto pp = s_pop_count(mask&((ONE<<w_tid) - ONE ));
+      const auto warpTidWriteIndex = offset + pp;
+      if (active) {
+         output[warpTidWriteIndex] = input[tid];
+      }
+      // Next loop iteration:
+      input += current;
+      output += outputCount;
+      remaining -= current;
    }
    __syncthreads();
-   auto offset= (wid==0)?0:warpSums[wid-1];
-   auto pp=s_pop_count(mask&((1ul<<w_tid) - 1ul ));
-   const auto warpTidWriteIndex  =offset + pp;
-   if(active){
-      output[warpTidWriteIndex]=input[tid].first;
+   if (tid==0) {
+      // Resize to final correct output size.
+      outputVec.device_resize(outputSize);
    }
 }
-#endif
+template <typename T,typename U, typename Rule, size_t BLOCKSIZE=1024>
+__global__ void loop_compact_keys(
+   split::SplitVector<T, split::split_unified_allocator<T>>& inputVec,
+   split::SplitVector<U, split::split_unified_allocator<U>>& outputVec,
+   Rule rule) {
+   // This must be equal to at least both WARPLENGTH and MAX_BLOCKSIZE/WARPLENGTH
+   __shared__ uint32_t warpSums[WARPLENGTH];
+   __shared__ uint32_t outputCount;
+   // blockIdx.x is always 0 for this kernel
+   const size_t tid = threadIdx.x;// + blockIdx.x * blockDim.x;
+   const size_t wid = tid / WARPLENGTH;
+   const size_t w_tid = tid % WARPLENGTH;
+   const uint warpsPerBlock = BLOCKSIZE / WARPLENGTH;
+   // zero init shared buffer
+   if (wid==0) {
+      warpSums[w_tid] = 0;
+   }
+   __syncthreads();
+   //full warp votes for rule-> mask = [01010101010101010101010101010101] 
+   int64_t remaining = inputVec.size();
+   const uint capacity = outputVec.capacity();
+   uint32_t outputSize = 0;
+   // Initial pointers into data
+   T* input = inputVec.data();
+   U* output = outputVec.data();
+   // Start loop
+   while (remaining > 0) {
+      int current = remaining > blockDim.x ? blockDim.x : remaining;
+      __syncthreads();
+      const int active = (tid<current) ? rule(input[tid]) : false; 
+      const auto mask = split::s_warpVote(active==1, SPLIT_VOTING_MASK);
+      const auto warpCount = s_pop_count(mask);
+      if (w_tid==0) {
+         warpSums[wid] = warpCount;
+      }
+      __syncthreads();
+      //Figure out the total here because we overwrite shared mem later
+      if (wid==0){
+         // ceil int division
+         int activeWARPS = nextPow2( 1 + ((current - 1) / WARPLENGTH));
+         auto reduceCounts=[activeWARPS](int localCount)->int{
+                              for (int i = activeWARPS / 2; i > 0; i = i / 2) {
+                                 localCount += split::s_shuffle_down(localCount, i, SPLIT_VOTING_MASK);
+                              }
+                              return localCount;
+                           };
+         auto localCount = warpSums[w_tid];
+         int totalCount = reduceCounts(localCount);
+         if (w_tid==0) {
+            outputCount = totalCount;
+            outputSize += totalCount;
+            assert((outputSize <= capacity) && "loop_compact ran out of capacity!");
+            outputVec.device_resize(outputSize);
+         }
+      }
+      //Prefix scan WarpSums on the first warp
+      if (wid==0) {
+         auto value = warpSums[w_tid];
+         for (int d=1; d<warpsPerBlock; d=2*d) {
+            int res = split::s_shuffle_up(value, d, SPLIT_VOTING_MASK); 
+            if (tid%warpsPerBlock >= d) {
+               value+= res;
+            }
+         }
+         warpSums[w_tid] = value;
+      }
+      __syncthreads();
+      auto offset = (wid==0) ? 0 : warpSums[wid-1];
+      auto pp = s_pop_count(mask&((ONE<<w_tid) - ONE ));
+      const auto warpTidWriteIndex = offset + pp;
+      if (active) {
+         output[warpTidWriteIndex] = input[tid].first;
+      }
+      // Next loop iteration:
+      input += current;
+      output += outputCount;
+      remaining -= current;
+   }
+   __syncthreads();
+   if (tid==0) {
+      // Resize to final correct output size.
+      outputVec.device_resize(outputSize);
+   }
+}
 
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 size_t copy_if_block(T* input, T* output, size_t size, Rule rule, void* stack, size_t max_size,
@@ -919,6 +993,37 @@ uint32_t copy_if_raw(T* input, T* output, size_t size, Rule rule,
    SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&numel, retval, sizeof(uint32_t), split_gpuMemcpyDeviceToHost, s));
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    return numel;
+}
+
+/**
+ * @brief Extraction routines using just a single block.
+   These methods assume splitvectors are fully allocated on UM or Device.
+ */
+
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+void copy_if_loop(
+   split::SplitVector<T, split::split_unified_allocator<T>>& input,
+   split::SplitVector<T, split::split_unified_allocator<T>>& output,
+   Rule rule, split_gpuStream_t s = 0) {
+   #ifndef NDEBUG
+   bool input_ok = isDeviceAccessible( reinterpret_cast<void*>(&input));
+   bool output_ok= isDeviceAccessible( reinterpret_cast<void*>(&output));
+   assert( (input_ok && output_ok) && "This method supports splitvectors dynamically allocated on device or unified memory!");
+   #endif
+   split::tools::loop_compact<<<1,BLOCKSIZE,0,s>>>(input,output,rule);
+}
+
+template <typename T,typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+void copy_if_keys_loop(
+   split::SplitVector<T, split::split_unified_allocator<T>>& input,
+   split::SplitVector<U, split::split_unified_allocator<U>>& output,
+   Rule rule, split_gpuStream_t s = 0) {
+   #ifndef NDEBUG
+   bool input_ok = isDeviceAccessible( reinterpret_cast<void*>(&input));
+   bool output_ok= isDeviceAccessible( reinterpret_cast<void*>(&output));
+   assert( (input_ok && output_ok) && "This method supports splitvectors dynamically allocated on device or unified memory!");
+   #endif
+   split::tools::loop_compact_keys<<<1,BLOCKSIZE,0,s>>>(input,output,rule);
 }
 
 /**

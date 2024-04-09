@@ -365,7 +365,7 @@ public:
       if (this == &other) {
          return;
       }
-      // Match other's size prior to copying
+      // Match other's size and capacity prior to copying
       resize(other.size(), true, stream);
       auto copySafe = [&]() -> void {
                          for (size_t i = 0; i < size(); i++) {
