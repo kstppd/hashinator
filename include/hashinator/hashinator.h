@@ -577,11 +577,11 @@ public:
 #else
    // Try to get the overflow back to the original one
    void performCleanupTasks(split_gpuStream_t s = 0) {
+      if (tombstone_ratio() > 0.125) {
+         clean_tombstones(s);
+      }
       while (_mapInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW) {
          device_rehash(_mapInfo->sizePower + 1, s);
-      }
-      if (tombstone_ratio() > 0.025) {
-         clean_tombstones(s);
       }
    }
 
