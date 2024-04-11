@@ -443,8 +443,9 @@ public:
             buckets.optimizeGPU(s);
          }
          DeviceHasher::reset_all(buckets.data(),_mapInfo, buckets.size(), s);
-         _mapInfo->fill = 0;
+         #ifdef HASHINATOR_DEBUG
          set_status((_mapInfo->fill == 0) ? success : fail);
+         #endif
          break;
 
       default:
