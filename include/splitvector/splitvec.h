@@ -89,6 +89,7 @@ private:
    size_t _alloc_multiplier = 2; // host variable; multiplier for  when reserving more space
    Allocator _allocator;         // Allocator used to allocate and deallocate memory;
    Residency _location;          // Flags that describes the current residency of our data
+   SplitVector* d_vec;           // device copy pointer
 
    /**
     * @brief Checks if a pointer is valid and throws an exception if it's null.
@@ -213,6 +214,7 @@ public:
     */
    HOSTONLY explicit SplitVector() : _location(Residency::host) {
       this->_allocate(0); // seems counter-intuitive based on stl but it is not!
+      d_vec = NULL;
    }
 
    /**
@@ -220,7 +222,10 @@ public:
     *
     * @param size The size of the SplitVector to be created.
     */
-   HOSTONLY explicit SplitVector(size_t size) : _location(Residency::host) { this->_allocate(size); }
+   HOSTONLY explicit SplitVector(size_t size) : _location(Residency::host) {
+      this->_allocate(size);
+      d_vec = NULL;
+   }
 
    /**
     * @brief Constructor to create a SplitVector of a specified size with initial values.
@@ -233,6 +238,7 @@ public:
       for (size_t i = 0; i < size; i++) {
          _data[i] = val;
       }
+      d_vec = NULL;
    }
 
    /**
@@ -269,6 +275,7 @@ public:
       }
       copySafe();
       _location = Residency::host;
+      d_vec = NULL;
    }
 #endif
    /**
@@ -284,6 +291,7 @@ public:
       *(other._size) = 0;
       other._data = nullptr;
       _location = other._location;
+      d_vec = NULL;
    }
 
    /**
@@ -296,6 +304,7 @@ public:
       for (size_t i = 0; i < size(); i++) {
          _data[i] = init_list.begin()[i];
       }
+      d_vec = NULL;
    }
 
    /**
@@ -308,12 +317,18 @@ public:
       for (size_t i = 0; i < size(); i++) {
          _data[i] = other[i];
       }
+      d_vec = NULL;
    }
 
    /**
     * @brief Destructor for the SplitVector. Deallocates memory.
     */
-   HOSTONLY ~SplitVector() { _deallocate(); }
+   HOSTONLY ~SplitVector() {
+      _deallocate();
+      if (d_vec != NULL) {
+         SPLIT_CHECK_ERR(split_gpuFree(d_vec));
+      }
+   }
 
 /**
  * @brief Custom assignment operator to assign the content of another SplitVector.
@@ -357,6 +372,7 @@ public:
       }
       copySafe();
       _location = Residency::host;
+      d_vec = NULL;
       return *this;
    }
 
@@ -383,6 +399,7 @@ public:
          }
       copySafe();
       _location = Residency::host;
+      d_vec = NULL;
       return;
    }
 
@@ -407,6 +424,7 @@ public:
       *(other._size) = 0;
       other._data = nullptr;
       _location = other._location;
+      d_vec = NULL;
       return *this;
    }
 
@@ -456,14 +474,22 @@ public:
     *
     * @param stream The GPU stream to perform the upload on.
     * @return Pointer to the uploaded SplitVector on the GPU.
-    * Has to be split_gpuFree'd after use otherwise memleak (small one but still)!
     */
    HOSTONLY
    SplitVector<T, Allocator>* upload(split_gpuStream_t stream = 0) {
-      SplitVector* d_vec;
-      optimizeGPU(stream);
-      SPLIT_CHECK_ERR(split_gpuMallocAsync((void**)&d_vec, sizeof(SplitVector), stream));
+      if (d_vec == NULL) {
+         SPLIT_CHECK_ERR(split_gpuMallocAsync((void**)&d_vec, sizeof(SplitVector), stream));
+      }
       SPLIT_CHECK_ERR(split_gpuMemcpyAsync(d_vec, this, sizeof(SplitVector), split_gpuMemcpyHostToDevice, stream));
+      return d_vec;
+   }
+   /**
+    * @brief Returns pre-uploaded pointer to the SplitVector on the GPU.
+    *
+    * @return Pointer to the uploaded SplitVector on the GPU.
+    */
+   HOSTONLY
+   SplitVector<T, Allocator>* device_pointer() {
       return d_vec;
    }
 
@@ -731,6 +757,7 @@ public:
       }
       reserve(newSize, eco);
       *_size = newSize;
+      // TODO: should it set entries to zero?
    }
 
    /**
@@ -858,6 +885,7 @@ public:
       }
       reserve(newSize, eco, stream);
       *_size = newSize;
+      // TODO: should it set entries to zero?
    }
 
    /**
