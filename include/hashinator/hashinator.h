@@ -54,18 +54,7 @@ using DefaultMetaAllocator = split::split_host_allocator<T>;
 #define DefaultHasher void
 #endif
 
-typedef struct Info {
-   Info(){};
-   Info(int sz)
-       : sizePower(sz), fill(0), currentMaxBucketOverflow(defaults::BUCKET_OVERFLOW), tombstoneCounter(0),
-         err(status::invalid) {}
-   int sizePower;
-   size_t fill;
-   size_t currentMaxBucketOverflow;
-   size_t tombstoneCounter;
-   status err;
-} MapInfo;
-
+using MapInfo = Hashinator::Info;
 template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(),
           KEY_TYPE TOMBSTONE = EMPTYBUCKET - 1, class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>,
           class DeviceHasher = DefaultHasher, class Meta_Allocator = DefaultMetaAllocator<MapInfo>>
@@ -453,7 +442,7 @@ public:
          if (prefetches) {
             buckets.optimizeGPU(s);
          }
-         DeviceHasher::reset_all(buckets.data(), buckets.size(), s);
+         DeviceHasher::reset_all(buckets.data(),_mapInfo, buckets.size(), s);
          _mapInfo->fill = 0;
          set_status((_mapInfo->fill == 0) ? success : fail);
          break;
@@ -1239,9 +1228,9 @@ public:
       }
       // If we do have overflown elements we put them back in the buckets
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-      DeviceHasher::reset(overflownElements, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
+      DeviceHasher::reset(overflownElements, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,_mapInfo,
                           nOverflownElements, s);
-      _mapInfo->fill -= nOverflownElements;
+
       DeviceHasher::insert(overflownElements, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
                            &_mapInfo->currentMaxBucketOverflow, &_mapInfo->fill, nOverflownElements, &_mapInfo->err, s);
 
