@@ -16,7 +16,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  * */
 #pragma once
-
+#include "defaults.h"
 namespace Hashinator {
 namespace Hashers {
 
@@ -24,7 +24,7 @@ namespace Hashers {
  * Resets all elements in dst to EMPTY, VAL_TYPE()
  * */
 template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max()>
-__global__ void reset_all_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* dst, const size_t len) {
+__global__ void reset_all_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* dst, Hashinator::Info* info,const size_t len) {
    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
    // Early exit here
    if (tid >= len) {
@@ -33,6 +33,11 @@ __global__ void reset_all_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* dst, const siz
 
    if (dst[tid].first != EMPTYBUCKET) {
       dst[tid].first = EMPTYBUCKET;
+   }
+
+   //Thread 0 resets fill
+   if (tid==0){
+      info->fill=0;
    }
    return;
 }
@@ -61,7 +66,7 @@ template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::nume
           class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>, int WARPSIZE = defaults::WARPSIZE,
           int elementsPerWarp>
 __global__ void reset_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* dst,
-                               const int sizePower, size_t maxoverflow, size_t len)
+                               const int sizePower, size_t maxoverflow,Hashinator::Info* info, size_t len)
 
 {
    const int VIRTUALWARP = WARPSIZE / elementsPerWarp;
@@ -72,6 +77,12 @@ __global__ void reset_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY
    // Early quit if we have more warps than elements to insert
    if (wid >= len) {
       return;
+   }
+
+   //Thread 0 decrememnts fill by the total number of elements this kernel 
+   //will remove
+   if (tid==0){
+      info->fill -= len;
    }
 
    uint32_t subwarp_relative_index = (wid) % (WARPSIZE / VIRTUALWARP);

@@ -40,4 +40,17 @@ constexpr int MAX_BLOCKSIZE = 1024;
 template <typename T>
 using DefaultHashFunction = HashFunctions::Fibonacci<T>;
 } // namespace defaults
+
+struct Info {
+   Info(){};
+   Info(int sz)
+       : sizePower(sz), fill(0), currentMaxBucketOverflow(defaults::BUCKET_OVERFLOW), tombstoneCounter(0),
+         err(status::invalid) {}
+   int sizePower;
+   size_t fill;
+   size_t currentMaxBucketOverflow;
+   size_t tombstoneCounter;
+   status err;
+};
+
 } // namespace Hashinator
