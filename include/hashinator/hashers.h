@@ -43,15 +43,15 @@ class Hasher {
 
 public:
    // Overload with separate input for keys and values.
-   static void insert(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, int sizePower,
-                      size_t maxoverflow, size_t* d_overflow, size_t* d_fill, size_t len, status* err,
+   static void insert(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, Hashinator::Info* info,
+                      size_t* d_overflow, size_t* d_fill, size_t len, status* err,
                       split_gpuStream_t s = 0) {
       size_t blocks, blockSize;
       *err = status::success;
       launchParams(len, blocks, blockSize);
       Hashinator::Hashers::insert_kernel<KEY_TYPE, VAL_TYPE, EMPTYBUCKET, HashFunction, defaults::WARPSIZE,
                                          elementsPerWarp>
-          <<<blocks, blockSize, 0, s>>>(keys, vals, buckets, sizePower, maxoverflow, d_overflow, d_fill, len, err);
+          <<<blocks, blockSize, 0, s>>>(keys, vals, buckets, info, d_overflow, d_fill, len, err);
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
 #ifndef NDEBUG
       if (*err == status::fail) {
@@ -65,17 +65,17 @@ public:
    }
 
    // Overload with input for keys only, using the index as the value
-   static void insertIndex(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, int sizePower, size_t maxoverflow,
-                           size_t* d_overflow, size_t* d_fill, size_t len, status* err, split_gpuStream_t s = 0) {
+   static void insertIndex(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, Hashinator::Info* info,
+                           size_t len, split_gpuStream_t s = 0) {
       size_t blocks, blockSize;
-      *err = status::success;
+      info->err = status::success;
       launchParams(len, blocks, blockSize);
       Hashinator::Hashers::insert_index_kernel<KEY_TYPE, VAL_TYPE, EMPTYBUCKET, HashFunction, defaults::WARPSIZE,
                                                elementsPerWarp>
-          <<<blocks, blockSize, 0, s>>>(keys, buckets, sizePower, maxoverflow, d_overflow, d_fill, len, err);
+          <<<blocks, blockSize, 0, s>>>(keys, buckets, info, len);
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
 #ifndef NDEBUG
-      if (*err == status::fail) {
+      if (info->err == status::fail) {
          std::cerr << "***** Hashinator Runtime Warning ********" << std::endl;
          std::cerr << "Warning: Hashmap completely overflown in Device InsertIndex.\nNot all elements were "
                       "inserted!\nConsider resizing before calling insert"
@@ -87,18 +87,17 @@ public:
 
    // Overload with hash_pair<key,val> (k,v) inputs
    // Used by the tombstone cleaning method.
-   static void insert(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, int sizePower,
-                      size_t maxoverflow, size_t* d_overflow, size_t* d_fill, size_t len, status* err,
-                      split_gpuStream_t s = 0) {
+   static void insert(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, Hashinator::Info* info,
+                      size_t len, split_gpuStream_t s = 0) {
       size_t blocks, blockSize;
-      *err = status::success;
+      info->err = status::success;
       launchParams(len, blocks, blockSize);
       Hashinator::Hashers::insert_kernel<KEY_TYPE, VAL_TYPE, EMPTYBUCKET, HashFunction, defaults::WARPSIZE,
                                          elementsPerWarp>
-          <<<blocks, blockSize, 0, s>>>(src, buckets, sizePower, maxoverflow, d_overflow, d_fill, len, err);
+          <<<blocks, blockSize, 0, s>>>(src, buckets, info, len);
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
 #ifndef NDEBUG
-      if (*err == status::fail) {
+      if (info->err == status::fail) {
          std::cerr << "***** Hashinator Runtime Warning ********" << std::endl;
          std::cerr << "Warning: Hashmap completely overflown in Device Insert.\nNot all ellements were "
                       "inserted!\nConsider resizing before calling insert"
@@ -142,20 +141,20 @@ public:
    }
 
    // Reset wrapper
-   static void reset(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* dst, const int sizePower,
-                     size_t maxoverflow, Hashinator::Info* info, size_t len, split_gpuStream_t s = 0) {
+   static void reset(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* dst,
+                     Hashinator::Info* info, size_t len, split_gpuStream_t s = 0) {
       size_t blocks, blockSize;
       launchParams(len, blocks, blockSize);
       Hashinator::Hashers::reset_to_empty<KEY_TYPE, VAL_TYPE, EMPTYBUCKET, HashFunction, defaults::WARPSIZE,
                                           elementsPerWarp>
-          <<<blocks, blockSize, 0, s>>>(src, dst, sizePower, maxoverflow, info, len);
+          <<<blocks, blockSize, 0, s>>>(src, dst, info, len);
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    }
 
    // Reset wrapper for all elements
-   static void reset_all(hash_pair<KEY_TYPE, VAL_TYPE>* dst, Hashinator::Info* info,size_t len, split_gpuStream_t s = 0) {
-      size_t blocksNeeded = len / defaults::MAX_BLOCKSIZE;
-      blocksNeeded = blocksNeeded + (blocksNeeded == 0);
+   static void reset_all(hash_pair<KEY_TYPE, VAL_TYPE>* dst, Hashinator::Info* info, size_t len, split_gpuStream_t s = 0) {
+      // fast ceil for positive ints
+      size_t blocksNeeded = len / defaults::MAX_BLOCKSIZE + (len % defaults::MAX_BLOCKSIZE != 0);
       reset_all_to_empty<KEY_TYPE, VAL_TYPE, EMPTYBUCKET><<<blocksNeeded, defaults::MAX_BLOCKSIZE, 0, s>>>(dst,info, len);
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    }

@@ -1229,11 +1229,10 @@ public:
       }
       // If we do have overflown elements we put them back in the buckets
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-      DeviceHasher::reset(overflownElements, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,_mapInfo,
+      DeviceHasher::reset(overflownElements, buckets.data(), _mapInfo,
                           nOverflownElements, s);
 
-      DeviceHasher::insert(overflownElements, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
-                           &_mapInfo->currentMaxBucketOverflow, &_mapInfo->fill, nOverflownElements, &_mapInfo->err, s);
+      DeviceHasher::insert(overflownElements, buckets.data(), _mapInfo, nOverflownElements, s);
 
       SPLIT_CHECK_ERR(split_gpuFreeAsync(overflownElements, s));
       return;
@@ -1256,8 +1255,7 @@ public:
          resize(neededPowerSize, targets::device, s);
       }
       _mapInfo->currentMaxBucketOverflow = _mapInfo->currentMaxBucketOverflow;
-      DeviceHasher::insert(keys, vals, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
-                           &_mapInfo->currentMaxBucketOverflow, &_mapInfo->fill, len, &_mapInfo->err, s);
+      DeviceHasher::insert(keys, vals, buckets.data(), _mapInfo, len, s);
       return;
    }
 
@@ -1277,8 +1275,7 @@ public:
          resize(neededPowerSize, targets::device, s);
       }
       _mapInfo->currentMaxBucketOverflow = _mapInfo->currentMaxBucketOverflow;
-      DeviceHasher::insertIndex(keys, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
-                                &_mapInfo->currentMaxBucketOverflow, &_mapInfo->fill, len, &_mapInfo->err, s);
+      DeviceHasher::insertIndex(keys, buckets.data(), _mapInfo, len, s);
       return;
    }
 
@@ -1297,8 +1294,7 @@ public:
       if (neededPowerSize > _mapInfo->sizePower) {
          resize(neededPowerSize, targets::device, s);
       }
-      DeviceHasher::insert(src, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
-                           &_mapInfo->currentMaxBucketOverflow, &_mapInfo->fill, len, &_mapInfo->err, s);
+      DeviceHasher::insert(src, buckets.data(), _mapInfo, len, s);
       return;
    }
 
