@@ -1005,7 +1005,7 @@ void copy_if_loop(
    split::SplitVector<T, split::split_unified_allocator<T>>& input,
    split::SplitVector<T, split::split_unified_allocator<T>>& output,
    Rule rule, split_gpuStream_t s = 0) {
-   #ifndef NDEBUG
+   #ifdef HASHINATOR_DEBUG
    bool input_ok = isDeviceAccessible( reinterpret_cast<void*>(&input));
    bool output_ok= isDeviceAccessible( reinterpret_cast<void*>(&output));
    assert( (input_ok && output_ok) && "This method supports splitvectors dynamically allocated on device or unified memory!");
@@ -1018,7 +1018,7 @@ void copy_if_keys_loop(
    split::SplitVector<T, split::split_unified_allocator<T>>& input,
    split::SplitVector<U, split::split_unified_allocator<U>>& output,
    Rule rule, split_gpuStream_t s = 0) {
-   #ifndef NDEBUG
+   #ifdef HASHINATOR_DEBUG
    bool input_ok = isDeviceAccessible( reinterpret_cast<void*>(&input));
    bool output_ok= isDeviceAccessible( reinterpret_cast<void*>(&output));
    assert( (input_ok && output_ok) && "This method supports splitvectors dynamically allocated on device or unified memory!");

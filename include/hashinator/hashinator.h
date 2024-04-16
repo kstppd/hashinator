@@ -63,6 +63,7 @@ class Hashmap {
 private:
    // CUDA device handle
    Hashmap* device_map;
+   split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>* device_buckets;
    //~CUDA device handle
 
    // Host members
@@ -94,6 +95,7 @@ private:
 #ifndef HASHINATOR_CPU_ONLY_MODE
       SPLIT_CHECK_ERR(split_gpuFree(device_map));
       device_map = nullptr;
+      device_buckets = nullptr;
 #endif
    }
 
@@ -157,7 +159,7 @@ public:
       _metaAllocator.deallocate(_mapInfo, 1);
       _mapInfo = other._mapInfo;
       other._mapInfo=nullptr;
-      buckets =std::move(other.buckets);
+      buckets = std::move(other.buckets);
       return *this;
    }
 
@@ -430,7 +432,7 @@ public:
       return;
    }
 #else
-   void clear(targets t = targets::host, split_gpuStream_t s = 0, bool prefetches = true) {
+   void clear(targets t = targets::host, split_gpuStream_t s = 0, bool prefetches = true, size_t len = 0) {
       switch (t) {
       case targets::host:
          buckets =
@@ -440,9 +442,12 @@ public:
 
       case targets::device:
          if (prefetches) {
-            buckets.optimizeGPU(s);
+            optimizeGPU(s);
          }
-         DeviceHasher::reset_all(buckets.data(),_mapInfo, buckets.size(), s);
+         if (len==0) { // If size is provided, no need to page fault size information.
+            len = buckets.size();
+         }
+         DeviceHasher::reset_all(buckets.data(),_mapInfo, len, s);
          #ifdef HASHINATOR_DEBUG
          set_status((_mapInfo->fill == 0) ? success : fail);
          #endif
@@ -561,6 +566,7 @@ public:
       buckets.swap(other.buckets);
       std::swap(_mapInfo, other._mapInfo);
       std::swap(device_map, other.device_map);
+      std::swap(device_buckets, other.device_buckets);
    }
 
 #ifdef HASHINATOR_CPU_ONLY_MODE
@@ -1116,7 +1122,7 @@ public:
    void extractPatternLoop(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements, Rule rule, split_gpuStream_t s = 0) {
       // Extract elements matching the Pattern Rule(element)==true;
       split::tools::copy_if_loop<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, defaults::MAX_BLOCKSIZE,
-                                 defaults::WARPSIZE>(buckets, elements, rule, s);
+                                 defaults::WARPSIZE>(*device_buckets, elements, rule, s);
    }
    void extractLoop(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements, split_gpuStream_t s = 0) {
       // Extract all valid elements
@@ -1157,7 +1163,7 @@ public:
    void extractKeysByPatternLoop(split::SplitVector<KEY_TYPE>& elements, Rule rule, split_gpuStream_t s = 0) {
       // Extract element **keys** matching the Pattern Rule(element)==true;
       split::tools::copy_if_keys_loop<hash_pair<KEY_TYPE, VAL_TYPE>, KEY_TYPE, Rule, defaults::MAX_BLOCKSIZE,
-                                 defaults::WARPSIZE>(buckets, elements, rule, s);
+                                 defaults::WARPSIZE>(*device_buckets, elements, rule, s);
    }
 
    size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, split_gpuStream_t s = 0, bool prefetches = true) {
@@ -1343,6 +1349,7 @@ public:
     */
    Hashmap* upload(split_gpuStream_t stream = 0) {
       optimizeGPU(stream);
+      device_buckets = (split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>*)((char*)device_map + offsetof(Hashmap, buckets));
       SPLIT_CHECK_ERR(split_gpuMemcpyAsync(device_map, this, sizeof(Hashmap), split_gpuMemcpyHostToDevice, stream));
       return device_map;
    }
