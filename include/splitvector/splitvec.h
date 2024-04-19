@@ -392,8 +392,11 @@ public:
       if constexpr (std::is_trivially_copyable<T>::value) {
             if (other._location == Residency::device) {
                _location = Residency::device;
-               //optimizeGPU(stream);
                SPLIT_CHECK_ERR(split_gpuMemcpyAsync(_data, other._data, size() * sizeof(T), split_gpuMemcpyDeviceToDevice,stream));
+               int device;
+               SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
+               SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_size, sizeof(size_t), device, stream));
+               SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), device, stream));
                return;
             }
          }
