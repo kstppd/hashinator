@@ -146,7 +146,7 @@ public:
          return;
       }
       SPLIT_CHECK_ERR(split_gpuMemcpyAsync(_mapInfo,other._mapInfo, sizeof(MapInfo), split_gpuMemcpyDeviceToDevice, stream));
-      buckets.overwrite(other.buckets);
+      buckets.overwrite(other.buckets, stream);
       return;
    }
 
@@ -261,8 +261,8 @@ public:
       hash_pair<KEY_TYPE, VAL_TYPE>* validElements;
       SPLIT_CHECK_ERR(split_gpuMallocAsync((void**)&validElements,
                                            (_mapInfo->fill + 1) * sizeof(hash_pair<KEY_TYPE, VAL_TYPE>), s));
-      optimizeGPU(s);
-      SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+      // optimizeGPU(s);
+      // SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
 
       auto isValidKey = [] __host__ __device__(hash_pair<KEY_TYPE, VAL_TYPE> & element) {
          if (element.first != TOMBSTONE && element.first != EMPTYBUCKET) {
@@ -283,10 +283,10 @@ public:
          split_gpuFreeAsync(validElements, s);
          return;
       }
-      optimizeCPU(s);
+      // optimizeCPU(s);
       buckets = std::move(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>(
           1 << newSizePower, hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())));
-      optimizeGPU(s);
+      // optimizeGPU(s);
       *_mapInfo = Info(newSizePower);
       // Insert valid elements to now larger buckets
       insert(validElements, nValidElements, 1, s);
