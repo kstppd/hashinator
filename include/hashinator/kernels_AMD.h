@@ -137,8 +137,11 @@ template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::nume
           class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>, int WARPSIZE = defaults::WARPSIZE,
           int elementsPerWarp>
 __global__ void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, Hashinator::Info* info,
-                              size_t* d_overflow, size_t* d_fill, size_t len, status* err) {
+                              size_t len) {
 
+   size_t* d_overflow = &(info->currentMaxBucketOverflow);
+   size_t* d_fill = &(info->fill);
+   //status* err = &(info->err);
    const int sizePower = info->sizePower;
    const size_t maxoverflow = info->currentMaxBucketOverflow;
    const int VIRTUALWARP = WARPSIZE / elementsPerWarp;
