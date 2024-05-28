@@ -89,6 +89,7 @@ private:
    size_t _alloc_multiplier = 2; // host variable; multiplier for  when reserving more space
    Allocator _allocator;         // Allocator used to allocate and deallocate memory;
    Residency _location;          // Flags that describes the current residency of our data
+   SplitVector* d_vec;           // device copy pointer
 
    /**
     * @brief Checks if a pointer is valid and throws an exception if it's null.
@@ -213,6 +214,7 @@ public:
     */
    HOSTONLY explicit SplitVector() : _location(Residency::host) {
       this->_allocate(0); // seems counter-intuitive based on stl but it is not!
+      d_vec = NULL;
    }
 
    /**
@@ -220,7 +222,10 @@ public:
     *
     * @param size The size of the SplitVector to be created.
     */
-   HOSTONLY explicit SplitVector(size_t size) : _location(Residency::host) { this->_allocate(size); }
+   HOSTONLY explicit SplitVector(size_t size) : _location(Residency::host) {
+      this->_allocate(size);
+      d_vec = NULL;
+   }
 
    /**
     * @brief Constructor to create a SplitVector of a specified size with initial values.
@@ -233,6 +238,7 @@ public:
       for (size_t i = 0; i < size; i++) {
          _data[i] = val;
       }
+      d_vec = NULL;
    }
 
    /**
@@ -269,6 +275,7 @@ public:
       }
       copySafe();
       _location = Residency::host;
+      d_vec = NULL;
    }
 #endif
    /**
@@ -284,6 +291,7 @@ public:
       *(other._size) = 0;
       other._data = nullptr;
       _location = other._location;
+      d_vec = NULL;
    }
 
    /**
@@ -296,6 +304,7 @@ public:
       for (size_t i = 0; i < size(); i++) {
          _data[i] = init_list.begin()[i];
       }
+      d_vec = NULL;
    }
 
    /**
@@ -308,12 +317,18 @@ public:
       for (size_t i = 0; i < size(); i++) {
          _data[i] = other[i];
       }
+      d_vec = NULL;
    }
 
    /**
     * @brief Destructor for the SplitVector. Deallocates memory.
     */
-   HOSTONLY ~SplitVector() { _deallocate(); }
+   HOSTONLY ~SplitVector() {
+      _deallocate();
+      if (d_vec != NULL) {
+         SPLIT_CHECK_ERR(split_gpuFree(d_vec));
+      }
+   }
 
 /**
  * @brief Custom assignment operator to assign the content of another SplitVector.
@@ -357,6 +372,7 @@ public:
       }
       copySafe();
       _location = Residency::host;
+      d_vec = NULL;
       return *this;
    }
 
@@ -376,13 +392,17 @@ public:
       if constexpr (std::is_trivially_copyable<T>::value) {
             if (other._location == Residency::device) {
                _location = Residency::device;
-               optimizeGPU(stream);
                SPLIT_CHECK_ERR(split_gpuMemcpyAsync(_data, other._data, size() * sizeof(T), split_gpuMemcpyDeviceToDevice,stream));
+               int device;
+               SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
+               SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_size, sizeof(size_t), device, stream));
+               SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), device, stream));
                return;
             }
          }
       copySafe();
       _location = Residency::host;
+      d_vec = NULL;
       return;
    }
 
@@ -407,6 +427,7 @@ public:
       *(other._size) = 0;
       other._data = nullptr;
       _location = other._location;
+      d_vec = NULL;
       return *this;
    }
 
@@ -456,14 +477,22 @@ public:
     *
     * @param stream The GPU stream to perform the upload on.
     * @return Pointer to the uploaded SplitVector on the GPU.
-    * Has to be split_gpuFree'd after use otherwise memleak (small one but still)!
     */
    HOSTONLY
    SplitVector<T, Allocator>* upload(split_gpuStream_t stream = 0) {
-      SplitVector* d_vec;
-      optimizeGPU(stream);
-      SPLIT_CHECK_ERR(split_gpuMallocAsync((void**)&d_vec, sizeof(SplitVector), stream));
+      if (d_vec == NULL) {
+         SPLIT_CHECK_ERR(split_gpuMallocAsync((void**)&d_vec, sizeof(SplitVector), stream));
+      }
       SPLIT_CHECK_ERR(split_gpuMemcpyAsync(d_vec, this, sizeof(SplitVector), split_gpuMemcpyHostToDevice, stream));
+      return d_vec;
+   }
+   /**
+    * @brief Returns pre-uploaded pointer to the SplitVector on the GPU.
+    *
+    * @return Pointer to the uploaded SplitVector on the GPU.
+    */
+   HOSTONLY
+   SplitVector<T, Allocator>* device_pointer() {
       return d_vec;
    }
 
@@ -731,6 +760,7 @@ public:
       }
       reserve(newSize, eco);
       *_size = newSize;
+      // TODO: should it set entries to zero?
    }
 
    /**
@@ -756,15 +786,26 @@ public:
 #else
 
    /**
-    * @brief Reallocates data to a bigger chunk of memory.
+    * @brief Reallocates data to a bigger (or smaller) chunk of memory.
     *
     * @param requested_space The size of the requested space.
     */
    HOSTONLY
    void reallocate(size_t requested_space, split_gpuStream_t stream = 0) {
+      // Store addresses
+      const size_t __size = *_size;
+      const size_t __old_capacity = *_capacity;
+      T* __old_data = _data;
+      // Verify allocation sufficiency
+      if (__size > requested_space) {
+         printf("Tried reallocating to capacity %d with size %d\n", (int)requested_space, (int)__size);
+         this->_deallocate();
+         throw std::bad_alloc();
+      }
+      // Check for complete deallocation
       if (requested_space == 0) {
          if (_data != nullptr) {
-            _deallocate_and_destroy(capacity(), _data);
+            _deallocate_and_destroy(__old_capacity, __old_data);
          }
          _data = nullptr;
          *_capacity = 0;
@@ -778,28 +819,18 @@ public:
          this->_deallocate();
          throw std::bad_alloc();
       }
-      // Store addresses
-      const size_t __size = *_size;
-      const size_t __old_capacity = *_capacity;
       T* __new_data = _new_data;
-      T* __data = _data;
       // Swap pointers & update capacity
-      // Size remains the same ofc
       _data = _new_data;
       *_capacity = requested_space;
       // Perform copy on device
       if (__size>0) {
-         int device;
-         SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
-         SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(__data, __size * sizeof(T), device, stream));//
-         SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(__new_data, requested_space * sizeof(T), device, stream));
-         SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
-         SPLIT_CHECK_ERR(split_gpuMemcpy(__new_data, __data, __size * sizeof(T), split_gpuMemcpyDeviceToDevice));
+         SPLIT_CHECK_ERR(split_gpuMemcpyAsync(__new_data, __old_data, __size * sizeof(T), split_gpuMemcpyDeviceToDevice,stream));
          SPLIT_CHECK_ERR(split_gpuStreamSynchronize(stream));
       }
 
       // Deallocate old space
-      _deallocate_and_destroy(__old_capacity, __data);
+      _deallocate_and_destroy(__old_capacity, __old_data);
       return;
    }
 
@@ -815,7 +846,11 @@ public:
     */
    HOSTONLY
    void reserve(size_t requested_space, bool eco = false, split_gpuStream_t stream = 0) {
-      const size_t current_space = *_capacity;
+      // If the users passes eco=true we allocate
+      // exactly what was requested
+      if (!eco) {
+         requested_space *= _alloc_multiplier;
+      }
       // Vector was default initialized
       if (_data == nullptr) {
          _deallocate();
@@ -823,23 +858,12 @@ public:
          *_size = 0;
          return;
       }
-      // Nope.
-      const size_t currentSize = size();
+      // Already has sufficient capacity?
+      const size_t current_space = *_capacity;
       if (requested_space <= current_space) {
-         if (std::is_trivially_constructible<T>::value && _location == Residency::device) {
-            SPLIT_CHECK_ERR( split_gpuMemsetAsync(&_data[currentSize],0,(requested_space-currentSize)*sizeof(T), stream) );
-         } else {
-            for (size_t i = currentSize; i < requested_space; ++i) {
-               _allocator.construct(&_data[i], T());
-            }
-         }
          return;
       }
-      // If the users passes eco=true we allocate
-      // exactly what was requested
-      if (!eco) {
-         requested_space *= _alloc_multiplier;
-      }
+      // Reallocate.
       reallocate(requested_space,stream);
       return;
    }
@@ -864,6 +888,7 @@ public:
       }
       reserve(newSize, eco, stream);
       *_size = newSize;
+      // TODO: should it set entries to zero?
    }
 
    /**
@@ -872,12 +897,14 @@ public:
     * @param newSize The new size of the SplitVector.
     */
    DEVICEONLY
-   void device_resize(size_t newSize) {
+   void device_resize(size_t newSize, bool construct=true) {
       if (newSize > capacity()) {
          assert(0 && "Splitvector has a catastrophic failure trying to resize on device.");
       }
-      for (size_t i = size(); i < newSize; ++i) {
-         _allocator.construct(&_data[i], T());
+      if (construct) {
+         for (size_t i = size(); i < newSize; ++i) {
+            _allocator.construct(&_data[i], T());
+         }
       }
       *_size = newSize;
    }
@@ -901,7 +928,6 @@ public:
       if (curr_cap == curr_size) {
          return;
       }
-
       reallocate(curr_size,stream);
       return;
    }
@@ -1350,7 +1376,7 @@ public:
       }
 
       // Increase size;
-      device_resize(size() + count);
+      device_resize(size() + count, false); // false means don't construct base objects
       for (size_t i = 0; i < count; ++i) {
          _data[index + i] = *(p0.data() + i);
       }
@@ -1386,11 +1412,11 @@ public:
       }
 
       // Increase size;
+      device_resize(size() + 1, false); // false means don't construct base objects
       for (int64_t i = size() - 1; i >= index; i--) {
          _data[i + 1] = _data[i];
       }
       _data[index] = val;
-      device_resize(size() + 1);
       return iterator(_data + index);
    }
 
@@ -1414,7 +1440,7 @@ public:
                      "space available.");
       }
 
-      device_resize(newSize);
+      device_resize(newSize, false); // false means don't construct base objects
 
       it = begin().data() + index;
       iterator last = it.data() + oldsize;
