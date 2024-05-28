@@ -489,7 +489,7 @@ public:
     * @return Pointer to the uploaded SplitVector on the GPU.
     */
    HOSTONLY
-   SplitVector<T, Allocator>* device_pointer() const noexcept { return d_vec; }
+   const SplitVector<T, Allocator>* device_pointer() const noexcept { return d_vec; }
 
    /**
     * @brief Manually prefetches data to the GPU.
