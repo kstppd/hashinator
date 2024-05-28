@@ -257,7 +257,7 @@ public:
       _mapInfo->currentMaxBucketOverflow = Hashinator::defaults::BUCKET_OVERFLOW;
       _mapInfo->tombstoneCounter = 0;
       #ifndef HASHINATOR_CPU_ONLY_MODE
-      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(device_map, this, sizeof(Hashmap), split_gpuMemcpyHostToDevice, stream));
+      SPLIT_CHECK_ERR(split_gpuMemcpy(device_map, this, sizeof(Hashmap), split_gpuMemcpyHostToDevice));
       #endif
    }
 
@@ -603,12 +603,13 @@ public:
    }
 #else
    // Try to get the overflow back to the original one
+   template <bool prefetches = true>
    void performCleanupTasks(split_gpuStream_t s = 0) {
       if (tombstone_ratio() > 0.025) {
-         clean_tombstones(s);
+         clean_tombstones<prefetches>(s);
       }
       while (_mapInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW) {
-         device_rehash(_mapInfo->sizePower + 1, s);
+         device_rehash<prefetches>(_mapInfo->sizePower + 1, s);
       }
    }
 
