@@ -308,22 +308,22 @@ public:
       // Easy optimization: If our bucket had no valid elements and the same size was requested
       // we can just clear it
       if (newSizePower == _mapInfo->sizePower && nValidElements == 0) {
-         clear(targets::device, s, true);
+         clear<prefetches>(targets::device, s, 1 << newSizePower);
          set_status((priorFill == _mapInfo->fill) ? status::success : status::fail);
          split_gpuFreeAsync(validElements, s);
          return;
       }
-      // if (newSizePower == _mapInfo->sizePower) {
-      //    // Just clear the current contents
-      //    clear(targets::device, s, true);
-      //    //DeviceHasher::reset_all(buckets.data(),_mapInfo, buckets.size(), s);
-      // } else {
+      if (newSizePower == _mapInfo->sizePower) {
+         // Just clear the current contents
+         clear<prefetches>(targets::device, s, 1 << newSizePower);
+         //DeviceHasher::reset_all(buckets.data(),_mapInfo, buckets.size(), s);
+      } else {
          // Need new buckets
          buckets = std::move(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>(
                                 1 << newSizePower, hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())));
          SPLIT_CHECK_ERR(split_gpuMemcpyAsync(device_map, this, sizeof(Hashmap), split_gpuMemcpyHostToDevice, s));
          optimizeGPU(s);
-      // }
+      }
       *_mapInfo = Info(newSizePower);
       // Insert valid elements to now larger buckets
       insert(validElements, nValidElements, 1, s);
@@ -1123,7 +1123,7 @@ public:
     * Then call this:
     *   hmap.extractPattern(elements,Rule<uint32_t,uint32_t>());
     * */
-   template <typename Rule, bool prefetches = true>
+   template <bool prefetches = true, typename Rule>
    size_t extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements, Rule rule,
                          split_gpuStream_t s = 0) {
       elements.resize(_mapInfo->fill + 1, true);
@@ -1169,7 +1169,7 @@ public:
       extractPatternLoop(elements, rule, s);
    }
 
-   template <typename Rule, bool prefetches = true>
+   template <bool prefetches = true, typename Rule>
    size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements, Rule rule, split_gpuStream_t s = 0) {
       elements.resize(_mapInfo->fill + 1, true);
       if (prefetches) {
@@ -1185,7 +1185,7 @@ public:
       }
       return elements.size();
    }
-   template <typename Rule, bool prefetches = true>
+   template <bool prefetches = true, typename Rule>
    size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements, Rule rule, void *stack, size_t max_size, split_gpuStream_t s = 0) {
       elements.resize(_mapInfo->fill + 1, true);
       if (prefetches) {
@@ -1209,7 +1209,7 @@ public:
       auto rule = [] __host__ __device__(const hash_pair<KEY_TYPE, VAL_TYPE>& kval) -> bool {
          return kval.first != EMPTYBUCKET && kval.first != TOMBSTONE;
       };
-      return extractKeysByPattern(elements, rule, s, prefetches);
+      return extractKeysByPattern<prefetches>(elements, rule, s);
    }
    template <bool prefetches = true>
    size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, void *stack, size_t max_size, split_gpuStream_t s = 0) {
@@ -1217,7 +1217,7 @@ public:
       auto rule = [] __host__ __device__(const hash_pair<KEY_TYPE, VAL_TYPE>& kval) -> bool {
          return kval.first != EMPTYBUCKET && kval.first != TOMBSTONE;
       };
-      return extractKeysByPattern(elements, rule, stack, max_size, s, prefetches);
+      return extractKeysByPattern<prefetches>(elements, rule, stack, max_size, s);
    }
    void extractAllKeysLoop(split::SplitVector<KEY_TYPE>& elements, split_gpuStream_t s = 0) {
       // Extract all keys
@@ -1396,7 +1396,8 @@ public:
       if (prefetches) {
          optimizeGPU(stream);
       }
-      SPLIT_CHECK_ERR(split_gpuMemcpyAsync(device_map, this, sizeof(Hashmap), split_gpuMemcpyHostToDevice, stream));
+      // device_buckets = (split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>*)((char*)device_map + offsetof(Hashmap, buckets));
+      // SPLIT_CHECK_ERR(split_gpuMemcpyAsync(device_map, this, sizeof(Hashmap), split_gpuMemcpyHostToDevice, stream));
       return device_map;
    }
 

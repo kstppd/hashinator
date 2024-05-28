@@ -143,7 +143,6 @@ __global__ void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_
 
    __shared__ uint32_t addMask[WARPSIZE];
    __shared__ uint64_t warpOverflow[WARPSIZE];
-
    const int VIRTUALWARP = WARPSIZE / elementsPerWarp;
    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
    const size_t wid = tid / VIRTUALWARP;
@@ -302,7 +301,6 @@ __global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE
 
    __shared__ uint32_t addMask[WARPSIZE];
    __shared__ uint64_t warpOverflow[WARPSIZE];
-
    const int VIRTUALWARP = WARPSIZE / elementsPerWarp;
    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
    const size_t wid = tid / VIRTUALWARP;
