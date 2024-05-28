@@ -110,7 +110,9 @@ public:
       *_mapInfo = MapInfo(5);
       buckets = split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>(
           1 << _mapInfo->sizePower, hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE()));
+      #ifndef HASHINATOR_CPU_ONLY_MODE
       SPLIT_CHECK_ERR(split_gpuMemcpy(device_map, this, sizeof(Hashmap), split_gpuMemcpyHostToDevice));
+      #endif
    };
 
    Hashmap(int sizepower) {
@@ -119,7 +121,9 @@ public:
       *_mapInfo = MapInfo(sizepower);
       buckets = split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>(
           1 << _mapInfo->sizePower, hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE()));
+      #ifndef HASHINATOR_CPU_ONLY_MODE
       SPLIT_CHECK_ERR(split_gpuMemcpy(device_map, this, sizeof(Hashmap), split_gpuMemcpyHostToDevice));
+      #endif
    };
 
    Hashmap(const Hashmap<KEY_TYPE, VAL_TYPE>& other) {
@@ -127,7 +131,9 @@ public:
       _mapInfo = _metaAllocator.allocate(1);
       *_mapInfo = *(other._mapInfo);
       buckets = other.buckets;
+      #ifndef HASHINATOR_CPU_ONLY_MODE
       SPLIT_CHECK_ERR(split_gpuMemcpy(device_map, this, sizeof(Hashmap), split_gpuMemcpyHostToDevice));
+      #endif
    };
 
    Hashmap(Hashmap<KEY_TYPE, VAL_TYPE>&& other) {
@@ -135,7 +141,9 @@ public:
       _mapInfo = other._mapInfo;
       other._mapInfo=nullptr;
       buckets = std::move(other.buckets);
+      #ifndef HASHINATOR_CPU_ONLY_MODE
       SPLIT_CHECK_ERR(split_gpuMemcpy(device_map, this, sizeof(Hashmap), split_gpuMemcpyHostToDevice));
+      #endif
    };
 
    Hashmap& operator=(const Hashmap<KEY_TYPE,VAL_TYPE>& other) {
@@ -144,10 +152,13 @@ public:
       }
       *_mapInfo = *(other._mapInfo);
       buckets = other.buckets;
+      #ifndef HASHINATOR_CPU_ONLY_MODE
       SPLIT_CHECK_ERR(split_gpuMemcpy(device_map, this, sizeof(Hashmap), split_gpuMemcpyHostToDevice));
+      #endif
       return *this;
    }
 
+   #ifndef HASHINATOR_CPU_ONLY_MODE
    /** Copy assign but using a provided stream */
    void overwrite(const Hashmap<KEY_TYPE,VAL_TYPE>& other, split_gpuStream_t stream = 0) {
       if (this == &other) {
@@ -158,6 +169,7 @@ public:
       SPLIT_CHECK_ERR(split_gpuMemcpyAsync(device_map, this, sizeof(Hashmap), split_gpuMemcpyHostToDevice, stream));
       return;
    }
+   #endif
 
    Hashmap& operator=(Hashmap<KEY_TYPE,VAL_TYPE>&& other) {
       if (this == &other) {
@@ -167,7 +179,9 @@ public:
       _mapInfo = other._mapInfo;
       other._mapInfo=nullptr;
       buckets = std::move(other.buckets);
+      #ifndef HASHINATOR_CPU_ONLY_MODE
       SPLIT_CHECK_ERR(split_gpuMemcpy(device_map, this, sizeof(Hashmap), split_gpuMemcpyHostToDevice));
+      #endif
       return *this;
    }
 
@@ -299,16 +313,17 @@ public:
          split_gpuFreeAsync(validElements, s);
          return;
       }
-      if (newSizePower == _mapInfo->sizePower) {
-         // Just clear the current contents
-         DeviceHasher::reset_all(buckets.data(),_mapInfo, buckets.size(), s);
-      } else {
+      // if (newSizePower == _mapInfo->sizePower) {
+      //    // Just clear the current contents
+      //    clear(targets::device, s, true);
+      //    //DeviceHasher::reset_all(buckets.data(),_mapInfo, buckets.size(), s);
+      // } else {
          // Need new buckets
          buckets = std::move(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>(
                                 1 << newSizePower, hash_pair<KEY_TYPE, VAL_TYPE>(EMPTYBUCKET, VAL_TYPE())));
          SPLIT_CHECK_ERR(split_gpuMemcpyAsync(device_map, this, sizeof(Hashmap), split_gpuMemcpyHostToDevice, s));
          optimizeGPU(s);
-      }
+      // }
       *_mapInfo = Info(newSizePower);
       // Insert valid elements to now larger buckets
       insert(validElements, nValidElements, 1, s);
