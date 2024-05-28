@@ -27,6 +27,7 @@
 #include <cassert>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <stdlib.h>
 #include <vector>
 
@@ -212,9 +213,8 @@ public:
    /**
     * @brief Default constructor. Creates an empty SplitVector.
     */
-   HOSTONLY explicit SplitVector() : _location(Residency::host) {
+   HOSTONLY explicit SplitVector() : _location(Residency::host),d_vec(nullptr) {
       this->_allocate(0); // seems counter-intuitive based on stl but it is not!
-      d_vec = NULL;
    }
 
    /**
@@ -222,9 +222,8 @@ public:
     *
     * @param size The size of the SplitVector to be created.
     */
-   HOSTONLY explicit SplitVector(size_t size) : _location(Residency::host) {
+   HOSTONLY explicit SplitVector(size_t size) : _location(Residency::host),d_vec(nullptr) {
       this->_allocate(size);
-      d_vec = NULL;
    }
 
    /**
@@ -233,12 +232,11 @@ public:
     * @param size The size of the SplitVector to be created.
     * @param val The initial value to be assigned to each element.
     */
-   HOSTONLY explicit SplitVector(size_t size, const T& val) : _location(Residency::host) {
+   HOSTONLY explicit SplitVector(size_t size, const T& val) : _location(Residency::host) ,d_vec(nullptr){
       this->_allocate(size);
       for (size_t i = 0; i < size; i++) {
          _data[i] = val;
       }
-      d_vec = NULL;
    }
 
    /**
@@ -275,7 +273,7 @@ public:
       }
       copySafe();
       _location = Residency::host;
-      d_vec = NULL;
+      d_vec = nullptr;
    }
 #endif
    /**
@@ -291,7 +289,7 @@ public:
       *(other._size) = 0;
       other._data = nullptr;
       _location = other._location;
-      d_vec = NULL;
+      d_vec = nullptr;
    }
 
    /**
@@ -299,12 +297,11 @@ public:
     *
     * @param init_list The initializer list to initialize the SplitVector with.
     */
-   HOSTONLY explicit SplitVector(std::initializer_list<T> init_list) : _location(Residency::host) {
+   HOSTONLY explicit SplitVector(std::initializer_list<T> init_list) : _location(Residency::host),d_vec(nullptr) {
       this->_allocate(init_list.size());
       for (size_t i = 0; i < size(); i++) {
          _data[i] = init_list.begin()[i];
       }
-      d_vec = NULL;
    }
 
    /**
@@ -312,12 +309,11 @@ public:
     *
     * @param other The std::vector to initialize the SplitVector with.
     */
-   HOSTONLY explicit SplitVector(const std::vector<T>& other) : _location(Residency::host) {
+   HOSTONLY explicit SplitVector(const std::vector<T>& other) : _location(Residency::host),d_vec(nullptr) {
       this->_allocate(other.size());
       for (size_t i = 0; i < size(); i++) {
          _data[i] = other[i];
       }
-      d_vec = NULL;
    }
 
    /**
@@ -325,9 +321,11 @@ public:
     */
    HOSTONLY ~SplitVector() {
       _deallocate();
-      if (d_vec != NULL) {
+      #ifndef SPLIT_CPU_ONLY_MODE
+      if (d_vec) {
          SPLIT_CHECK_ERR(split_gpuFree(d_vec));
       }
+      #endif
    }
 
 /**
@@ -372,7 +370,7 @@ public:
       }
       copySafe();
       _location = Residency::host;
-      d_vec = NULL;
+      d_vec = nullptr;
       return *this;
    }
 
@@ -402,7 +400,7 @@ public:
          }
       copySafe();
       _location = Residency::host;
-      d_vec = NULL;
+      d_vec = nullptr;
       return;
    }
 
@@ -427,7 +425,7 @@ public:
       *(other._size) = 0;
       other._data = nullptr;
       _location = other._location;
-      d_vec = NULL;
+      d_vec = nullptr;
       return *this;
    }
 
@@ -480,7 +478,7 @@ public:
     */
    HOSTONLY
    SplitVector<T, Allocator>* upload(split_gpuStream_t stream = 0) {
-      if (d_vec == NULL) {
+      if (!d_vec) {
          SPLIT_CHECK_ERR(split_gpuMallocAsync((void**)&d_vec, sizeof(SplitVector), stream));
       }
       SPLIT_CHECK_ERR(split_gpuMemcpyAsync(d_vec, this, sizeof(SplitVector), split_gpuMemcpyHostToDevice, stream));
@@ -492,9 +490,7 @@ public:
     * @return Pointer to the uploaded SplitVector on the GPU.
     */
    HOSTONLY
-   SplitVector<T, Allocator>* device_pointer() {
-      return d_vec;
-   }
+   SplitVector<T, Allocator>* device_pointer()const noexcept { return d_vec; }
 
    /**
     * @brief Manually prefetches data to the GPU.
