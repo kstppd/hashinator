@@ -325,9 +325,11 @@ public:
     */
    HOSTONLY ~SplitVector() {
       _deallocate();
+      #ifndef SPLIT_CPU_ONLY_MODE
       if (d_vec != NULL) {
          SPLIT_CHECK_ERR(split_gpuFree(d_vec));
       }
+      #endif
    }
 
 /**
