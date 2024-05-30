@@ -479,8 +479,7 @@ public:
     * @return Pointer to the uploaded SplitVector on the GPU.
     */
    template <bool optimize = true>
-   HOSTONLY
-   SplitVector<T, Allocator>* upload(split_gpuStream_t stream = 0) {
+   HOSTONLY SplitVector<T, Allocator>* upload(split_gpuStream_t stream = 0) {
       if (!d_vec) {
          SPLIT_CHECK_ERR(split_gpuMallocAsync((void**)&d_vec, sizeof(SplitVector), stream));
       }
