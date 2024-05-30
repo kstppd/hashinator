@@ -1,3 +1,4 @@
+[![DOI](https://zenodo.org/badge/805378098.svg)](https://zenodo.org/doi/10.5281/zenodo.11396296)
 [![C/C++ CI](https://github.com/kstppd/hashinator/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/kstppd/hashinator/actions/workflows/tests.yml)
 
 ## Hashinator: A hybrid hashmap designed for heterogeneous computing.
