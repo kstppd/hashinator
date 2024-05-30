@@ -107,7 +107,7 @@ int main(int argc, char* argv[]){
    }
    hashmap hmap(sz+1);
    int device;
-   split_gpuGetDevice(&device);
+   SPLIT_CHECK_ERR( split_gpuGetDevice(&device) );
    hmap.memAdvise(cudaMemAdviseSetPreferredLocation,device);
    hmap.memAdvise(cudaMemAdviseSetAccessedBy,device);
    hmap.optimizeGPU();
@@ -129,11 +129,11 @@ int main(int argc, char* argv[]){
    spare.resize(1<<sz);
    key_type* gpuKeys;
    val_type* gpuVals;
-   split_gpuMalloc((void **) &gpuKeys, (1<<sz)*sizeof(key_type));
-   split_gpuMalloc((void **) &stack, bytes);
-   split_gpuMalloc((void **) &gpuVals, (1<<sz)*sizeof(val_type));
-   split_gpuMemcpy(gpuKeys,cpu_keys.data(),(1<<sz)*sizeof(key_type),split_gpuMemcpyHostToDevice);
-   split_gpuMemcpy(gpuVals,cpu_vals.data(),(1<<sz)*sizeof(key_type),split_gpuMemcpyHostToDevice);
+   SPLIT_CHECK_ERR( split_gpuMalloc((void **) &gpuKeys, (1<<sz)*sizeof(key_type)) );
+   SPLIT_CHECK_ERR( split_gpuMalloc((void **) &stack, bytes) );
+   SPLIT_CHECK_ERR( split_gpuMalloc((void **) &gpuVals, (1<<sz)*sizeof(val_type)) );
+   SPLIT_CHECK_ERR( split_gpuMemcpy(gpuKeys,cpu_keys.data(),(1<<sz)*sizeof(key_type),split_gpuMemcpyHostToDevice) );
+   SPLIT_CHECK_ERR( split_gpuMemcpy(gpuVals,cpu_vals.data(),(1<<sz)*sizeof(key_type),split_gpuMemcpyHostToDevice) );
       hmap.optimizeGPU();
 
       PROFILE_START("insert");
@@ -157,9 +157,9 @@ int main(int argc, char* argv[]){
       PROFILE_END();
       
       hmap.clear();
-   split_gpuFree(gpuKeys);
-   split_gpuFree(gpuVals);
-   split_gpuFree(stack);
+   SPLIT_CHECK_ERR( split_gpuFree(gpuKeys) );
+   SPLIT_CHECK_ERR( split_gpuFree(gpuVals) );
+   SPLIT_CHECK_ERR( split_gpuFree(stack) );
    }
    t_insert/=(float)R;
    t_retrieve/=(float)R;

@@ -84,11 +84,7 @@ TEST(Test_GPU,VectorAddition){
    vec* d_c=c.upload();
 
    add_vectors<<<N,32>>>(d_a,d_b,d_c);
-   split_gpuDeviceSynchronize();
-   split_gpuFree(d_a);
-   split_gpuFree(d_b);
-   split_gpuFree(d_c);
-
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
 
    for (const auto& e:c){
       expect_true(e==3);
@@ -394,12 +390,10 @@ TEST(Vector_Functionality , PushBack_And_Erase_Device){
       a.reserve(100);
       vec* d_a=a.upload();
       push_back_kernel<<<4,8>>>(d_a);
-      split_gpuDeviceSynchronize();
-      split_gpuFree(d_a);
+      SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
       vec* d_b=a.upload();
       erase_kernel<<<1,1>>>(d_b);
-      split_gpuDeviceSynchronize();
-      split_gpuFree(d_b);
+      SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
 }
 
 TEST(Vector_Functionality , Insert_Device){
@@ -409,11 +403,9 @@ TEST(Vector_Functionality , Insert_Device){
       vec* d_a=a.upload();
       vec* d_b=b.upload();
       merge_kernel<<<1,1>>>(d_a,d_b);
-      split_gpuDeviceSynchronize();
+      SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
       merge_kernel<<<1,1>>>(d_a,d_b);
-      split_gpuDeviceSynchronize();
-      split_gpuFree(d_a);
-      split_gpuFree(d_b);
+      SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
       expect_true(a.size()==12);
 }
 
@@ -424,8 +416,7 @@ TEST(Vector_Functionality , Insert_Device_N){
       a.reserve(30);
       vec* d_a=a.upload();
       merge_kernel_2<<<1,1>>>(d_a);
-      split_gpuDeviceSynchronize();
-      split_gpuFree(d_a);
+      SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
       expect_true(a==b);
 }
 
@@ -451,8 +442,7 @@ TEST(Vector_Functionality , Resizing_Device){
       expect_true(a.size()==a.capacity());
       vec* d_a=a.upload();
       resize_vector<<<1,1>>>(d_a,16);
-      split_gpuDeviceSynchronize();
-      split_gpuFree(d_a);
+      SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
       expect_true(a.size()==16);
       expect_true(a.capacity()==32);
    }
@@ -465,8 +455,7 @@ TEST(Vector_Functionality , Resizing_Device){
       expect_true(a.capacity()>100);
       vec* d_a=a.upload();
       resize_vector<<<1,1>>>(d_a,64);
-      split_gpuDeviceSynchronize();
-      split_gpuFree(d_a);
+      SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
       expect_true(a.size()==64);
       expect_true(a.capacity()>100);
       for (size_t i = 0 ; i< a.size(); ++i){
@@ -484,9 +473,9 @@ TEST(Vector_Functionality , Test_CopyMetaData){
    expect_true(a.size()==16);
    expect_true(a.capacity()==32);
    split::SplitInfo* info;
-   split_gpuMallocHost((void **) &info, sizeof(split::SplitInfo));
+   SPLIT_CHECK_ERR( split_gpuMallocHost((void **) &info, sizeof(split::SplitInfo)) );
    a.copyMetadata(info);
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    expect_true(a.capacity()==info->capacity);
    expect_true(a.size()==info->size);
 }

@@ -63,16 +63,16 @@ bool test_hashmap_insertionDM(keyval_type power){
 
    keyval_type* dkeys;
    keyval_type* dvals;
-   split_gpuMalloc(&dkeys, N*sizeof(keyval_type)); 
-   split_gpuMalloc(&dvals, N*sizeof(keyval_type)); 
-   split_gpuMemcpy(dkeys,keys.data(),N*sizeof(keyval_type),split_gpuMemcpyHostToDevice);
-   split_gpuMemcpy(dvals,vals.data(),N*sizeof(keyval_type),split_gpuMemcpyHostToDevice);
+   SPLIT_CHECK_ERR( split_gpuMalloc(&dkeys, N*sizeof(keyval_type)) );
+   SPLIT_CHECK_ERR( split_gpuMalloc(&dvals, N*sizeof(keyval_type)) );
+   SPLIT_CHECK_ERR( split_gpuMemcpy(dkeys,keys.data(),N*sizeof(keyval_type),split_gpuMemcpyHostToDevice) );
+   SPLIT_CHECK_ERR( split_gpuMemcpy(dvals,vals.data(),N*sizeof(keyval_type),split_gpuMemcpyHostToDevice) );
 
    hashmap hmap;
    hmap.insert(dkeys,dvals,N); 
    assert(recover_elements(hmap,keys.data(),vals.data(),N) && "Hashmap is illformed!");
-   split_gpuFree(dkeys);
-   split_gpuFree(dvals);
+   SPLIT_CHECK_ERR( split_gpuFree(dkeys) );
+   SPLIT_CHECK_ERR( split_gpuFree(dvals) );
    return true;
 }
 
@@ -92,7 +92,7 @@ bool test_hashmap_retrievalUM(keyval_type power){
    keys.optimizeGPU();
    vals.optimizeGPU();
    vals2.optimizeGPU();
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    hmap.retrieve(keys.data(),vals2.data(),N);
    assert(recover_elements(hmap,keys.data(),vals2.data(),N) && "Hashmap is illformed!");
    return true;
