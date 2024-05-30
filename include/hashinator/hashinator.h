@@ -1281,11 +1281,9 @@ public:
       }
       // If we do have overflown elements we put them back in the buckets
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-      DeviceHasher::reset(overflownElements, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
-                          _mapInfo, nOverflownElements, s);
+      DeviceHasher::reset(overflownElements, buckets.data(), _mapInfo, nOverflownElements, s);
 
-      DeviceHasher::insert(overflownElements, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
-                           &_mapInfo->currentMaxBucketOverflow, &_mapInfo->fill, nOverflownElements, &_mapInfo->err, s);
+      DeviceHasher::insert(overflownElements, buckets.data(), _mapInfo, nOverflownElements, s);
 
       SPLIT_CHECK_ERR(split_gpuFreeAsync(overflownElements, s));
       return;
@@ -1308,8 +1306,7 @@ public:
          resize(neededPowerSize, targets::device, s);
       }
       _mapInfo->currentMaxBucketOverflow = _mapInfo->currentMaxBucketOverflow;
-      DeviceHasher::insert(keys, vals, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
-                           &_mapInfo->currentMaxBucketOverflow, &_mapInfo->fill, len, &_mapInfo->err, s);
+      DeviceHasher::insert(keys, vals, buckets.data(), _mapInfo, len, s);
       return;
    }
 
@@ -1330,8 +1327,7 @@ public:
          resize(neededPowerSize, targets::device, s);
       }
       _mapInfo->currentMaxBucketOverflow = _mapInfo->currentMaxBucketOverflow;
-      DeviceHasher::insertIndex(keys, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
-                                &_mapInfo->currentMaxBucketOverflow, &_mapInfo->fill, len, &_mapInfo->err, s);
+      DeviceHasher::insertIndex(keys, buckets.data(), _mapInfo, len, s);
       return;
    }
 
@@ -1350,8 +1346,7 @@ public:
       if (neededPowerSize > _mapInfo->sizePower) {
          resize(neededPowerSize, targets::device, s);
       }
-      DeviceHasher::insert(src, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow,
-                           &_mapInfo->currentMaxBucketOverflow, &_mapInfo->fill, len, &_mapInfo->err, s);
+      DeviceHasher::insert(src, buckets.data(), _mapInfo, len, s);
       return;
    }
 
@@ -1361,8 +1356,7 @@ public:
       if constexpr (prefetches) {
          buckets.optimizeGPU(s);
       }
-      DeviceHasher::retrieve(keys, vals, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow, len,
-                             s);
+      DeviceHasher::retrieve(keys, vals, buckets.data(), _mapInfo, len, s);
       return;
    }
 
@@ -1372,7 +1366,7 @@ public:
       if constexpr (prefetches) {
          buckets.optimizeGPU(s);
       }
-      DeviceHasher::retrieve(src, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow, len, s);
+      DeviceHasher::retrieve(src, buckets.data(), _mapInfo, len, s);
       return;
    }
 
@@ -1384,8 +1378,7 @@ public:
       }
       // Remember the last numeber of tombstones
       size_t tbStore = tombstone_count();
-      DeviceHasher::erase(keys, buckets.data(), &_mapInfo->tombstoneCounter, _mapInfo->sizePower,
-                          _mapInfo->currentMaxBucketOverflow, len, s);
+      DeviceHasher::erase(keys, buckets.data(), _mapInfo, len, s);
       size_t tombstonesAdded = tombstone_count() - tbStore;
       // Fill should be decremented by the number of tombstones added;
       _mapInfo->fill -= tombstonesAdded;

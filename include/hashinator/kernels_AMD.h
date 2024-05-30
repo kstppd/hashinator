@@ -66,13 +66,15 @@ template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::nume
           class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>, int WARPSIZE = defaults::WARPSIZE,
           int elementsPerWarp>
 __global__ void reset_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* dst,
-                               const int sizePower, size_t maxoverflow, Hashinator::Info* info ,size_t len)
+                               Hashinator::Info* info ,size_t len)
 
 {
    const int VIRTUALWARP = WARPSIZE / elementsPerWarp;
    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
    const size_t wid = tid / VIRTUALWARP;
    const size_t w_tid = tid % VIRTUALWARP;
+   const int sizePower = info->sizePower;
+   //const size_t maxoverflow = info->currentMaxBucketOverflow;
 
    // Early quit if we have more warps than elements to insert
    if (wid >= len) {
@@ -134,9 +136,14 @@ __global__ void reset_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY
 template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(),
           class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>, int WARPSIZE = defaults::WARPSIZE,
           int elementsPerWarp>
-__global__ void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, int sizePower,
-                              size_t maxoverflow, size_t* d_overflow, size_t* d_fill, size_t len, status* err) {
+__global__ void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                              Hashinator::Info* info, size_t len) {
 
+   size_t* d_overflow = &(info->currentMaxBucketOverflow);
+   size_t* d_fill = &(info->fill);
+   //status* err = &(info->err);
+   const int sizePower = info->sizePower;
+   //const size_t maxoverflow = info->currentMaxBucketOverflow;
    const int VIRTUALWARP = WARPSIZE / elementsPerWarp;
    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
    const size_t wid = tid / VIRTUALWARP;
@@ -265,9 +272,13 @@ __global__ void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_
 template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(),
           class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>, int WARPSIZE = defaults::WARPSIZE,
           int elementsPerWarp>
-__global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, int sizePower,
-                              size_t maxoverflow, size_t* d_overflow, size_t* d_fill, size_t len, status* err) {
+__global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                              Hashinator::Info* info, size_t len) {
 
+   const int sizePower = info->sizePower;
+   size_t* d_overflow = &(info->currentMaxBucketOverflow);
+   size_t* d_fill = &(info->fill);
+   //status* err = &(info->err);
    const int VIRTUALWARP = WARPSIZE / elementsPerWarp;
    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
    const size_t wid = tid / VIRTUALWARP;
@@ -401,8 +412,8 @@ __global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE
 template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(),
           KEY_TYPE TOMBSTONE = EMPTYBUCKET - 1, class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>,
           int WARPSIZE = defaults::WARPSIZE, int elementsPerWarp>
-__global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, size_t* d_tombstoneCounter,
-                              int sizePower, size_t maxoverflow, size_t len) {
+__global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                              Hashinator::Info* info, size_t len) {
 
    const int VIRTUALWARP = WARPSIZE / elementsPerWarp;
    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
@@ -411,6 +422,10 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
    const size_t proper_w_tid = tid % WARPSIZE; // the proper WID as if we had no Virtual warps
    const size_t proper_wid = tid / WARPSIZE;
    const size_t blockWid = proper_wid % (WARPSIZE / 4); // we have twice the warpsize and half the warps per block
+   const int sizePower = info->sizePower;
+   const size_t maxoverflow = info->currentMaxBucketOverflow;
+   size_t* d_tombstoneCounter = &(info->tombstoneCounter);
+   //status* err = &(info->err);
 
    __shared__ uint32_t deleteMask[WARPSIZE / 2];
 
@@ -492,9 +507,14 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
 template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(),
           class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>, int WARPSIZE = defaults::WARPSIZE,
           int elementsPerWarp>
-__global__ void insert_index_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, int sizePower,
-                                    size_t maxoverflow, size_t* d_overflow, size_t* d_fill, size_t len, status* err) {
+__global__ void insert_index_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                                    Hashinator::Info* info, size_t len) {
 
+   size_t* d_overflow = &(info->currentMaxBucketOverflow);
+   size_t* d_fill = &(info->fill);
+   //status* err = &(info->err);
+   const int sizePower = info->sizePower;
+   //const size_t maxoverflow = info->currentMaxBucketOverflow;
    const int VIRTUALWARP = WARPSIZE / elementsPerWarp;
    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
    const size_t wid = tid / VIRTUALWARP;
@@ -627,13 +647,15 @@ __global__ void insert_index_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE
 template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(),
           class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>, int WARPSIZE = defaults::WARPSIZE,
           int elementsPerWarp>
-__global__ void retrieve_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, int sizePower,
-                                size_t maxoverflow) {
+__global__ void retrieve_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                                Hashinator::Info* info) {
 
    const int VIRTUALWARP = WARPSIZE / elementsPerWarp;
    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
    const size_t wid = tid / VIRTUALWARP;
    const size_t w_tid = tid % VIRTUALWARP;
+   const int sizePower = info->sizePower;
+   const size_t maxoverflow = info->currentMaxBucketOverflow;
 
    uint64_t subwarp_relative_index = (wid) % (WARPSIZE / VIRTUALWARP);
    uint64_t submask;
@@ -682,12 +704,14 @@ template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::nume
           class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>, int WARPSIZE = defaults::WARPSIZE,
           int elementsPerWarp>
 __global__ void retrieve_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
-                                int sizePower, size_t maxoverflow) {
+                                Hashinator::Info* info) {
 
    const int VIRTUALWARP = WARPSIZE / elementsPerWarp;
    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
    const size_t wid = tid / VIRTUALWARP;
    const size_t w_tid = tid % VIRTUALWARP;
+   const int sizePower = info->sizePower;
+   const size_t maxoverflow = info->currentMaxBucketOverflow;
 
    uint64_t subwarp_relative_index = (wid) % (WARPSIZE / VIRTUALWARP);
    uint64_t submask;
