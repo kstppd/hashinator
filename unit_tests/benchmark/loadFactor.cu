@@ -92,10 +92,10 @@ int main(int argc, char* argv[]){
 
    key_type* gpuKeys;
    val_type* gpuVals;
-   split_gpuMalloc((void **) &gpuKeys, (N)*sizeof(key_type));
-   split_gpuMalloc((void **) &gpuVals, (N)*sizeof(val_type));
-   split_gpuMemcpy(gpuKeys,cpu_keys.data(),(N)*sizeof(key_type),split_gpuMemcpyHostToDevice);
-   split_gpuMemcpy(gpuVals,cpu_vals.data(),(N)*sizeof(key_type),split_gpuMemcpyHostToDevice);
+   SPLIT_CHECK_ERR( split_gpuMalloc((void **) &gpuKeys, (N)*sizeof(key_type)) );
+   SPLIT_CHECK_ERR( split_gpuMalloc((void **) &gpuVals, (N)*sizeof(val_type)) );
+   SPLIT_CHECK_ERR( split_gpuMemcpy(gpuKeys,cpu_keys.data(),(N)*sizeof(key_type),split_gpuMemcpyHostToDevice) );
+   SPLIT_CHECK_ERR( split_gpuMemcpy(gpuVals,cpu_vals.data(),(N)*sizeof(key_type),split_gpuMemcpyHostToDevice) );
 
 
    double t={0};

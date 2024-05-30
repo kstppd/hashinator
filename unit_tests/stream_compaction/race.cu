@@ -72,7 +72,7 @@ void split_test_prefix(split_vector& input_split,split_vector& output_split,size
 
    input_split.optimizeGPU();
    output_split.optimizeGPU();
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    split::tools::split_prefix_scan(input_split,output_split);
 
 

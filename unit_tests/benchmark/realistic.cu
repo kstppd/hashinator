@@ -80,12 +80,12 @@ int main(int argc, char* argv[]){
    key_type* gpuKeys;
    val_type* gpuVals;
    hash_pair<key_type,val_type>* gpuPairs;
-   split_gpuMalloc((void **) &gpuKeys, (1<<sz)*sizeof(key_type));
-   split_gpuMalloc((void **) &gpuVals, (1<<sz)*sizeof(val_type));
-   split_gpuMalloc((void **) &gpuPairs, (1<<sz)*sizeof(hash_pair<key_type,val_type>));
-   split_gpuMemcpy(gpuKeys,cpu_keys.data(),(1<<sz)*sizeof(key_type),split_gpuMemcpyHostToDevice);
-   split_gpuMemcpy(gpuVals,cpu_vals.data(),(1<<sz)*sizeof(key_type),split_gpuMemcpyHostToDevice);
-   split_gpuMemcpy(gpuPairs,cpu_src.data(),(1<<sz)*sizeof(hash_pair<key_type,val_type>),split_gpuMemcpyHostToDevice);
+   SPLIT_CHECK_ERR( split_gpuMalloc((void **) &gpuKeys, (1<<sz)*sizeof(key_type)) );
+   SPLIT_CHECK_ERR( split_gpuMalloc((void **) &gpuVals, (1<<sz)*sizeof(val_type)) );
+   SPLIT_CHECK_ERR( split_gpuMalloc((void **) &gpuPairs, (1<<sz)*sizeof(hash_pair<key_type,val_type>)) );
+   SPLIT_CHECK_ERR( split_gpuMemcpy(gpuKeys,cpu_keys.data(),(1<<sz)*sizeof(key_type),split_gpuMemcpyHostToDevice) );
+   SPLIT_CHECK_ERR( split_gpuMemcpy(gpuVals,cpu_vals.data(),(1<<sz)*sizeof(key_type),split_gpuMemcpyHostToDevice) );
+   SPLIT_CHECK_ERR( split_gpuMemcpy(gpuPairs,cpu_src.data(),(1<<sz)*sizeof(hash_pair<key_type,val_type>),split_gpuMemcpyHostToDevice) );
    int device;
    cudaGetDevice(&device);
    hmap.memAdvise(cudaMemAdviseSetPreferredLocation,device);

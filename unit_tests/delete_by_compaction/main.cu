@@ -99,7 +99,7 @@ bool test_hashmap_1(val_type power){
    d_hmap=hmap.upload();
    auto start = std::chrono::high_resolution_clock::now();
    gpu_write<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    auto stop = std::chrono::high_resolution_clock::now();
    auto duration = duration_cast<microseconds>(stop- start).count();
    (void)duration;
@@ -113,7 +113,7 @@ bool test_hashmap_1(val_type power){
    //Delete some selection if the source data
    d_hmap=hmap.upload();
    gpu_delete_even<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
 
    //Download
    start = std::chrono::high_resolution_clock::now();
@@ -131,7 +131,7 @@ bool test_hashmap_1(val_type power){
    //Reinsert so that we can also test duplicate insertion
    d_hmap=hmap.upload();
    gpu_write<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    //Download
    hmap.download();
 
