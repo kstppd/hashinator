@@ -3,7 +3,7 @@
  * Description: Set of tools used by SplitVector
  *
  * This file defines the following classes or functions:
- *    --split::tools::Cuda_mempool
+ *    --split::tools::splitStackArena
  *    --split::tools::copy_if_raw
  *    --split::tools::copy_if
  *    --split::tools::scan_reduce_raw
@@ -30,6 +30,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  * */
 #pragma once
+#include "../common.h"
 #include "gpu_wrappers.h"
 #define NUM_BANKS 32 // TODO depends on device
 #define LOG_NUM_BANKS 5
@@ -37,11 +38,14 @@
 #ifdef __NVCC__
 #define SPLIT_VOTING_MASK 0xFFFFFFFF // 32-bit wide for split_gpu warps
 #define WARPLENGTH 32
+#define MASKTYPE uint32_t
+#define ONE 1
 #endif
 #ifdef __HIP__
 #define SPLIT_VOTING_MASK 0xFFFFFFFFFFFFFFFFull // 64-bit wide for amd warps
 #define WARPLENGTH 64
-
+#define MASKTYPE uint64_t
+#define ONE 1ul
 #endif
 
 namespace split {
@@ -226,11 +230,7 @@ __global__ void split_compact(split::SplitVector<T, split::split_unified_allocat
    const bool tres = rule(input->at(tid));
 
    auto mask = split::s_warpVote(tres, SPLIT_VOTING_MASK);
-#ifdef __NVCC__
-   uint32_t n_neighbors = mask & ((1 << w_tid) - 1);
-#else
-   uint64_t n_neighbors = mask & ((1ul << w_tid) - 1);
-#endif
+   MASKTYPE n_neighbors = mask & ((ONE << w_tid) - ONE);
    auto total_valid_in_warp = split::s_pop_count(mask);
    if (w_tid == 0) {
       buffer[widb] = total_valid_in_warp;
@@ -277,11 +277,7 @@ __global__ void split_compact_keys(split::SplitVector<T, split::split_unified_al
    const bool tres = rule(input->at(tid));
 
    auto mask = split::s_warpVote(tres, SPLIT_VOTING_MASK);
-#ifdef __NVCC__
-   uint32_t n_neighbors = mask & ((1 << w_tid) - 1);
-#else
-   uint64_t n_neighbors = mask & ((1ul << w_tid) - 1);
-#endif
+   MASKTYPE n_neighbors = mask & ((ONE << w_tid) - ONE);
    auto total_valid_in_warp = split::s_pop_count(mask);
    if (w_tid == 0) {
       buffer[widb] = total_valid_in_warp;
@@ -327,11 +323,7 @@ __global__ void split_compact_keys_raw(T* input, uint32_t* counts, uint32_t* off
    const bool tres = rule(input[tid]);
 
    auto mask = split::s_warpVote(tres, SPLIT_VOTING_MASK);
-#ifdef __NVCC__
-   uint32_t n_neighbors = mask & ((1 << w_tid) - 1);
-#else
-   uint64_t n_neighbors = mask & ((1ul << w_tid) - 1);
-#endif
+   MASKTYPE n_neighbors = mask & ((ONE << w_tid) - ONE);
    auto total_valid_in_warp = split::s_pop_count(mask);
    if (w_tid == 0) {
       buffer[widb] = total_valid_in_warp;
@@ -407,13 +399,13 @@ void split_prefix_scan(split::SplitVector<T, split::split_unified_allocator<T>>&
    split::tools::split_prescan<<<gridSize, scanBlocksize, 2 * scanElements * sizeof(T), s>>>(
        input.data(), output.data(), partial_sums.data(), scanElements, input.size());
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-
+   const size_t _pssize = partial_sums.size();
    if (gridSize > 1) {
-      if (partial_sums.size() <= scanElements) {
+      if (_pssize <= scanElements) {
          vector partial_sums_dummy(gridSize);
          // TODO +FIXME extra shmem allocations
          split::tools::split_prescan<<<1, scanBlocksize, 2 * scanElements * sizeof(T), s>>>(
-             partial_sums.data(), partial_sums.data(), partial_sums_dummy.data(), gridSize, partial_sums.size());
+             partial_sums.data(), partial_sums.data(), partial_sums_dummy.data(), gridSize, _pssize);
          SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
       } else {
          vector partial_sums_clone(partial_sums);
@@ -433,7 +425,7 @@ void split_prefix_scan(split::SplitVector<T, split::split_unified_allocator<T>>&
  * Modified from (http://www-graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2) to support 64-bit uints
  * Included here as well for standalone use of splitvec outside of hashintor
  */
-constexpr inline size_t nextPow2(size_t v) noexcept {
+__host__ __device__ constexpr inline size_t nextPow2(size_t v) noexcept {
    v--;
    v |= v >> 1;
    v |= v >> 2;
@@ -465,11 +457,7 @@ __global__ void split_compact_raw(T* input, uint32_t* counts, uint32_t* offsets,
    const bool tres = rule(input[tid]);
 
    auto mask = split::s_warpVote(tres, SPLIT_VOTING_MASK);
-#ifdef __NVCC__
-   uint32_t n_neighbors = mask & ((1 << w_tid) - 1);
-#else
-   uint64_t n_neighbors = mask & ((1ul << w_tid) - 1);
-#endif
+   MASKTYPE n_neighbors = mask & ((ONE << w_tid) - ONE);
    auto total_valid_in_warp = split::s_pop_count(mask);
    if (w_tid == 0) {
       buffer[widb] = total_valid_in_warp;
@@ -500,7 +488,7 @@ __global__ void split_compact_raw(T* input, uint32_t* counts, uint32_t* offsets,
  * It uses async mallocs
  *
  */
-class Cuda_mempool {
+class splitStackArena {
 private:
    size_t total_bytes;
    size_t bytes_used;
@@ -509,31 +497,31 @@ private:
    bool isOwner;
 
 public:
-   explicit Cuda_mempool(size_t bytes, split_gpuStream_t str) {
+   explicit splitStackArena(size_t bytes, split_gpuStream_t str) {
       s = str;
       SPLIT_CHECK_ERR(split_gpuMallocAsync(&_data, bytes, s));
       total_bytes = bytes;
       bytes_used = 0;
       isOwner = true;
    }
-   explicit Cuda_mempool(void* ptr, size_t bytes) {
+   explicit splitStackArena(void* ptr, size_t bytes) {
       total_bytes = bytes;
       bytes_used = 0;
       isOwner = false;
       _data = ptr;
    }
 
-   Cuda_mempool() = delete;
-   Cuda_mempool(const Cuda_mempool& other) = delete;
-   Cuda_mempool(Cuda_mempool&& other) = delete;
-   ~Cuda_mempool() {
+   splitStackArena() = delete;
+   splitStackArena(const splitStackArena& other) = delete;
+   splitStackArena(splitStackArena&& other) = delete;
+   ~splitStackArena() {
       if (isOwner) {
          SPLIT_CHECK_ERR(split_gpuFreeAsync(_data, s));
       }
    }
 
    void* allocate(const size_t bytes) {
-      assert(bytes_used + bytes < total_bytes && "Mempool run out of space and crashed!");
+      assert(bytes_used + bytes <= total_bytes && "Mempool run out of space and crashed!");
       void* ptr = reinterpret_cast<void*>(reinterpret_cast<char*>(_data) + bytes_used);
       bytes_used += bytes;
       return ptr;
@@ -565,7 +553,8 @@ __global__ void scan_reduce_raw(T* input, uint32_t* output, Rule rule, size_t si
  * @brief Same as split_prefix_scan but with raw memory
  */
 template <typename T, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
-void split_prefix_scan_raw(T* input, T* output, Cuda_mempool& mPool, const size_t input_size, split_gpuStream_t s = 0) {
+void split_prefix_scan_raw(T* input, T* output, splitStackArena& mPool, const size_t input_size,
+                           split_gpuStream_t s = 0) {
 
    // Scan is performed in half Blocksizes
    size_t scanBlocksize = BLOCKSIZE / 2;
@@ -612,24 +601,339 @@ void split_prefix_scan_raw(T* input, T* output, Cuda_mempool& mPool, const size_
    }
 }
 
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024>
+__global__ void block_compact(T* input, T* output, size_t inputSize, Rule rule, uint32_t* retval) {
+   // This must be equal to at least both WARPLENGTH and MAX_BLOCKSIZE/WARPLENGTH
+   __shared__ uint32_t warpSums[WARPLENGTH];
+   const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
+   const size_t wid = tid / WARPLENGTH;
+   const size_t w_tid = tid % WARPLENGTH;
+   const uint warpsPerBlock = BLOCKSIZE / WARPLENGTH;
+   // zero init shared buffer
+   if (wid == 0) {
+      warpSums[w_tid] = 0;
+   }
+   __syncthreads();
+   // full warp votes for rule-> mask = [01010101010101010101010101010101]
+   const int active = (tid < inputSize) ? rule(input[tid]) : false;
+   const auto mask = split::s_warpVote(active == 1, SPLIT_VOTING_MASK);
+   const auto warpCount = s_pop_count(mask);
+   if (w_tid == 0) {
+      warpSums[wid] = warpCount;
+   }
+   __syncthreads();
+   // Figure out the total here because we overwrite shared mem later
+   if (wid == 0) {
+      // ceil int division
+      int activeWARPS = nextPow2(1 + ((inputSize - 1) / WARPLENGTH));
+      auto reduceCounts = [activeWARPS](int localCount) -> int {
+         for (int i = activeWARPS / 2; i > 0; i = i / 2) {
+            localCount += split::s_shuffle_down(localCount, i, SPLIT_VOTING_MASK);
+         }
+         return localCount;
+      };
+      auto localCount = warpSums[w_tid];
+      int totalCount = reduceCounts(localCount);
+      if (w_tid == 0) {
+         *retval = (uint32_t)(totalCount);
+      }
+   }
+   // Prefix scan WarpSums on the first warp
+   if (wid == 0) {
+      auto value = warpSums[w_tid];
+      for (int d = 1; d < warpsPerBlock; d = 2 * d) {
+         int res = split::s_shuffle_up(value, d, SPLIT_VOTING_MASK);
+         if (tid % warpsPerBlock >= d) {
+            value += res;
+         }
+      }
+      warpSums[w_tid] = value;
+   }
+   __syncthreads();
+   auto offset = (wid == 0) ? 0 : warpSums[wid - 1];
+   auto pp = s_pop_count(mask & ((ONE << w_tid) - ONE));
+   const auto warpTidWriteIndex = offset + pp;
+   if (active) {
+      output[warpTidWriteIndex] = input[tid];
+   }
+}
+
+template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024>
+__global__ void block_compact_keys(T* input, U* output, size_t inputSize, Rule rule, uint32_t* retval) {
+   // This must be equal to at least both WARPLENGTH and MAX_BLOCKSIZE/WARPLENGTH
+   __shared__ uint32_t warpSums[WARPLENGTH];
+   const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
+   const size_t wid = tid / WARPLENGTH;
+   const size_t w_tid = tid % WARPLENGTH;
+   const uint warpsPerBlock = BLOCKSIZE / WARPLENGTH;
+   // zero init shared buffer
+   if (wid == 0) {
+      warpSums[w_tid] = 0;
+   }
+   __syncthreads();
+   // full warp votes for rule-> mask = [01010101010101010101010101010101]
+   const int active = (tid < inputSize) ? rule(input[tid]) : false;
+   const auto mask = split::s_warpVote(active == 1, SPLIT_VOTING_MASK);
+   const auto warpCount = s_pop_count(mask);
+   if (w_tid == 0) {
+      warpSums[wid] = warpCount;
+   }
+   __syncthreads();
+   // Figure out the total here because we overwrite shared mem later
+   if (wid == 0) {
+      // ceil int division
+      int activeWARPS = nextPow2(1 + ((inputSize - 1) / WARPLENGTH));
+      auto reduceCounts = [activeWARPS](int localCount) -> int {
+         for (int i = activeWARPS / 2; i > 0; i = i / 2) {
+            localCount += split::s_shuffle_down(localCount, i, SPLIT_VOTING_MASK);
+         }
+         return localCount;
+      };
+      auto localCount = warpSums[w_tid];
+      int totalCount = reduceCounts(localCount);
+      if (w_tid == 0) {
+         *retval = (uint32_t)(totalCount);
+      }
+   }
+   // Prefix scan WarpSums on the first warp
+   if (wid == 0) {
+      auto value = warpSums[w_tid];
+      for (int d = 1; d < warpsPerBlock; d = 2 * d) {
+         int res = split::s_shuffle_up(value, d, SPLIT_VOTING_MASK);
+         if (tid % warpsPerBlock >= d) {
+            value += res;
+         }
+      }
+      warpSums[w_tid] = value;
+   }
+   __syncthreads();
+   auto offset = (wid == 0) ? 0 : warpSums[wid - 1];
+   auto pp = s_pop_count(mask & ((ONE << w_tid) - ONE));
+   const auto warpTidWriteIndex = offset + pp;
+   if (active) {
+      output[warpTidWriteIndex] = input[tid].first;
+   }
+}
+
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024>
+__global__ void loop_compact(split::SplitVector<T, split::split_unified_allocator<T>>& inputVec,
+                             split::SplitVector<T, split::split_unified_allocator<T>>& outputVec, Rule rule) {
+   // This must be equal to at least both WARPLENGTH and MAX_BLOCKSIZE/WARPLENGTH
+   __shared__ uint32_t warpSums[WARPLENGTH];
+   __shared__ uint32_t outputCount;
+   // blockIdx.x is always 0 for this kernel
+   const size_t tid = threadIdx.x; // + blockIdx.x * blockDim.x;
+   const size_t wid = tid / WARPLENGTH;
+   const size_t w_tid = tid % WARPLENGTH;
+   const uint warpsPerBlock = BLOCKSIZE / WARPLENGTH;
+   // zero init shared buffer
+   if (wid == 0) {
+      warpSums[w_tid] = 0;
+   }
+   __syncthreads();
+   // full warp votes for rule-> mask = [01010101010101010101010101010101]
+   int64_t remaining = inputVec.size();
+   const uint capacity = outputVec.capacity();
+   uint32_t outputSize = 0;
+   // Initial pointers into data
+   T* input = inputVec.data();
+   T* output = outputVec.data();
+   // Start loop
+   while (remaining > 0) {
+      int current = remaining > blockDim.x ? blockDim.x : remaining;
+      __syncthreads();
+      const int active = (tid < current) ? rule(input[tid]) : false;
+      const auto mask = split::s_warpVote(active == 1, SPLIT_VOTING_MASK);
+      const auto warpCount = s_pop_count(mask);
+      if (w_tid == 0) {
+         warpSums[wid] = warpCount;
+      }
+      __syncthreads();
+      // Figure out the total here because we overwrite shared mem later
+      if (wid == 0) {
+         // ceil int division
+         int activeWARPS = nextPow2(1 + ((current - 1) / WARPLENGTH));
+         auto reduceCounts = [activeWARPS](int localCount) -> int {
+            for (int i = activeWARPS / 2; i > 0; i = i / 2) {
+               localCount += split::s_shuffle_down(localCount, i, SPLIT_VOTING_MASK);
+            }
+            return localCount;
+         };
+         auto localCount = warpSums[w_tid];
+         int totalCount = reduceCounts(localCount);
+         if (w_tid == 0) {
+            outputCount = totalCount;
+            outputSize += totalCount;
+            assert((outputSize <= capacity) && "loop_compact ran out of capacity!");
+            outputVec.device_resize(outputSize);
+         }
+      }
+      // Prefix scan WarpSums on the first warp
+      if (wid == 0) {
+         auto value = warpSums[w_tid];
+         for (int d = 1; d < warpsPerBlock; d = 2 * d) {
+            int res = split::s_shuffle_up(value, d, SPLIT_VOTING_MASK);
+            if (tid % warpsPerBlock >= d) {
+               value += res;
+            }
+         }
+         warpSums[w_tid] = value;
+      }
+      __syncthreads();
+      auto offset = (wid == 0) ? 0 : warpSums[wid - 1];
+      auto pp = s_pop_count(mask & ((ONE << w_tid) - ONE));
+      const auto warpTidWriteIndex = offset + pp;
+      if (active) {
+         output[warpTidWriteIndex] = input[tid];
+      }
+      // Next loop iteration:
+      input += current;
+      output += outputCount;
+      remaining -= current;
+   }
+   __syncthreads();
+   if (tid == 0) {
+      // Resize to final correct output size.
+      outputVec.device_resize(outputSize);
+   }
+}
+template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024>
+__global__ void loop_compact_keys(split::SplitVector<T, split::split_unified_allocator<T>>& inputVec,
+                                  split::SplitVector<U, split::split_unified_allocator<U>>& outputVec, Rule rule) {
+   // This must be equal to at least both WARPLENGTH and MAX_BLOCKSIZE/WARPLENGTH
+   __shared__ uint32_t warpSums[WARPLENGTH];
+   __shared__ uint32_t outputCount;
+   // blockIdx.x is always 0 for this kernel
+   const size_t tid = threadIdx.x; // + blockIdx.x * blockDim.x;
+   const size_t wid = tid / WARPLENGTH;
+   const size_t w_tid = tid % WARPLENGTH;
+   const uint warpsPerBlock = BLOCKSIZE / WARPLENGTH;
+   // zero init shared buffer
+   if (wid == 0) {
+      warpSums[w_tid] = 0;
+   }
+   __syncthreads();
+   // full warp votes for rule-> mask = [01010101010101010101010101010101]
+   int64_t remaining = inputVec.size();
+   const uint capacity = outputVec.capacity();
+   uint32_t outputSize = 0;
+   // Initial pointers into data
+   T* input = inputVec.data();
+   U* output = outputVec.data();
+   // Start loop
+   while (remaining > 0) {
+      int current = remaining > blockDim.x ? blockDim.x : remaining;
+      __syncthreads();
+      const int active = (tid < current) ? rule(input[tid]) : false;
+      const auto mask = split::s_warpVote(active == 1, SPLIT_VOTING_MASK);
+      const auto warpCount = s_pop_count(mask);
+      if (w_tid == 0) {
+         warpSums[wid] = warpCount;
+      }
+      __syncthreads();
+      // Figure out the total here because we overwrite shared mem later
+      if (wid == 0) {
+         // ceil int division
+         int activeWARPS = nextPow2(1 + ((current - 1) / WARPLENGTH));
+         auto reduceCounts = [activeWARPS](int localCount) -> int {
+            for (int i = activeWARPS / 2; i > 0; i = i / 2) {
+               localCount += split::s_shuffle_down(localCount, i, SPLIT_VOTING_MASK);
+            }
+            return localCount;
+         };
+         auto localCount = warpSums[w_tid];
+         int totalCount = reduceCounts(localCount);
+         if (w_tid == 0) {
+            outputCount = totalCount;
+            outputSize += totalCount;
+            assert((outputSize <= capacity) && "loop_compact ran out of capacity!");
+            outputVec.device_resize(outputSize);
+         }
+      }
+      // Prefix scan WarpSums on the first warp
+      if (wid == 0) {
+         auto value = warpSums[w_tid];
+         for (int d = 1; d < warpsPerBlock; d = 2 * d) {
+            int res = split::s_shuffle_up(value, d, SPLIT_VOTING_MASK);
+            if (tid % warpsPerBlock >= d) {
+               value += res;
+            }
+         }
+         warpSums[w_tid] = value;
+      }
+      __syncthreads();
+      auto offset = (wid == 0) ? 0 : warpSums[wid - 1];
+      auto pp = s_pop_count(mask & ((ONE << w_tid) - ONE));
+      const auto warpTidWriteIndex = offset + pp;
+      if (active) {
+         output[warpTidWriteIndex] = input[tid].first;
+      }
+      // Next loop iteration:
+      input += current;
+      output += outputCount;
+      remaining -= current;
+   }
+   __syncthreads();
+   if (tid == 0) {
+      // Resize to final correct output size.
+      outputVec.device_resize(outputSize);
+   }
+}
+
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+size_t copy_if_block(T* input, T* output, size_t size, Rule rule, void* stack, size_t max_size,
+                     split_gpuStream_t s = 0) {
+   assert(stack && "Invalid stack!");
+   splitStackArena mPool(stack, max_size);
+   uint32_t* dlen = (uint32_t*)mPool.allocate(sizeof(uint32_t));
+   split::tools::block_compact<<<1, std::min(BLOCKSIZE, nextPow2(size))>>>(input, output, size, rule, dlen);
+   uint32_t len = 0;
+   SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&len, dlen, sizeof(uint32_t), split_gpuMemcpyDeviceToHost, s));
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   return len;
+}
+
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+size_t copy_if_block(T* input, T* output, size_t size, Rule rule, splitStackArena& mPool, split_gpuStream_t s = 0) {
+   uint32_t* dlen = (uint32_t*)mPool.allocate(sizeof(uint32_t));
+   split::tools::block_compact<<<1, std::min(BLOCKSIZE, nextPow2(size)), 0, s>>>(input, output, size, rule, dlen);
+   uint32_t len = 0;
+   SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&len, dlen, sizeof(uint32_t), split_gpuMemcpyDeviceToHost, s));
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   return len;
+}
+
+template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+size_t copy_if_keys_block(T* input, U* output, size_t size, Rule rule, splitStackArena& mPool,
+                          split_gpuStream_t s = 0) {
+   uint32_t* dlen = (uint32_t*)mPool.allocate(sizeof(uint32_t));
+   split::tools::block_compact_keys<<<1, std::min(BLOCKSIZE, nextPow2(size)), 0, s>>>(input, output, size, rule, dlen);
+   uint32_t len = 0;
+   SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&len, dlen, sizeof(uint32_t), split_gpuMemcpyDeviceToHost, s));
+   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   return len;
+}
+
 /**
  * @brief Same as copy_if but using raw memory
  */
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 uint32_t copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& input, T* output, Rule rule,
-                     size_t nBlocks, Cuda_mempool& mPool, split_gpuStream_t s = 0) {
+                     size_t nBlocks, splitStackArena& mPool, split_gpuStream_t s = 0) {
 
+   size_t _size = input.size();
+   if (_size <= BLOCKSIZE) {
+      return copy_if_block(input.data(), output, _size, rule, mPool, s);
+   }
    uint32_t* d_counts;
    uint32_t* d_offsets;
    d_counts = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   SPLIT_CHECK_ERR(split_gpuMemset(d_counts, 0, nBlocks * sizeof(uint32_t)));
+   SPLIT_CHECK_ERR(split_gpuMemsetAsync(d_counts, 0, nBlocks * sizeof(uint32_t), s));
 
    // Phase 1 -- Calculate per warp workload
-   split::tools::scan_reduce_raw<<<nBlocks, BLOCKSIZE, 0, s>>>(input.data(), d_counts, rule, input.size());
+   split::tools::scan_reduce_raw<<<nBlocks, BLOCKSIZE, 0, s>>>(input.data(), d_counts, rule, _size);
    d_offsets = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   SPLIT_CHECK_ERR(split_gpuMemset(d_offsets, 0, nBlocks * sizeof(uint32_t)));
+   SPLIT_CHECK_ERR(split_gpuMemsetAsync(d_offsets, 0, nBlocks * sizeof(uint32_t), s));
 
    // Step 2 -- Exclusive Prefix Scan on offsets
    if (nBlocks == 1) {
@@ -637,14 +941,47 @@ uint32_t copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& i
    } else {
       split_prefix_scan_raw<uint32_t, BLOCKSIZE, WARP>(d_counts, d_offsets, mPool, nBlocks, s);
    }
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
 
    // Step 3 -- Compaction
    uint32_t* retval = (uint32_t*)mPool.allocate(sizeof(uint32_t));
    split::tools::split_compact_raw<T, Rule, BLOCKSIZE, WARP>
-       <<<nBlocks, BLOCKSIZE, 2 * (BLOCKSIZE / WARP) * sizeof(unsigned int), s>>>(
-           input.data(), d_counts, d_offsets, output, rule, input.size(), nBlocks, retval);
+       <<<nBlocks, BLOCKSIZE, 2 * (BLOCKSIZE / WARP) * sizeof(unsigned int), s>>>(input.data(), d_counts, d_offsets,
+                                                                                  output, rule, _size, nBlocks, retval);
+   uint32_t numel;
+   SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&numel, retval, sizeof(uint32_t), split_gpuMemcpyDeviceToHost, s));
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   return numel;
+}
+
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+uint32_t copy_if_raw(T* input, T* output, size_t size, Rule rule, size_t nBlocks, splitStackArena& mPool,
+                     split_gpuStream_t s = 0) {
+
+   if (size <= BLOCKSIZE) {
+      return copy_if_block(input, output, size, rule, mPool, s);
+   }
+   uint32_t* d_counts;
+   uint32_t* d_offsets;
+   d_counts = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
+   SPLIT_CHECK_ERR(split_gpuMemsetAsync(d_counts, 0, nBlocks * sizeof(uint32_t), s));
+
+   // Phase 1 -- Calculate per warp workload
+   split::tools::scan_reduce_raw<<<nBlocks, BLOCKSIZE, 0, s>>>(input, d_counts, rule, size);
+   d_offsets = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
+   SPLIT_CHECK_ERR(split_gpuMemsetAsync(d_offsets, 0, nBlocks * sizeof(uint32_t), s));
+
+   // Step 2 -- Exclusive Prefix Scan on offsets
+   if (nBlocks == 1) {
+      split_prefix_scan_raw<uint32_t, 2, WARP>(d_counts, d_offsets, mPool, nBlocks, s);
+   } else {
+      split_prefix_scan_raw<uint32_t, BLOCKSIZE, WARP>(d_counts, d_offsets, mPool, nBlocks, s);
+   }
+
+   // Step 3 -- Compaction
+   uint32_t* retval = (uint32_t*)mPool.allocate(sizeof(uint32_t));
+   split::tools::split_compact_raw<T, Rule, BLOCKSIZE, WARP>
+       <<<nBlocks, BLOCKSIZE, 2 * (BLOCKSIZE / WARP) * sizeof(unsigned int), s>>>(input, d_counts, d_offsets, output,
+                                                                                  rule, size, nBlocks, retval);
    uint32_t numel;
    SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&numel, retval, sizeof(uint32_t), split_gpuMemcpyDeviceToHost, s));
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
@@ -652,24 +989,56 @@ uint32_t copy_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& i
 }
 
 /**
+ * @brief Extraction routines using just a single block.
+   These methods assume splitvectors are fully allocated on UM or Device.
+ */
+
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+void copy_if_loop(split::SplitVector<T, split::split_unified_allocator<T>>& input,
+                  split::SplitVector<T, split::split_unified_allocator<T>>& output, Rule rule,
+                  split_gpuStream_t s = 0) {
+#ifdef HASHINATOR_DEBUG
+   bool input_ok = isDeviceAccessible(reinterpret_cast<void*>(&input));
+   bool output_ok = isDeviceAccessible(reinterpret_cast<void*>(&output));
+   assert((input_ok && output_ok) &&
+          "This method supports splitvectors dynamically allocated on device or unified memory!");
+#endif
+   split::tools::loop_compact<<<1, BLOCKSIZE, 0, s>>>(input, output, rule);
+}
+
+template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+void copy_if_keys_loop(split::SplitVector<T, split::split_unified_allocator<T>>& input,
+                       split::SplitVector<U, split::split_unified_allocator<U>>& output, Rule rule,
+                       split_gpuStream_t s = 0) {
+#ifdef HASHINATOR_DEBUG
+   bool input_ok = isDeviceAccessible(reinterpret_cast<void*>(&input));
+   bool output_ok = isDeviceAccessible(reinterpret_cast<void*>(&output));
+   assert((input_ok && output_ok) &&
+          "This method supports splitvectors dynamically allocated on device or unified memory!");
+#endif
+   split::tools::loop_compact_keys<<<1, BLOCKSIZE, 0, s>>>(input, output, rule);
+}
+
+/**
  * @brief Same as copy_keys_if but using raw memory
  */
 template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 size_t copy_keys_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>& input, U* output, Rule rule,
-                        size_t nBlocks, Cuda_mempool& mPool, split_gpuStream_t s = 0) {
+                        size_t nBlocks, splitStackArena& mPool, split_gpuStream_t s = 0) {
 
+   size_t _size = input.size();
+   if (_size <= BLOCKSIZE) {
+      return copy_if_keys_block(input.data(), output, _size, rule, mPool, s);
+   }
    uint32_t* d_counts;
    uint32_t* d_offsets;
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    d_counts = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   SPLIT_CHECK_ERR(split_gpuMemset(d_counts, 0, nBlocks * sizeof(uint32_t)));
+   SPLIT_CHECK_ERR(split_gpuMemsetAsync(d_counts, 0, nBlocks * sizeof(uint32_t), s));
 
    // Phase 1 -- Calculate per warp workload
-   split::tools::scan_reduce_raw<<<nBlocks, BLOCKSIZE, 0, s>>>(input.data(), d_counts, rule, input.size());
+   split::tools::scan_reduce_raw<<<nBlocks, BLOCKSIZE, 0, s>>>(input.data(), d_counts, rule, _size);
    d_offsets = (uint32_t*)mPool.allocate(nBlocks * sizeof(uint32_t));
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
-   SPLIT_CHECK_ERR(split_gpuMemset(d_offsets, 0, nBlocks * sizeof(uint32_t)));
+   SPLIT_CHECK_ERR(split_gpuMemsetAsync(d_offsets, 0, nBlocks * sizeof(uint32_t), s));
 
    // Step 2 -- Exclusive Prefix Scan on offsets
    if (nBlocks == 1) {
@@ -677,14 +1046,12 @@ size_t copy_keys_if_raw(split::SplitVector<T, split::split_unified_allocator<T>>
    } else {
       split_prefix_scan_raw<uint32_t, BLOCKSIZE, WARP>(d_counts, d_offsets, mPool, nBlocks, s);
    }
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
 
    // Step 3 -- Compaction
    uint32_t* retval = (uint32_t*)mPool.allocate(sizeof(uint32_t));
    split::tools::split_compact_keys_raw<T, U, Rule, BLOCKSIZE, WARP>
-       <<<nBlocks, BLOCKSIZE, 2 * (BLOCKSIZE / WARP) * sizeof(unsigned int), s>>>(
-           input.data(), d_counts, d_offsets, output, rule, input.size(), nBlocks, retval);
-   SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+       <<<nBlocks, BLOCKSIZE, 2 * (BLOCKSIZE / WARP) * sizeof(unsigned int), s>>>(input.data(), d_counts, d_offsets,
+                                                                                  output, rule, _size, nBlocks, retval);
    uint32_t numel;
    SPLIT_CHECK_ERR(split_gpuMemcpyAsync(&numel, retval, sizeof(uint32_t), split_gpuMemcpyDeviceToHost, s));
    SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
@@ -699,6 +1066,19 @@ template <typename T, int BLOCKSIZE = 1024>
 estimateMemoryForCompaction(const split::SplitVector<T, split::split_unified_allocator<T>>& input) noexcept {
    // Figure out Blocks to use
    size_t _s = std::ceil((float(input.size())) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+
+   // Allocate with Mempool
+   return 8 * nBlocks * sizeof(uint32_t);
+}
+
+template <int BLOCKSIZE = 1024>
+[[nodiscard]] size_t estimateMemoryForCompaction(const size_t inputSize) noexcept {
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(inputSize)) / (float)BLOCKSIZE);
    size_t nBlocks = nextPow2(_s);
    if (nBlocks == 0) {
       nBlocks += 1;
@@ -725,7 +1105,7 @@ void copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& inpu
 
    // Allocate with Mempool
    const size_t memory_for_pool = 8 * nBlocks * sizeof(uint32_t);
-   Cuda_mempool mPool(memory_for_pool, s);
+   splitStackArena mPool(memory_for_pool, s);
    auto len = copy_keys_if_raw(input, output.data(), rule, nBlocks, mPool, s);
    output.erase(&output[len], output.end());
 }
@@ -758,14 +1138,14 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
 
    // Allocate with Mempool
    const size_t memory_for_pool = 8 * nBlocks * sizeof(uint32_t);
-   Cuda_mempool mPool(memory_for_pool, s);
+   splitStackArena mPool(memory_for_pool, s);
    auto len = copy_if_raw(input, output.data(), rule, nBlocks, mPool, s);
    output.erase(&output[len], output.end());
 }
 
 template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 void copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
-                  split::SplitVector<U, split::split_unified_allocator<U>>& output, Rule rule, Cuda_mempool&& mPool,
+                  split::SplitVector<U, split::split_unified_allocator<U>>& output, Rule rule, splitStackArena&& mPool,
                   split_gpuStream_t s = 0) {
 
    // Figure out Blocks to use
@@ -774,13 +1154,13 @@ void copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& inpu
    if (nBlocks == 0) {
       nBlocks += 1;
    }
-   auto len = copy_keys_if_raw(input, output.data(), rule, nBlocks, std::forward<Cuda_mempool>(mPool), s);
+   auto len = copy_keys_if_raw(input, output.data(), rule, nBlocks, std::forward<splitStackArena>(mPool), s);
    output.erase(&output[len], output.end());
 }
 
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
-             split::SplitVector<T, split::split_unified_allocator<T>>& output, Rule rule, Cuda_mempool&& mPool,
+             split::SplitVector<T, split::split_unified_allocator<T>>& output, Rule rule, splitStackArena&& mPool,
              split_gpuStream_t s = 0) {
 
    // Figure out Blocks to use
@@ -805,7 +1185,7 @@ void copy_keys_if(split::SplitVector<T, split::split_unified_allocator<T>>& inpu
       nBlocks += 1;
    }
    assert(stack && "Invalid stack!");
-   Cuda_mempool mPool(stack, max_size);
+   splitStackArena mPool(stack, max_size);
    auto len = copy_keys_if_raw(input, output.data(), rule, nBlocks, mPool, s);
    output.erase(&output[len], output.end());
 }
@@ -822,10 +1202,24 @@ void copy_if(split::SplitVector<T, split::split_unified_allocator<T>>& input,
       nBlocks += 1;
    }
    assert(stack && "Invalid stack!");
-   Cuda_mempool mPool(stack, max_size);
+   splitStackArena mPool(stack, max_size);
    auto len = copy_if_raw(input, output.data(), rule, nBlocks, mPool, s);
    output.erase(&output[len], output.end());
 }
 
+template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+size_t copy_if(T* input, T* output, size_t size, Rule rule, void* stack, size_t max_size, split_gpuStream_t s = 0) {
+
+   // Figure out Blocks to use
+   size_t _s = std::ceil((float(size)) / (float)BLOCKSIZE);
+   size_t nBlocks = nextPow2(_s);
+   if (nBlocks == 0) {
+      nBlocks += 1;
+   }
+   assert(stack && "Invalid stack!");
+   splitStackArena mPool(stack, max_size);
+   auto len = copy_if_raw(input, output, size, rule, nBlocks, mPool, s);
+   return len;
+}
 } // namespace tools
 } // namespace split

@@ -143,20 +143,22 @@ public:
 
    // Reset wrapper
    static void reset(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* dst, const int sizePower,
-                     size_t maxoverflow, size_t len, split_gpuStream_t s = 0) {
+                     size_t maxoverflow, Hashinator::Info* info, size_t len, split_gpuStream_t s = 0) {
       size_t blocks, blockSize;
       launchParams(len, blocks, blockSize);
       Hashinator::Hashers::reset_to_empty<KEY_TYPE, VAL_TYPE, EMPTYBUCKET, HashFunction, defaults::WARPSIZE,
                                           elementsPerWarp>
-          <<<blocks, blockSize, 0, s>>>(src, dst, sizePower, maxoverflow, len);
+          <<<blocks, blockSize, 0, s>>>(src, dst, sizePower, maxoverflow, info, len);
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    }
 
    // Reset wrapper for all elements
-   static void reset_all(hash_pair<KEY_TYPE, VAL_TYPE>* dst, size_t len, split_gpuStream_t s = 0) {
+   static void reset_all(hash_pair<KEY_TYPE, VAL_TYPE>* dst, Hashinator::Info* info, size_t len,
+                         split_gpuStream_t s = 0) {
       size_t blocksNeeded = len / defaults::MAX_BLOCKSIZE;
       blocksNeeded = blocksNeeded + (blocksNeeded == 0);
-      reset_all_to_empty<KEY_TYPE, VAL_TYPE, EMPTYBUCKET><<<blocksNeeded, defaults::MAX_BLOCKSIZE, 0, s>>>(dst, len);
+      reset_all_to_empty<KEY_TYPE, VAL_TYPE, EMPTYBUCKET>
+          <<<blocksNeeded, defaults::MAX_BLOCKSIZE, 0, s>>>(dst, info, len);
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    }
 

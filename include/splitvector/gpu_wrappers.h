@@ -261,5 +261,26 @@ __device__ __forceinline__ T s_shuffle_down(T variable, unsigned int delta, U ma
    return __shfl_down(variable, delta);
 #endif
 }
+
+/**
+ * @brief Wrapper for performing an up register shuffle operation.
+ *
+ * @tparam T The data type of the variable.
+ * @tparam U The data type of the mask.
+ * @param variable The variable to shuffle.
+ * @param delta The offset.
+ * @param mask Voting mask.
+ * @return The shuffled variable.
+ */
+template <typename T, typename U>
+__device__ __forceinline__ T s_shuffle_up(T variable, unsigned int delta, U mask = 0) noexcept {
+   static_assert(std::is_integral<T>::value && "Only integers supported");
+#ifdef __NVCC__
+   return __shfl_up_sync(mask, variable, delta);
+#endif
+#ifdef __HIP__
+   return __shfl_up(variable, delta);
+#endif
+}
 } // namespace split
 #endif
