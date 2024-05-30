@@ -278,7 +278,7 @@ __global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE
    const int sizePower = info->sizePower;
    size_t* d_overflow = &(info->currentMaxBucketOverflow);
    size_t* d_fill = &(info->fill);
-   status* err = &(info->err);
+   //status* err = &(info->err);
    const int VIRTUALWARP = WARPSIZE / elementsPerWarp;
    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
    const size_t wid = tid / VIRTUALWARP;
@@ -424,7 +424,8 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
    const size_t blockWid = proper_wid % (WARPSIZE / 4); // we have twice the warpsize and half the warps per block
    const int sizePower = info->sizePower;
    const size_t maxoverflow = info->currentMaxBucketOverflow;
-   size_t* d_tombstoneCounter = &info->tombstoneCounter;
+   size_t* d_tombstoneCounter = &(info->tombstoneCounter);
+   //status* err = &(info->err);
 
    __shared__ uint32_t deleteMask[WARPSIZE / 2];
 
@@ -511,7 +512,7 @@ __global__ void insert_index_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE
 
    size_t* d_overflow = &(info->currentMaxBucketOverflow);
    size_t* d_fill = &(info->fill);
-   status* err = &(info->err);
+   //status* err = &(info->err);
    const int sizePower = info->sizePower;
    //const size_t maxoverflow = info->currentMaxBucketOverflow;
    const int VIRTUALWARP = WARPSIZE / elementsPerWarp;

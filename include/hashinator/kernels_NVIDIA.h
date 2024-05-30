@@ -631,7 +631,7 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
    const size_t blockWid = proper_wid % WARPSIZE;
    const int sizePower = info->sizePower;
    const size_t maxoverflow = info->currentMaxBucketOverflow;
-   size_t* d_tombstoneCounter = &info->tombstoneCounter;
+   size_t* d_tombstoneCounter = &(info->tombstoneCounter);
    __shared__ uint32_t deleteMask[WARPSIZE];
    // Early quit if we have more warps than elements to handle
    if (wid >= len) {
