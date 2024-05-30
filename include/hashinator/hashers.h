@@ -153,10 +153,12 @@ public:
    }
 
    // Reset wrapper for all elements
-   static void reset_all(hash_pair<KEY_TYPE, VAL_TYPE>* dst, Hashinator::Info* info,size_t len, split_gpuStream_t s = 0) {
+   static void reset_all(hash_pair<KEY_TYPE, VAL_TYPE>* dst, Hashinator::Info* info, size_t len,
+                         split_gpuStream_t s = 0) {
       size_t blocksNeeded = len / defaults::MAX_BLOCKSIZE;
       blocksNeeded = blocksNeeded + (blocksNeeded == 0);
-      reset_all_to_empty<KEY_TYPE, VAL_TYPE, EMPTYBUCKET><<<blocksNeeded, defaults::MAX_BLOCKSIZE, 0, s>>>(dst,info, len);
+      reset_all_to_empty<KEY_TYPE, VAL_TYPE, EMPTYBUCKET>
+          <<<blocksNeeded, defaults::MAX_BLOCKSIZE, 0, s>>>(dst, info, len);
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    }
 

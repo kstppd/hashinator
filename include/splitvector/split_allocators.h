@@ -33,7 +33,7 @@ namespace split {
 #define SPLIT_CHECK_ERR(err) (split::cuda_error(err, __FILE__, __LINE__))
 static void cuda_error(cudaError_t err, const char* file, int line) {
    if (err != cudaSuccess) {
-      std::cerr<<"\n\n"<<cudaGetErrorString(err)<<" in "<<file<<" at line "<<line<<"\n";
+      std::cerr << "\n\n" << cudaGetErrorString(err) << " in " << file << " at line " << line << "\n";
       abort();
    }
 }
@@ -43,7 +43,7 @@ static void cuda_error(cudaError_t err, const char* file, int line) {
 #define SPLIT_CHECK_ERR(err) (split::hip_error(err, __FILE__, __LINE__))
 static void hip_error(hipError_t err, const char* file, int line) {
    if (err != hipSuccess) {
-      std::cerr<<"\n\n"<<hipGetErrorString(err)<<" in "<<file<<" at line "<<line<<"\n";
+      std::cerr << "\n\n" << hipGetErrorString(err) << " in " << file << " at line " << line << "\n";
       abort();
    }
 }
@@ -76,7 +76,6 @@ public:
     * @brief Default constructor.
     */
    split_unified_allocator() throw() {}
-
 
    /**
     * @brief Copy constructor with different type.
