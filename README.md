@@ -1,3 +1,5 @@
+[![C/C++ CI](https://github.com/kstppd/hashinator/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/kstppd/hashinator/actions/workflows/tests.yml)
+
 ## Hashinator: A hybrid hashmap designed for heterogeneous computing.
 
 + Hashinator is a header only hashmap implementation designed to work on both CPU and GPU architectures. It does so by utilizing the [Unified Memory](https://developer.nvidia.com/blog/unified-memory-cuda-beginners/) model. At this point hashinator NVIDIA and AMD GPUs.  
