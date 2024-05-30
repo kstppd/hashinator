@@ -136,8 +136,8 @@ __global__ void reset_to_empty(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY
 template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(),
           class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>, int WARPSIZE = defaults::WARPSIZE,
           int elementsPerWarp>
-__global__ void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, Hashinator::Info* info,
-                              size_t len) {
+__global__ void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                              Hashinator::Info* info, size_t len) {
 
    size_t* d_overflow = &(info->currentMaxBucketOverflow);
    size_t* d_fill = &(info->fill);
@@ -272,11 +272,13 @@ __global__ void insert_kernel(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_
 template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(),
           class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>, int WARPSIZE = defaults::WARPSIZE,
           int elementsPerWarp>
-__global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, Hashinator::Info* info,
-                              size_t* d_overflow, size_t* d_fill, size_t len, status* err) {
+__global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                              Hashinator::Info* info, size_t len, status* err) {
 
    const int sizePower = info->sizePower;
-   //const size_t maxoverflow = info->currentMaxBucketOverflow;
+   size_t* d_overflow = &(info->currentMaxBucketOverflow);
+   size_t* d_fill = &(info->fill);
+   status* err = &(info->err);
    const int VIRTUALWARP = WARPSIZE / elementsPerWarp;
    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
    const size_t wid = tid / VIRTUALWARP;
@@ -504,8 +506,8 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
 template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(),
           class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>, int WARPSIZE = defaults::WARPSIZE,
           int elementsPerWarp>
-__global__ void insert_index_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, Hashinator::Info* info,
-                                    size_t len) {
+__global__ void insert_index_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+                                    Hashinator::Info* info, size_t len) {
 
    size_t* d_overflow = &(info->currentMaxBucketOverflow);
    size_t* d_fill = &(info->fill);
