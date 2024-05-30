@@ -21,6 +21,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  * */
 #pragma once
+#include <cstddef>
 #ifdef HASHINATOR_CPU_ONLY_MODE
 #define SPLIT_CPU_ONLY_MODE
 #endif
@@ -84,7 +85,7 @@ private:
    void preallocate_device_handles() {
 #ifndef HASHINATOR_CPU_ONLY_MODE
       SPLIT_CHECK_ERR(split_gpuMalloc((void**)&device_map, sizeof(Hashmap)));
-      device_buckets = (split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>*)((char*)device_map + offsetof(Hashmap, buckets));
+      device_buckets=reinterpret_cast<split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>*>(reinterpret_cast<char*>(device_map)+offsetof(Hashmap,buckets));
 #endif
    }
 
@@ -289,7 +290,7 @@ public:
       hash_pair<KEY_TYPE, VAL_TYPE>* validElements;
       SPLIT_CHECK_ERR(split_gpuMallocAsync((void**)&validElements,
                                            (_mapInfo->fill + 1) * sizeof(hash_pair<KEY_TYPE, VAL_TYPE>), s));
-      if (prefetches) {
+      if constexpr (prefetches) {
          optimizeGPU(s);
          SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
       }
@@ -477,7 +478,7 @@ public:
          break;
 
       case targets::device:
-         if (prefetches) {
+         if constexpr(prefetches) {
             optimizeGPU(s);
          }
          if (len==0) { // If size is provided, no need to page fault size information.
@@ -1127,7 +1128,7 @@ public:
    size_t extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements, Rule rule,
                          split_gpuStream_t s = 0) {
       elements.resize(_mapInfo->fill + 1, true);
-      if (prefetches) {
+      if constexpr(prefetches) {
          elements.optimizeGPU(s);
       }
       // Extract elements matching the Pattern Rule(element)==true;
@@ -1172,7 +1173,7 @@ public:
    template <bool prefetches = true, typename Rule>
    size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements, Rule rule, split_gpuStream_t s = 0) {
       elements.resize(_mapInfo->fill + 1, true);
-      if (prefetches) {
+      if constexpr(prefetches) {
          elements.optimizeGPU(s);
       }
       // Extract element **keys** matching the Pattern Rule(element)==true;
@@ -1180,7 +1181,7 @@ public:
                                  defaults::WARPSIZE>(buckets, elements, rule, s);
       //FIXME: there is an issue where paging to host occurs and following calls to hashmap operations take a hit.
       //temp fix: call optimizeGPU() here
-      if (prefetches) {
+      if constexpr (prefetches) {
          optimizeGPU(s);
       }
       return elements.size();
@@ -1188,7 +1189,7 @@ public:
    template <bool prefetches = true, typename Rule>
    size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements, Rule rule, void *stack, size_t max_size, split_gpuStream_t s = 0) {
       elements.resize(_mapInfo->fill + 1, true);
-      if (prefetches) {
+      if constexpr(prefetches) {
          elements.optimizeGPU(s);
       }
       // Extract element **keys** matching the Pattern Rule(element)==true;
@@ -1243,7 +1244,7 @@ public:
       SPLIT_CHECK_ERR(split_gpuMallocAsync((void**)&overflownElements,
                                            (1 << _mapInfo->sizePower) * sizeof(hash_pair<KEY_TYPE, VAL_TYPE>), s));
 
-      if (prefetches) {
+      if constexpr(prefetches) {
          optimizeGPU(s);
       }
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
@@ -1294,7 +1295,7 @@ public:
          set_status(status::success);
          return;
       }
-      if (prefetches) {
+      if constexpr(prefetches) {
          buckets.optimizeGPU(s);
       }
       int64_t neededPowerSize = std::ceil(std::log2((_mapInfo->fill + len) * (1.0 / targetLF)));
@@ -1316,7 +1317,7 @@ public:
          set_status(status::success);
          return;
       }
-      if (prefetches) {
+      if constexpr(prefetches) {
          buckets.optimizeGPU(s);
       }
       int64_t neededPowerSize = std::ceil(std::log2((_mapInfo->fill + len) * (1.0 / targetLF)));
@@ -1336,7 +1337,7 @@ public:
          set_status(status::success);
          return;
       }
-      if (prefetches) {
+      if constexpr(prefetches) {
          buckets.optimizeGPU(s);
       }
       // Here we do some calculations to estimate how much if any we need to grow our buckets
@@ -1352,7 +1353,7 @@ public:
    // Uses Hasher's retrieve_kernel to read all elements
    template <bool prefetches = true>
    void retrieve(KEY_TYPE* keys, VAL_TYPE* vals, size_t len, split_gpuStream_t s = 0) {
-      if (prefetches){
+      if constexpr(prefetches){
          buckets.optimizeGPU(s);
       }
       DeviceHasher::retrieve(keys, vals, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow, len,
@@ -1363,7 +1364,7 @@ public:
    // Uses Hasher's retrieve_kernel to read all elements
    template <bool prefetches = true>
    void retrieve(hash_pair<KEY_TYPE, VAL_TYPE>* src, size_t len, split_gpuStream_t s = 0) {
-      if (prefetches){
+      if constexpr(prefetches){
          buckets.optimizeGPU(s);
       }
       DeviceHasher::retrieve(src, buckets.data(), _mapInfo->sizePower, _mapInfo->currentMaxBucketOverflow, len, s);
@@ -1373,7 +1374,7 @@ public:
    // Uses Hasher's erase_kernel to delete all elements
    template <bool prefetches = true>
    void erase(KEY_TYPE* keys, size_t len, split_gpuStream_t s = 0) {
-      if (prefetches){
+      if constexpr(prefetches){
          buckets.optimizeGPU(s);
       }
       // Remember the last numeber of tombstones
@@ -1393,7 +1394,7 @@ public:
     */
    template <bool prefetches = true>
    Hashmap* upload(split_gpuStream_t stream = 0) {
-      if (prefetches) {
+      if constexpr(prefetches) {
          optimizeGPU(stream);
       }
       // device_buckets = (split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>*)((char*)device_map + offsetof(Hashmap, buckets));
