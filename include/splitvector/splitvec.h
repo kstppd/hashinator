@@ -90,7 +90,7 @@ private:
    size_t _alloc_multiplier = 2; // host variable; multiplier for  when reserving more space
    Allocator _allocator;         // Allocator used to allocate and deallocate memory;
    Residency _location;          // Flags that describes the current residency of our data
-   SplitVector* d_vec;           // device copy pointer
+   SplitVector* d_vec = nullptr; // device copy pointer
 
    /**
     * @brief Checks if a pointer is valid and throws an exception if it's null.
@@ -387,11 +387,14 @@ public:
 
       if constexpr (std::is_trivially_copyable<T>::value) {
          if (other._location == Residency::device) {
-            _location = Residency::device;
-            SPLIT_CHECK_ERR(
-                split_gpuMemcpyAsync(_data, other._data, size() * sizeof(T), split_gpuMemcpyDeviceToDevice, stream));
             int device;
             SPLIT_CHECK_ERR(split_gpuGetDevice(&device));
+            if (_location == Residency::host) {
+               SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_data, capacity() * sizeof(T), device, stream));
+               _location = Residency::device;
+            }
+            SPLIT_CHECK_ERR(
+                split_gpuMemcpyAsync(_data, other._data, size() * sizeof(T), split_gpuMemcpyDeviceToDevice, stream));
             SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_size, sizeof(size_t), device, stream));
             SPLIT_CHECK_ERR(split_gpuMemPrefetchAsync(_capacity, sizeof(size_t), device, stream));
             return;
@@ -475,12 +478,16 @@ public:
     * @param stream The GPU stream to perform the upload on.
     * @return Pointer to the uploaded SplitVector on the GPU.
     */
+   template <bool optimize = true>
    HOSTONLY
    SplitVector<T, Allocator>* upload(split_gpuStream_t stream = 0) {
       if (!d_vec) {
          SPLIT_CHECK_ERR(split_gpuMallocAsync((void**)&d_vec, sizeof(SplitVector), stream));
       }
       SPLIT_CHECK_ERR(split_gpuMemcpyAsync(d_vec, this, sizeof(SplitVector), split_gpuMemcpyHostToDevice, stream));
+      if constexpr (optimize) {
+         optimizeGPU(stream);
+      }
       return d_vec;
    }
    /**
@@ -842,11 +849,6 @@ public:
     */
    HOSTONLY
    void reserve(size_t requested_space, bool eco = false, split_gpuStream_t stream = 0) {
-      // If the users passes eco=true we allocate
-      // exactly what was requested
-      if (!eco) {
-         requested_space *= _alloc_multiplier;
-      }
       // Vector was default initialized
       if (_data == nullptr) {
          _deallocate();
@@ -860,6 +862,11 @@ public:
          return;
       }
       // Reallocate.
+      // If the users passes eco=true we allocate
+      // exactly what was requested
+      if (!eco) {
+         requested_space *= _alloc_multiplier;
+      }
       reallocate(requested_space, stream);
       return;
    }
