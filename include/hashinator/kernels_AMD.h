@@ -273,7 +273,7 @@ template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::nume
           class HashFunction = HashFunctions::Fibonacci<KEY_TYPE>, int WARPSIZE = defaults::WARPSIZE,
           int elementsPerWarp>
 __global__ void insert_kernel(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
-                              Hashinator::Info* info, size_t len, status* err) {
+                              Hashinator::Info* info, size_t len) {
 
    const int sizePower = info->sizePower;
    size_t* d_overflow = &(info->currentMaxBucketOverflow);
@@ -424,7 +424,7 @@ __global__ void delete_kernel(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buc
    const size_t blockWid = proper_wid % (WARPSIZE / 4); // we have twice the warpsize and half the warps per block
    const int sizePower = info->sizePower;
    const size_t maxoverflow = info->currentMaxBucketOverflow;
-   size_t* d_tombstoneCounter = &_mapInfo->tombstoneCounter;
+   size_t* d_tombstoneCounter = &info->tombstoneCounter;
 
    __shared__ uint32_t deleteMask[WARPSIZE / 2];
 
