@@ -14,26 +14,26 @@ class Managed {
 public:
    void *operator new(size_t len) {
       void *ptr;
-      split_gpuMallocManaged(&ptr, len);
-      split_gpuDeviceSynchronize();
+      SPLIT_CHECK_ERR( split_gpuMallocManaged(&ptr, len) );
+      SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
       return ptr;
    }
 
    void operator delete(void *ptr) {
-      split_gpuDeviceSynchronize();
-      split_gpuFree(ptr);
+      SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
+      SPLIT_CHECK_ERR( split_gpuFree(ptr) );
    }
 
    void* operator new[] (size_t len) {
       void *ptr;
-      split_gpuMallocManaged(&ptr, len);
-      split_gpuDeviceSynchronize();
+      SPLIT_CHECK_ERR( split_gpuMallocManaged(&ptr, len) );
+      SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
       return ptr;
    }
 
    void operator delete[] (void* ptr) {
-      split_gpuDeviceSynchronize();
-      split_gpuFree(ptr);
+      SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
+      SPLIT_CHECK_ERR( split_gpuFree(ptr) );
    }
 
 };
@@ -59,7 +59,7 @@ TEST(Test_GPU,VectorPrint){
    TestClass* test;
    test=new TestClass();
    printClassVec<<<1,1>>>(test->a);
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    delete test;
 }
 

@@ -327,7 +327,7 @@ bool testWarpInsert(int power){
 
    //Upload to device and insert input
    gpu_write_warpWide<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
 
    //Verify all elements
    cpuOK=recover_all_elements(*hmap,src);
@@ -348,7 +348,7 @@ bool testWarpInsert(int power){
       hmap->resize(power+1);
       //Upload to device and insert input
       gpu_write_warpWide_Duplicate<<<1,1024>>>(hmap,src.data(),1);
-      split_gpuDeviceSynchronize();
+      SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
       if (hmap->size()!=1){
          return false;
       }
@@ -375,7 +375,7 @@ bool testWarpInsertUnorderedSet(int power){
 
    //Upload to device and insert input
    gpu_write_warpWide_UnorderedSet<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
 
    //Verify all elements
    cpuOK=recover_all_elements(*hmap,src);
@@ -392,7 +392,7 @@ bool testWarpInsertUnorderedSet(int power){
 
    //Upload to device and insert input
    gpu_write_warpWide_UnorderedSet<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
 
    //Verify all elements
    cpuOK=recover_all_elements(*hmap,src);
@@ -413,7 +413,7 @@ bool testWarpInsertUnorderedSet(int power){
       hmap->resize(power+1);
       //Upload to device and insert input
       gpu_write_warpWide_Duplicate<<<1,1024>>>(hmap,src.data(),1);
-      split_gpuDeviceSynchronize();
+      SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
       if (hmap->size()!=1){
          return false;
       }
@@ -440,7 +440,7 @@ bool testWarpInsert_V(int power){
 
    //Upload to device and insert input
    gpu_write_warpWide_V<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
 
    //Verify all elements
    cpuOK=recover_all_elements(*hmap,src);
@@ -467,11 +467,11 @@ bool testWarpErase(int power){
 
    //Upload to device and insert input
    gpu_write_warpWide_V<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
 
    //Upload to device and insert input
    gpu_erase_warpWide<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
 
    if (hmap->size()!=0){
       return false;
@@ -499,12 +499,12 @@ bool testWarpFind(int power){
 
    //Upload to device and insert input
    gpu_write<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
 
    //Verify all elements
    cpuOK=recover_all_elements(*hmap,src);
    gpu_recover_all_elements<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    if (!cpuOK){
       return false;
    }
@@ -513,10 +513,10 @@ bool testWarpFind(int power){
    size_t threadsNeeded  =  N*warpsize; 
    blocks = threadsNeeded/BLOCKSIZE;
    gpu_recover_warpWide<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    hmap->erase(keys_only.data(),keys_only.size());
    gpu_recover_non_existant_key_warpWide<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
 
    return true;
 
@@ -539,13 +539,13 @@ bool test_hashmap_1(int power){
    //Upload to device and insert input
    d_hmap=hmap.upload();
    gpu_write<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    hmap.download();
 
    //Verify all elements
    cpuOK=recover_all_elements(hmap,src);
    gpu_recover_all_elements<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    return true;
    if (!cpuOK){
       return false;
@@ -554,7 +554,7 @@ bool test_hashmap_1(int power){
    //Delete some selection of the source data
    d_hmap=hmap.upload();
    gpu_delete_even<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    hmap.download();
 
    //Quick check to verify there are no even elements
@@ -568,7 +568,7 @@ bool test_hashmap_1(int power){
    //Verify odd elements;
    cpuOK=recover_odd_elements(hmap,src);
    gpu_recover_odd_elements<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    if (!cpuOK){
       return false;
    }
@@ -576,7 +576,7 @@ bool test_hashmap_1(int power){
    //Reinsert so that we can also test duplicate insertion
    d_hmap=hmap.upload();
    gpu_write<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    //Download
    hmap.download();
 
@@ -584,7 +584,7 @@ bool test_hashmap_1(int power){
    //Verify all elements
    cpuOK=recover_all_elements(hmap,src);
    gpu_recover_all_elements<<<blocks,blocksize>>>(d_hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    if (!cpuOK ){
       return false;
    }
@@ -610,33 +610,33 @@ bool test_hashmap_2(int power){
 
    //Upload to device and insert input
    gpu_write<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
 
    //Verify all elements
    cpuOK=recover_all_elements(hmap,src);
    gpu_recover_all_elements<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    if (!cpuOK ){
       return false;
    }
 
    //Delete some selection of the source data
    gpu_delete_even<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
 
 
    //Upload to device and insert input
    gpu_write<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
 
    //Upload to device and insert input
    gpu_write<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
 
 
    //Delete some selection of the source data
    gpu_delete_even<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
 
    //Quick check to verify there are no even elements
    for (const auto& kval : *hmap){
@@ -649,7 +649,7 @@ bool test_hashmap_2(int power){
    //Verify odd elements;
    cpuOK=recover_odd_elements(hmap,src);
    gpu_recover_odd_elements<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   //split_gpuDeviceSynchronize();
+   //SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    if (!cpuOK){
       return false;
    }
@@ -657,12 +657,12 @@ bool test_hashmap_2(int power){
    //Clean Tomstones and reinsert so that we can also test duplicate insertion
    hmap->clean_tombstones();
    gpu_write<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
 
    //Verify all elements
    cpuOK=recover_all_elements(hmap,src);
    gpu_recover_all_elements<<<blocks,blocksize>>>(hmap,src.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    if (!cpuOK ){
       return false;
    }
@@ -670,9 +670,9 @@ bool test_hashmap_2(int power){
    vector src2(N);
    create_input(src2);
    gpu_remove_insert<<<1,1>>>(hmap,src.data(),src2.data(),src.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    gpu_recover_all_elements<<<blocks,blocksize>>>(hmap,src2.data(),src2.size());
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
 
    delete hmap;
    hmap=nullptr;
@@ -767,7 +767,7 @@ bool test_hashmap_4(int power){
    }
 
    split_gpuStream_t s ;
-   split_gpuStreamCreate(&s);
+   SPLIT_CHECK_ERR( split_gpuStreamCreate(&s) );
    hmap.clean_tombstones(s);
    cpuOK=recover_odd_elements(hmap,src);
    if (!cpuOK){
@@ -892,7 +892,7 @@ TEST(HashmapUnitTets ,Test_Clear_Perf_Host){
       expect_true(false);
    }
    hmap.optimizeGPU();
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    std::chrono::time_point<std::chrono::_V2::system_clock, std::chrono::_V2::system_clock::duration> start,stop;
    start = std::chrono::high_resolution_clock::now();
    hmap.clear();
@@ -915,7 +915,7 @@ TEST(HashmapUnitTets ,Test_Clear_Perf_Device){
       expect_true(false);
    }
    hmap.optimizeGPU();
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    std::chrono::time_point<std::chrono::_V2::system_clock, std::chrono::_V2::system_clock::duration> start,stop;
    start = std::chrono::high_resolution_clock::now();
    hmap.clear(targets::device);
@@ -937,7 +937,7 @@ TEST(HashmapUnitTets ,Test_Resize_Perf_Host){
       std::cout<<"Error at recovering all elements 1"<<std::endl;
       expect_true(false);
    }
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    std::chrono::time_point<std::chrono::_V2::system_clock, std::chrono::_V2::system_clock::duration> start,stop;
    start = std::chrono::high_resolution_clock::now();
    hmap.resize(sz+2);
@@ -960,7 +960,7 @@ TEST(HashmapUnitTets ,Test_Resize_Perf_Device){
       std::cout<<"Error at recovering all elements 1"<<std::endl;
       expect_true(false);
    }
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    std::chrono::time_point<std::chrono::_V2::system_clock, std::chrono::_V2::system_clock::duration> start,stop;
    start = std::chrono::high_resolution_clock::now();
    hmap.resize(sz+2,targets::device);
@@ -1030,7 +1030,7 @@ TEST(HashmapUnitTets ,Test_Copy_Metadata){
    expect_true(hmap.peek_status()==status::success);
    Info info;
    hmap.copyMetadata(&info);
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    expect_true(1<<info.sizePower==hmap.bucket_count());
    expect_true(info.tombstoneCounter==hmap.tombstone_count());
 

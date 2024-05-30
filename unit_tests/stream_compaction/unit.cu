@@ -118,7 +118,7 @@ bool run_test_small_loop_variant(size_t size){
 
    split::tools::copy_if_loop(*v,*output1,predicate_on);
    split::tools::copy_if_loop(*v,*output2,predicate_off);
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
 
    bool sane1 = checkFlags(*output1,1);
    bool sane2 = checkFlags(*output2,0);

@@ -51,21 +51,20 @@ int main(int argc, char* argv[]){
    if (argc>=2){
       sz=atoi(argv[1]);
    }
-   void* mem;
    size_t N = sz;
    splitvector v0(N),v0_out(N);
    srand(1);
    fillVec(v0,N);
    v0.optimizeGPU();
    v0_out.optimizeGPU();
-   split_gpuDeviceSynchronize();
+   SPLIT_CHECK_ERR( split_gpuDeviceSynchronize() );
    for (size_t i =0 ; i < R ; ++i){
       PROFILE_START("Stream_Compaction");
-      auto pred =[]__host__ __device__ (type_t  element)->bool{ return (element>10) ;};
-      auto pred_ =[]__host__ __device__ (type_t  element)->bool{ return (element%2)==0 ;};
 #if 0 
+      auto pred =[]__host__ __device__ (type_t  element)->bool{ return (element>10) ;};
       split::tools::copy_if(v0,v0_out,pred);
 #else
+      auto pred_ =[]__host__ __device__ (type_t  element)->bool{ return (element%2)==0 ;};
       split::tools::copy_if(v0,v0_out,pred_);
 #endif
       PROFILE_END();
