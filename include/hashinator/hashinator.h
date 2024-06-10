@@ -43,6 +43,11 @@
 
 namespace Hashinator {
 
+#ifdef HASHINATOR_CPU_ONLY_MODE
+template <typename T>
+using DefaultMetaAllocator = split::split_host_allocator<T>;
+#define DefaultHasher void
+#endif
 
 using MapInfo = Hashinator::Info;
 template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(),

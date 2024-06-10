@@ -26,10 +26,6 @@ using DefaultMetaAllocator = split::split_unified_allocator<T>;
 #define DefaultHasher                                                                                                  \
    Hashers::Hasher<KEY_TYPE, VAL_TYPE, HashFunction, EMPTYBUCKET, TOMBSTONE, defaults::WARPSIZE,                       \
                    defaults::elementsPerWarp>
-#else
-template <typename T>
-using DefaultMetaAllocator = split::split_host_allocator<T>;
-#define DefaultHasher void
 #endif
 
 template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE ,
