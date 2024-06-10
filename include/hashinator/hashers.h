@@ -31,24 +31,7 @@
 #endif
 
 namespace Hashinator {
-
-#ifndef HASHINATOR_CPU_ONLY_MODE
-template <typename T>
-using DefaultMetaAllocator = split::split_unified_allocator<T>;
-#define DefaultHasher                                                                                                  \
-   Hashers::Hasher<KEY_TYPE, VAL_TYPE, HashFunction, EMPTYBUCKET, TOMBSTONE, defaults::WARPSIZE,                       \
-                   defaults::elementsPerWarp>
-#else
-template <typename T>
-using DefaultMetaAllocator = split::split_host_allocator<T>;
-#define DefaultHasher void
-#endif
-
-template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE ,
-          KEY_TYPE , class HashFunction,
-          class DeviceHasher , class Meta_Allocator>
-class Hashmap;
-  
+ 
 namespace Hashers {
 template <typename KEY_TYPE, typename VAL_TYPE, class HashFunction,
           KEY_TYPE, KEY_TYPE,
