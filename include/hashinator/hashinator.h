@@ -463,6 +463,28 @@ public:
       }
    }
 
+   // Dangerous methods for exposing internals
+   template <bool warn = true>
+   HASHINATOR_HOSTDEVICE MapInfo* expose_mapinfo() noexcept {
+      if constexpr(warn) {
+         printf("Warning, exposing Hashmap internal info struct!\n");
+      }
+      return _mapInfo;
+   }
+   template <bool warn = true>
+   HASHINATOR_HOSTDEVICE hash_pair<KEY_TYPE, VAL_TYPE>* expose_bucketdata() noexcept {
+      if constexpr(warn) {
+         printf("Warning, exposing Hashmap internal bucket data!\n");
+      }
+      return buckets.data();
+   }
+   HASHINATOR_HOSTDEVICE inline KEY_TYPE expose_emptybucket() const noexcept {
+      return EMPTYBUCKET;
+   }
+   HASHINATOR_HOSTDEVICE inline KEY_TYPE expose_tombstone() const noexcept {
+      return TOMBSTONE;
+   }
+
 #ifdef HASHINATOR_CPU_ONLY_MODE
    void clear() {
       buckets = split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>(1 << _mapInfo->sizePower, {EMPTYBUCKET, VAL_TYPE()});
