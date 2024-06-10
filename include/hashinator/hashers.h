@@ -31,10 +31,32 @@
 #endif
 
 namespace Hashinator {
+
+#ifndef HASHINATOR_CPU_ONLY_MODE
+template <typename T>
+using DefaultMetaAllocator = split::split_unified_allocator<T>;
+#define DefaultHasher                                                                                                  \
+   Hashers::Hasher<KEY_TYPE, VAL_TYPE, HashFunction, EMPTYBUCKET, TOMBSTONE, defaults::WARPSIZE,                       \
+                   defaults::elementsPerWarp>
+#else
+template <typename T>
+using DefaultMetaAllocator = split::split_host_allocator<T>;
+#define DefaultHasher void
+#endif
+
+template <typename KEY_TYPE, typename VAL_TYPE, KEY_TYPE ,
+          KEY_TYPE , class HashFunction,
+          class DeviceHasher , class Meta_Allocator>
+class Hashmap;
+  
 namespace Hashers {
+template <typename KEY_TYPE, typename VAL_TYPE, class HashFunction,
+          KEY_TYPE, KEY_TYPE,
+          int ,int >
+class Hasher;
 
 template <typename KEY_TYPE, typename VAL_TYPE, class HashFunction,
-          KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(), KEY_TYPE TOMBSTONE = EMPTYBUCKET = 1,
+          KEY_TYPE EMPTYBUCKET = std::numeric_limits<KEY_TYPE>::max(), KEY_TYPE TOMBSTONE = EMPTYBUCKET ,
           int WARP = defaults::WARPSIZE, int elementsPerWarp = 1>
 class Hasher {
 
@@ -149,6 +171,11 @@ public:
                                           elementsPerWarp>
           <<<blocks, blockSize, 0, s>>>(src, dst, info, len);
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
+   }
+
+   template <class U,class UU , class UUU>
+   void sudo_ingest(Hashinator::Hashmap<KEY_TYPE,VAL_TYPE,EMPTYBUCKET,TOMBSTONE,U,UU,UUU> **ptr){
+     
    }
 
    // Reset wrapper for all elements
