@@ -342,7 +342,8 @@ public:
       auto hashIndex = hash(key);
 
       // Try to find the matching bucket.
-      for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
+      const size_t bsize = buckets.size();
+      for (size_t i = 0; i < bsize; i++) {
 
          hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
@@ -368,7 +369,8 @@ public:
             // We look ahead in case candidate was already in the hashmap
             // If we find it then we swap the duplicate with empty and do not increment fill
             // but we only reduce the tombstone count
-            for (size_t j = i + 1; j < _mapInfo->currentMaxBucketOverflow; ++j) {
+            const size_t bsize = buckets.size();
+            for (size_t j = i + 1; j < bsize; ++j) {
                hash_pair<KEY_TYPE, VAL_TYPE>& duplicate = buckets[(hashIndex + j) & bitMask];
                if (duplicate.first == candidate.first) {
                   alreadyExists = true;
@@ -477,12 +479,6 @@ public:
          printf("Warning, exposing Hashmap internal bucket data!\n");
       }
       return buckets.data();
-   }
-   HASHINATOR_HOSTDEVICE inline KEY_TYPE expose_emptybucket() const noexcept {
-      return EMPTYBUCKET;
-   }
-   HASHINATOR_HOSTDEVICE inline KEY_TYPE expose_tombstone() const noexcept {
-      return TOMBSTONE;
    }
 
 #ifdef HASHINATOR_CPU_ONLY_MODE
@@ -748,7 +744,8 @@ public:
       auto hashIndex = hash(key);
 
       // Try to find the matching bucket.
-      for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
+      const size_t bsize = buckets.size();
+      for (size_t i = 0; i < bsize; i++) {
          const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
          if (candidate.first == TOMBSTONE) {
@@ -776,7 +773,8 @@ public:
       auto hashIndex = hash(key);
 
       // Try to find the matching bucket.
-      for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
+      const size_t bsize = buckets.size();
+      for (size_t i = 0; i < bsize; i++) {
          const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
          if (candidate.first == TOMBSTONE) {
@@ -893,10 +891,10 @@ public:
          // Check if this elements already exists
          auto already_exists = split::s_warpVote(target.first == candidateKey, submask);
          if (already_exists) {
-            int winner = split::s_findFirstSig(already_exists) - 1;
-            if (w_tid == winner) {
+            int winner = split::s_findFirstSig(already_exists);
+            if (w_tid == winner-1) {
                if constexpr (!skipOverWrites) {
-                  split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+                  split::s_atomicExch(&(buckets[probingindex].second), candidateVal);
                }
                // This virtual warp is now done.
                warpDone = 1;
@@ -909,23 +907,25 @@ public:
          while (mask && !warpDone) {
             int winner = split::s_findFirstSig(mask) - 1;
             if (w_tid == winner) {
-               KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
+               KEY_TYPE old = split::s_atomicCAS(&(buckets[probingindex].first), EMPTYBUCKET, candidateKey);
                if (old == EMPTYBUCKET) {
                   threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex + 1);
-                  split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+                  split::s_atomicExch(&(buckets[probingindex].second), candidateVal);
                   warpDone = 1;
-                  split::s_atomicAdd(&_mapInfo->fill, 1);
+                  split::s_atomicAdd(&(_mapInfo->fill), 1);
+                  // Minor optimization to get rid of some unnecessary atomic calls
                   if (threadOverflow > _mapInfo->currentMaxBucketOverflow) {
-                     split::s_atomicExch((unsigned long long*)(&_mapInfo->currentMaxBucketOverflow),
-                                         (unsigned long long)nextOverflow(threadOverflow, defaults::WARPSIZE));
+                     split::s_atomicMax(&(_mapInfo->currentMaxBucketOverflow),
+                                        nextOverflow(threadOverflow, defaults::WARPSIZE));
                   }
+
                } else if (old == candidateKey) {
-                  // Parallel stuff are fun. Major edge case!
+                  // Parallel insertion already added this key.
                   if constexpr (!skipOverWrites) {
-                     split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+                     split::s_atomicExch(&(buckets[probingindex].second), candidateVal);
                   }
                   warpDone = 1;
-               }
+               } // else some other key+value was written here.
             }
             // If any of the virtual warp threads are done the the whole
             // Virtual warp is done
@@ -977,10 +977,10 @@ public:
          // Check if this elements already exists
          auto already_exists = split::s_warpVote(target.first == candidateKey, submask);
          if (already_exists) {
-            int winner = split::s_findFirstSig(already_exists) - 1;
-            if (w_tid == winner) {
+            int winner = split::s_findFirstSig(already_exists);
+            if (w_tid == winner-1) {
                if constexpr (!skipOverWrites) {
-                  split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+                     split::s_atomicExch(&(buckets[probingindex].second), candidateVal);
                }
                // This virtual warp is now done.
                warpDone = 1;
@@ -993,21 +993,22 @@ public:
          while (mask && !warpDone) {
             int winner = split::s_findFirstSig(mask) - 1;
             if (w_tid == winner) {
-               KEY_TYPE old = split::s_atomicCAS(&buckets[probingindex].first, EMPTYBUCKET, candidateKey);
+               KEY_TYPE old = split::s_atomicCAS(&(buckets[probingindex].first), EMPTYBUCKET, candidateKey);
                if (old == EMPTYBUCKET) {
                   threadOverflow = (probingindex < optimalindex) ? (1 << sizePower) : (probingindex - optimalindex + 1);
-                  split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+                  split::s_atomicExch(&(buckets[probingindex].second), candidateVal);
                   warpDone = 1;
                   localCount = 1;
-                  split::s_atomicAdd(&_mapInfo->fill, 1);
+                  split::s_atomicAdd(&(_mapInfo->fill), 1);
+                  // Minor optimization to get rid of some unnecessary atomic calls
                   if (threadOverflow > _mapInfo->currentMaxBucketOverflow) {
-                     split::s_atomicExch((unsigned long long*)(&_mapInfo->currentMaxBucketOverflow),
-                                         (unsigned long long)nextOverflow(threadOverflow, defaults::WARPSIZE));
+                     split::s_atomicMax(&(_mapInfo->currentMaxBucketOverflow),
+                                        nextOverflow(threadOverflow, defaults::WARPSIZE));
                   }
                } else if (old == candidateKey) {
                   // Parallel stuff are fun. Major edge case!
                   if constexpr (!skipOverWrites) {
-                     split::s_atomicExch(&buckets[probingindex].second, candidateVal);
+                     split::s_atomicExch(&(buckets[probingindex].second), candidateVal);
                   }
                   warpDone = 1;
                }
@@ -1027,7 +1028,7 @@ public:
    void warpFind(const KEY_TYPE& candidateKey, VAL_TYPE& candidateVal, const size_t w_tid) const noexcept {
 
       const int sizePower = _mapInfo->sizePower;
-      const size_t maxoverflow = _mapInfo->currentMaxBucketOverflow;
+      //const size_t maxoverflow = _mapInfo->currentMaxBucketOverflow;
       const int bitMask = (1 << (sizePower)) - 1;
       const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
       const auto submask = SPLIT_VOTING_MASK;
@@ -1044,8 +1045,7 @@ public:
       assert(isSafe && "Tried to warpFind with different keys/vals in the same warp");
 #endif
 
-      for (size_t i = 0; i < maxoverflow; i += defaults::WARPSIZE) {
-
+      for (size_t i = 0; i < (1 << sizePower); i += defaults::WARPSIZE) {
          if (warpDone) {
             break;
          }
@@ -1061,14 +1061,16 @@ public:
             warpDone = true;
          }
          if (maskExists) {
-            winner = split::s_findFirstSig(maskExists) - 1;
-            if (w_tid == winner) {
+            winner = split::s_findFirstSig(maskExists) ;
+            if (w_tid == winner-1) {
                candidateVal = buckets[probingindex].second;
             }
             warpDone = true;
          }
       }
-      candidateVal = split::s_shuffle(candidateVal, winner, SPLIT_VOTING_MASK);
+      if (winner!=0) {
+         candidateVal = split::s_shuffle(candidateVal, winner-1, SPLIT_VOTING_MASK);
+      }
       return;
    }
 
@@ -1076,7 +1078,7 @@ public:
    void warpErase(const KEY_TYPE& candidateKey, const size_t w_tid) noexcept {
 
       const int sizePower = _mapInfo->sizePower;
-      const size_t maxoverflow = _mapInfo->currentMaxBucketOverflow;
+      //const size_t maxoverflow = _mapInfo->currentMaxBucketOverflow;
       const int bitMask = (1 << (sizePower)) - 1;
       const auto hashIndex = HashFunction::_hash(candidateKey, sizePower);
       const auto submask = SPLIT_VOTING_MASK;
@@ -1093,8 +1095,7 @@ public:
       assert(isSafe && "Tried to warpFind with different keys/vals in the same warp");
 #endif
 
-      for (size_t i = 0; i < maxoverflow; i += defaults::WARPSIZE) {
-
+      for (size_t i = 0; i < (1 << sizePower); i += defaults::WARPSIZE) {
          if (warpDone) {
             break;
          }
@@ -1110,11 +1111,13 @@ public:
             warpDone = true;
          }
          if (maskExists) {
-            winner = split::s_findFirstSig(maskExists) - 1;
-            if (w_tid == winner) {
-               buckets[probingindex].first = TOMBSTONE;
-               split::s_atomicAdd(&_mapInfo->tombstoneCounter, 1);
-               split::s_atomicSub((unsigned int*)&_mapInfo->fill, 1);
+            winner = split::s_findFirstSig(maskExists);
+            if (w_tid == winner-1) {
+               KEY_TYPE old = split::s_atomicCAS(&(buckets[probingindex].first), candidateKey, TOMBSTONE);
+               if (old==candidateKey) {
+                  split::s_atomicSub(&(_mapInfo->fill), 1);
+                  split::s_atomicAdd(&(_mapInfo->tombstoneCounter), 1);
+               }
             }
             warpDone = true;
          }
@@ -1327,7 +1330,6 @@ public:
       if (neededPowerSize > _mapInfo->sizePower) {
          resize(neededPowerSize, targets::device, s);
       }
-      _mapInfo->currentMaxBucketOverflow = _mapInfo->currentMaxBucketOverflow;
       DeviceHasher::insert(keys, vals, buckets.data(), _mapInfo, len, s);
       return;
    }
@@ -1348,7 +1350,6 @@ public:
       if (neededPowerSize > _mapInfo->sizePower) {
          resize(neededPowerSize, targets::device, s);
       }
-      _mapInfo->currentMaxBucketOverflow = _mapInfo->currentMaxBucketOverflow;
       DeviceHasher::insertIndex(keys, buckets.data(), _mapInfo, len, s);
       return;
    }
@@ -1457,11 +1458,9 @@ public:
       // Copy over fill as it might have changed
       optimizeCPU(stream);
       if (_mapInfo->currentMaxBucketOverflow > Hashinator::defaults::BUCKET_OVERFLOW) {
-         std::cout << "Device Overflow" << std::endl;
          rehash(_mapInfo->sizePower + 1);
       } else {
          if (tombstone_count() > 0) {
-            std::cout << "Cleaning Tombstones" << std::endl;
             clean_tombstones(stream);
          }
       }
@@ -1568,7 +1567,9 @@ public:
       auto hashIndex = hash(key);
 
       // Try to find the matching bucket.
-      for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
+      //for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
+      const size_t bsize = buckets.size();
+      for (size_t i = 0; i < bsize; i++) {
          const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
          if (candidate.first == TOMBSTONE) {
@@ -1596,7 +1597,8 @@ public:
       auto hashIndex = hash(key);
 
       // Try to find the matching bucket.
-      for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
+      const size_t bsize = buckets.size();
+      for (size_t i = 0; i < bsize; i++) {
          const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[(hashIndex + i) & bitMask];
 
          if (candidate.first == TOMBSTONE) {
@@ -1626,7 +1628,8 @@ public:
 
    HASHINATOR_DEVICEONLY
    device_iterator device_begin() {
-      for (size_t i = 0; i < buckets.size(); i++) {
+      const size_t bsize = buckets.size();
+      for (size_t i = 0; i < bsize; i++) {
          if (buckets[i].first != EMPTYBUCKET && buckets[i].first != TOMBSTONE) {
             return device_iterator(*this, i);
          }
@@ -1636,7 +1639,8 @@ public:
 
    HASHINATOR_DEVICEONLY
    const_device_iterator device_begin() const {
-      for (size_t i = 0; i < buckets.size(); i++) {
+      const size_t bsize = buckets.size();
+      for (size_t i = 0; i < bsize; i++) {
          if (buckets[i].first != EMPTYBUCKET && buckets[i].first != TOMBSTONE) {
             return const_device_iterator(*this, i);
          }
@@ -1667,23 +1671,23 @@ public:
    // Remove with tombstones on device
    HASHINATOR_DEVICEONLY
    device_iterator device_erase(device_iterator keyPos) {
-
       // Get the index of this entry
-      size_t index = keyPos.getIndex();
+      const size_t index = keyPos.getIndex();
 
       // If this is an empty bucket or a tombstone we can return already
-      // TODO Use CAS here for safety
-      KEY_TYPE& item = buckets[index].first;
+      // NOTE: threadsafety requires a read of value, not reference
+      const KEY_TYPE item = buckets[index].first;
       if (item == EMPTYBUCKET || item == TOMBSTONE) {
          return ++keyPos;
       }
 
       // Let's simply add a tombstone here
-      split::s_atomicExch(&buckets[index].first, TOMBSTONE);
-      split::s_atomicSub((unsigned int*)(&_mapInfo->fill), 1);
-      split::s_atomicAdd((unsigned int*)(&_mapInfo->tombstoneCounter), 1);
-      ++keyPos;
-      return keyPos;
+      KEY_TYPE old = split::s_atomicCAS(&(buckets[index].first), item, TOMBSTONE);
+      if (old==item) {
+         split::s_atomicSub(&(_mapInfo->fill), 1);
+         split::s_atomicAdd(&(_mapInfo->tombstoneCounter), 1);
+      }
+      return ++keyPos;
    }
 
 private:
@@ -1695,21 +1699,21 @@ private:
       int bitMask = (1 << _mapInfo->sizePower) - 1; // For efficient modulo of the array size
       auto hashIndex = hash(key);
       size_t i = 0;
-      while (i < buckets.size()) {
+      const size_t bsize = buckets.size();
+      while (i < bsize) {
          uint32_t vecindex = (hashIndex + i) & bitMask;
-         KEY_TYPE old = split::s_atomicCAS(&buckets[vecindex].first, EMPTYBUCKET, key);
+         KEY_TYPE old = split::s_atomicCAS(&(buckets[vecindex].first), EMPTYBUCKET, key);
          // Key does not exist so we create it and incerement fill
          if (old == EMPTYBUCKET) {
-            split::s_atomicExch(&buckets[vecindex].first, key);
-            split::s_atomicExch(&buckets[vecindex].second, value);
-            split::s_atomicAdd((unsigned int*)(&_mapInfo->fill), 1);
+            split::s_atomicExch(&(buckets[vecindex].second), value);
+            split::s_atomicAdd(&(_mapInfo->fill), 1);
             thread_overflowLookup = i + 1;
             return;
          }
 
          // Key exists so we overwrite it. Fill stays the same
          if (old == key) {
-            split::s_atomicExch(&buckets[vecindex].second, value);
+            split::s_atomicExch(&(buckets[vecindex].second), value);
             thread_overflowLookup = i + 1;
             return;
          }
@@ -1733,8 +1737,8 @@ public:
    void set_element(const KEY_TYPE& key, VAL_TYPE val) {
       size_t thread_overflowLookup = 0;
       insert_element(key, val, thread_overflowLookup);
-      atomicMax((unsigned long long*)&(_mapInfo->currentMaxBucketOverflow),
-                nextOverflow(thread_overflowLookup, defaults::WARPSIZE / defaults::elementsPerWarp));
+      split::s_atomicMax(&(_mapInfo->currentMaxBucketOverflow),
+                         nextOverflow(thread_overflowLookup, defaults::WARPSIZE / defaults::elementsPerWarp));
    }
 
    HASHINATOR_DEVICEONLY
@@ -1743,7 +1747,8 @@ public:
       auto hashIndex = hash(key);
 
       // Try to find the matching bucket.
-      for (size_t i = 0; i < _mapInfo->currentMaxBucketOverflow; i++) {
+      const size_t bsize = buckets.size();
+      for (size_t i = 0; i < bsize; i++) {
          uint32_t vecindex = (hashIndex + i) & bitMask;
          const hash_pair<KEY_TYPE, VAL_TYPE>& candidate = buckets[vecindex];
          if (candidate.first == key) {
