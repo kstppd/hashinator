@@ -213,7 +213,8 @@ public:
    /**
     * @brief Default constructor. Creates an empty SplitVector.
     */
-   HOSTONLY explicit SplitVector() : _location(Residency::host), d_vec(nullptr) {
+   HOSTONLY explicit SplitVector(const Allocator& alloc = Allocator())
+       : _allocator(alloc), _location(Residency::host), d_vec(nullptr) {
       this->_allocate(0); // seems counter-intuitive based on stl but it is not!
    }
 
@@ -222,7 +223,10 @@ public:
     *
     * @param size The size of the SplitVector to be created.
     */
-   HOSTONLY explicit SplitVector(size_t size) : _location(Residency::host), d_vec(nullptr) { this->_allocate(size); }
+   HOSTONLY explicit SplitVector(size_t size, const Allocator& alloc = Allocator())
+       : _allocator(alloc), _location(Residency::host), d_vec(nullptr) {
+      this->_allocate(size);
+   }
 
    /**
     * @brief Constructor to create a SplitVector of a specified size with initial values.
@@ -230,7 +234,8 @@ public:
     * @param size The size of the SplitVector to be created.
     * @param val The initial value to be assigned to each element.
     */
-   HOSTONLY explicit SplitVector(size_t size, const T& val) : _location(Residency::host), d_vec(nullptr) {
+   HOSTONLY explicit SplitVector(size_t size, const T& val, const Allocator& alloc = Allocator())
+       : _allocator(alloc), _location(Residency::host), d_vec(nullptr) {
       this->_allocate(size);
       for (size_t i = 0; i < size; i++) {
          _data[i] = val;
@@ -295,7 +300,8 @@ public:
     *
     * @param init_list The initializer list to initialize the SplitVector with.
     */
-   HOSTONLY explicit SplitVector(std::initializer_list<T> init_list) : _location(Residency::host), d_vec(nullptr) {
+   HOSTONLY explicit SplitVector(std::initializer_list<T> init_list, const Allocator& alloc = Allocator())
+       : _allocator(alloc), _location(Residency::host), d_vec(nullptr) {
       this->_allocate(init_list.size());
       for (size_t i = 0; i < size(); i++) {
          _data[i] = init_list.begin()[i];
