@@ -1694,8 +1694,9 @@ private:
    /**Device code for inserting elements. Nonexistent elements get created.
       Tombstones are accounted for.
     */
+   template <bool skipOverWrites = false>
    HASHINATOR_DEVICEONLY
-   void insert_element(const KEY_TYPE& key, VAL_TYPE value, size_t& thread_overflowLookup) {
+   bool insert_element(const KEY_TYPE& key, VAL_TYPE value, size_t& thread_overflowLookup) {
       int bitMask = (1 << _mapInfo->sizePower) - 1; // For efficient modulo of the array size
       auto hashIndex = hash(key);
       size_t i = 0;
@@ -1708,14 +1709,16 @@ private:
             split::s_atomicExch(&(buckets[vecindex].second), value);
             split::s_atomicAdd(&(_mapInfo->fill), 1);
             thread_overflowLookup = i + 1;
-            return;
+            return true;
          }
 
          // Key exists so we overwrite it. Fill stays the same
          if (old == key) {
-            split::s_atomicExch(&(buckets[vecindex].second), value);
+            if constexpr (!skipOverWrites) {
+               split::s_atomicExch(&(buckets[vecindex].second), value);
+            }
             thread_overflowLookup = i + 1;
-            return;
+            return false;
          }
 
          i++;
@@ -1724,21 +1727,22 @@ private:
    }
 
 public:
+   template <bool skipOverWrites = false>
    HASHINATOR_DEVICEONLY
    hash_pair<device_iterator, bool> device_insert(hash_pair<KEY_TYPE, VAL_TYPE> newEntry) {
-      bool found = device_find(newEntry.first) != device_end();
-      if (!found) {
-         set_element(newEntry.first, newEntry.second);
-      }
-      return hash_pair<device_iterator, bool>(device_find(newEntry.first), !found);
+      bool newentry = set_element<skipOverWrites>(newEntry.first, newEntry.second);
+      return hash_pair<device_iterator, bool>(device_find(newEntry.first), newentry);
    }
 
+   template <bool skipOverWrites = false>
    HASHINATOR_DEVICEONLY
-   void set_element(const KEY_TYPE& key, VAL_TYPE val) {
+   bool set_element(const KEY_TYPE& key, VAL_TYPE val) {
+      bool newentry = false;
       size_t thread_overflowLookup = 0;
-      insert_element(key, val, thread_overflowLookup);
+      newentry = insert_element<skipOverWrites>(key, val, thread_overflowLookup);
       split::s_atomicMax(&(_mapInfo->currentMaxBucketOverflow),
                          nextOverflow(thread_overflowLookup, defaults::WARPSIZE / defaults::elementsPerWarp));
+      return newentry;
    }
 
    HASHINATOR_DEVICEONLY
