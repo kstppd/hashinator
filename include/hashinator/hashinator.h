@@ -1724,6 +1724,7 @@ private:
          i++;
       }
       assert(false && "Hashmap completely overflown");
+      return false;
    }
 
 public:
