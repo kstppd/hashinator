@@ -116,6 +116,60 @@ __device__ __forceinline__ T s_atomicSub(T* address, U val) noexcept {
       } else {
          return atomicSub((unsigned int*)address, static_cast<T>(val));
       }
+   } else if constexpr (sizeof(T) == 8) {
+      return atomicAdd((unsigned long long*)address, static_cast<T>(-val));
+   } else {
+      // Cannot be static_assert(false...);
+      static_assert(!sizeof(T*), "Not supported");
+   }
+}
+
+/**
+ * @brief Wrapper for atomic maximum operation.
+ *
+ * @tparam T The data type of the value being maximized.
+ * @tparam U The data type of the value to maximize against.
+ * @param address Pointer to the memory location.
+ * @param val The value to maximize against.
+ * @return The original value at the memory location.
+ */
+template <typename T, typename U>
+__device__ __forceinline__ T s_atomicMax(T* address, U val) noexcept {
+   static_assert(std::is_integral<T>::value && "Only integers supported");
+   if constexpr (sizeof(T) == 4) {
+      if constexpr (std::is_signed<T>::value) {
+         return atomicMax((int*)address, static_cast<T>(val));
+      } else {
+         return atomicMax((unsigned int*)address, static_cast<T>(val));
+      }
+   } else if constexpr (sizeof(T) == 8) {
+      return atomicMax((unsigned long long*)address, static_cast<T>(val));
+   } else {
+      // Cannot be static_assert(false...);
+      static_assert(!sizeof(T*), "Not supported");
+   }
+}
+
+/**
+ * @brief Wrapper for atomic minimum operation.
+ *
+ * @tparam T The data type of the value being minimized.
+ * @tparam U The data type of the value to minimize against.
+ * @param address Pointer to the memory location.
+ * @param val The value to minimize against.
+ * @return The original value at the memory location.
+ */
+template <typename T, typename U>
+__device__ __forceinline__ T s_atomicMin(T* address, U val) noexcept {
+   static_assert(std::is_integral<T>::value && "Only integers supported");
+   if constexpr (sizeof(T) == 4) {
+      if constexpr (std::is_signed<T>::value) {
+         return atomicMin((int*)address, static_cast<T>(val));
+      } else {
+         return atomicMin((unsigned int*)address, static_cast<T>(val));
+      }
+   } else if constexpr (sizeof(T) == 8) {
+      return atomicMin((unsigned long long*)address, static_cast<T>(val));
    } else {
       // Cannot be static_assert(false...);
       static_assert(!sizeof(T*), "Not supported");
