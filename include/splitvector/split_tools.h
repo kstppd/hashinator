@@ -715,9 +715,9 @@ __global__ void block_compact_keys(T* input, U* output, size_t inputSize, Rule r
    }
 }
 
-template <typename T, typename Rule, size_t BLOCKSIZE = 1024>
+template <typename T, typename Rule, typename ALLOCATOR, size_t BLOCKSIZE = 1024>
 __global__ void loop_compact(split::SplitVector<T, split::split_unified_allocator<T>>& inputVec,
-                             split::SplitVector<T, split::split_unified_allocator<T>>& outputVec, Rule rule) {
+                             split::SplitVector<T, ALLOCATOR>& outputVec, Rule rule) {
    // This must be equal to at least both WARPLENGTH and MAX_BLOCKSIZE/WARPLENGTH
    __shared__ uint32_t warpSums[WARPLENGTH];
    __shared__ uint32_t outputCount;
@@ -797,9 +797,9 @@ __global__ void loop_compact(split::SplitVector<T, split::split_unified_allocato
       outputVec.device_resize(outputSize);
    }
 }
-template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024>
+template <typename T, typename U, typename Rule, typename ALLOCATOR, size_t BLOCKSIZE = 1024>
 __global__ void loop_compact_keys(split::SplitVector<T, split::split_unified_allocator<T>>& inputVec,
-                                  split::SplitVector<U, split::split_unified_allocator<U>>& outputVec, Rule rule) {
+                                  split::SplitVector<U, ALLOCATOR>& outputVec, Rule rule) {
    // This must be equal to at least both WARPLENGTH and MAX_BLOCKSIZE/WARPLENGTH
    __shared__ uint32_t warpSums[WARPLENGTH];
    __shared__ uint32_t outputCount;
@@ -993,6 +993,24 @@ uint32_t copy_if_raw(T* input, T* output, size_t size, Rule rule, size_t nBlocks
    These methods assume splitvectors are fully allocated on UM or Device.
  */
 
+template <typename T, typename Rule, typename ALLOCATOR, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+void copy_if_loop(split::SplitVector<T, split::split_unified_allocator<T>>& input,
+                  split::SplitVector<T, ALLOCATOR>& output, Rule rule,
+                  split_gpuStream_t s = 0) {
+#ifdef HASHINATOR_DEBUG
+   bool input_ok = isDeviceAccessible(reinterpret_cast<void*>(&input));
+   bool output_ok = isDeviceAccessible(reinterpret_cast<void*>(&output));
+   assert((input_ok && output_ok) &&
+          "This method supports splitvectors dynamically allocated on device or unified memory!");
+#endif
+   split::tools::loop_compact<<<1, BLOCKSIZE, 0, s>>>(input, output, rule);
+}
+
+/**
+ * @brief Extraction routines using just a single block.
+   These methods assume splitvectors are fully allocated on UM or Device.
+ */
+
 template <typename T, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
 void copy_if_loop(split::SplitVector<T, split::split_unified_allocator<T>>& input,
                   split::SplitVector<T, split::split_unified_allocator<T>>& output, Rule rule,
@@ -1004,6 +1022,19 @@ void copy_if_loop(split::SplitVector<T, split::split_unified_allocator<T>>& inpu
           "This method supports splitvectors dynamically allocated on device or unified memory!");
 #endif
    split::tools::loop_compact<<<1, BLOCKSIZE, 0, s>>>(input, output, rule);
+}
+
+template <typename T, typename U, typename Rule, typename ALLOCATOR, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>
+void copy_if_keys_loop(split::SplitVector<T, split::split_unified_allocator<T>>& input,
+                       split::SplitVector<U, ALLOCATOR>& output, Rule rule,
+                       split_gpuStream_t s = 0) {
+#ifdef HASHINATOR_DEBUG
+   bool input_ok = isDeviceAccessible(reinterpret_cast<void*>(&input));
+   bool output_ok = isDeviceAccessible(reinterpret_cast<void*>(&output));
+   assert((input_ok && output_ok) &&
+          "This method supports splitvectors dynamically allocated on device or unified memory!");
+#endif
+   split::tools::loop_compact_keys<<<1, BLOCKSIZE, 0, s>>>(input, output, rule);
 }
 
 template <typename T, typename U, typename Rule, size_t BLOCKSIZE = 1024, size_t WARP = WARPLENGTH>

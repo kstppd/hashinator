@@ -7,7 +7,7 @@ EXTRA=  --std=c++17
 EXTRA+= -gencode arch=compute_60,code=sm_60  
 EXTRA+=  -DHASHMAPDEBUG --expt-relaxed-constexpr  --expt-extended-lambda -lpthread
 GTEST= -L/home/kstppd/libs/googletest/build/lib  -I/home/kstppd/libs/googletest/googletest/include -lgtest -lgtest_main -lpthread
-OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o stream_compaction2.o delete_mechanism.o insertion_mechanism.o hybrid_cpu.o hybrid_gpu.o pointer_test.o benchmark.o benchmarkLF.o tbPerf.o realistic.o preallocated.o
+OBJ= gtest_vec_host.o	gtest_vec_device.o  gtest_hashmap.o stream_compaction.o stream_compaction2.o custom_allocator.o delete_mechanism.o insertion_mechanism.o hybrid_cpu.o hybrid_gpu.o pointer_test.o benchmark.o benchmarkLF.o tbPerf.o realistic.o preallocated.o
 
 
 default: tests
@@ -61,6 +61,9 @@ preallocated.o: stream_compaction/preallocated.cu
 	${CC} --default-stream per-thread  ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST}  -o compaction3 stream_compaction/preallocated.cu
 
 stream_compaction2.o: stream_compaction/unit.cu
+	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o compaction2 stream_compaction/unit.cu
+
+custom_allocator.o: custom_allocator/unit.cu
 	${CC} ${CXXFLAGS} ${OPT} ${EXTRA} ${GTEST} -o compaction2 stream_compaction/unit.cu
 
 delete_mechanism.o: delete_by_compaction/main.cu

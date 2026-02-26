@@ -1183,11 +1183,11 @@ public:
               buckets, elements, rule, nBlocks, mPool, s);
       return retval;
    }
-   template <typename Rule>
-   void extractPatternLoop(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements, Rule rule,
+   template <typename Rule, typename ALLOCATOR = split::split_unified_allocator<hash_pair<KEY_TYPE, VAL_TYPE>>>
+   void extractPatternLoop(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>, ALLOCATOR>& elements, Rule rule,
                            split_gpuStream_t s = 0) {
       // Extract elements matching the Pattern Rule(element)==true;
-      split::tools::copy_if_loop<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, defaults::MAX_BLOCKSIZE, defaults::WARPSIZE>(
+      split::tools::copy_if_loop<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, ALLOCATOR, defaults::MAX_BLOCKSIZE, defaults::WARPSIZE>(
           *device_buckets, elements, rule, s);
    }
    void extractLoop(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements, split_gpuStream_t s = 0) {
@@ -1226,10 +1226,10 @@ public:
                                  defaults::WARPSIZE>(buckets, elements, rule, stack, max_size, s);
       return elements.size();
    }
-   template <typename Rule>
-   void extractKeysByPatternLoop(split::SplitVector<KEY_TYPE>& elements, Rule rule, split_gpuStream_t s = 0) {
+   template <typename Rule, typename ALLOCATOR = split::split_unified_allocator<hash_pair<KEY_TYPE, VAL_TYPE>>>
+   void extractKeysByPatternLoop(split::SplitVector<KEY_TYPE, ALLOCATOR>& elements, Rule rule, split_gpuStream_t s = 0) {
       // Extract element **keys** matching the Pattern Rule(element)==true;
-      split::tools::copy_if_keys_loop<hash_pair<KEY_TYPE, VAL_TYPE>, KEY_TYPE, Rule, defaults::MAX_BLOCKSIZE,
+      split::tools::copy_if_keys_loop<hash_pair<KEY_TYPE, VAL_TYPE>, KEY_TYPE, Rule, ALLOCATOR, defaults::MAX_BLOCKSIZE,
                                       defaults::WARPSIZE>(*device_buckets, elements, rule, s);
    }
 
@@ -1250,7 +1250,8 @@ public:
       };
       return extractKeysByPattern<prefetches>(elements, rule, stack, max_size, s);
    }
-   void extractAllKeysLoop(split::SplitVector<KEY_TYPE>& elements, split_gpuStream_t s = 0) {
+   template <typename ALLOCATOR = split::split_unified_allocator<hash_pair<KEY_TYPE, VAL_TYPE>>>
+   void extractAllKeysLoop(split::SplitVector<KEY_TYPE, ALLOCATOR>& elements, split_gpuStream_t s = 0) {
       // Extract all keys
       auto rule = [] __host__ __device__(const hash_pair<KEY_TYPE, VAL_TYPE>& kval) -> bool {
          return kval.first != EMPTYBUCKET && kval.first != TOMBSTONE;
