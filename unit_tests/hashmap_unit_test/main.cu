@@ -1057,8 +1057,9 @@ void insertDuplicates(std::vector<key_type>& vec, key_type element, size_t count
    if (count>0){
       vec.insert(vec.end(), count, element);
    }
-   srand(time(NULL));
-   std::random_shuffle(vec.begin(),vec.end());
+   std::random_device rd;
+   std::mt19937 gen(rd());
+   std::shuffle(vec.begin(),vec.end(),gen);
 }
 
 TEST(HashmapUnitTets ,Test_Duplicate_Insertion){

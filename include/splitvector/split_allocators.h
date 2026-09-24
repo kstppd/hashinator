@@ -28,7 +28,7 @@ namespace split {
 
 #ifndef SPLIT_CPU_ONLY_MODE
 
-#ifdef __NVCC__
+#if defined(__NVCC__) || defined(__NVCOMPILER)
 /* Define the CUDA error checking macro */
 #define SPLIT_CHECK_ERR(err) (split::cuda_error(err, __FILE__, __LINE__))
 static void cuda_error(cudaError_t err, const char* file, int line) {

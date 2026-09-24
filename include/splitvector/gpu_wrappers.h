@@ -21,7 +21,7 @@
 #pragma once
 #ifndef SPLIT_CPU_ONLY_MODE
 
-#ifdef __NVCC__
+#if defined(__NVCC__) || defined(__NVCOMPILER)
 #include <cuda_runtime_api.h>
 #elif __HIP__
 #include <hip/hip_runtime.h>
@@ -204,7 +204,7 @@ __device__ __forceinline__ T s_atomicMin(T* address, U val) noexcept {
  */
 template <typename T>
 __device__ __forceinline__ T s_warpVote(bool predicate, T votingMask = T(-1)) noexcept {
-#ifdef __NVCC__
+#if defined(__NVCC__) || defined(__NVCOMPILER)
    return __ballot_sync(votingMask, predicate);
 #endif
 
@@ -222,7 +222,7 @@ __device__ __forceinline__ T s_warpVote(bool predicate, T votingMask = T(-1)) no
  */
 template <typename T>
 __device__ __forceinline__ int s_findFirstSig(T mask) noexcept {
-#ifdef __NVCC__
+#if defined(__NVCC__) || defined(__NVCOMPILER)
    return __ffs(mask);
 #endif
 
@@ -241,7 +241,7 @@ __device__ __forceinline__ int s_findFirstSig(T mask) noexcept {
  */
 template <typename T>
 __device__ __forceinline__ int s_warpVoteAny(bool predicate, T votingMask = T(-1)) noexcept {
-#ifdef __NVCC__
+#if defined(__NVCC__) || defined(__NVCOMPILER)
    return __any_sync(votingMask, predicate);
 #endif
 
@@ -259,7 +259,7 @@ __device__ __forceinline__ int s_warpVoteAny(bool predicate, T votingMask = T(-1
  */
 template <typename T>
 __device__ __forceinline__ uint32_t s_pop_count(T mask) noexcept {
-#ifdef __NVCC__
+#if defined(__NVCC__) || defined(__NVCOMPILER)
    return __popc(mask);
 #endif
 #ifdef __HIP__
@@ -287,7 +287,7 @@ __device__ __forceinline__ uint32_t s_pop_count(T mask) noexcept {
 template <typename T, typename U>
 __device__ __forceinline__ T s_shuffle(T variable, unsigned int source, U mask = 0) noexcept {
    static_assert(std::is_integral<T>::value && "Only integers supported");
-#ifdef __NVCC__
+#if defined(__NVCC__) || defined(__NVCOMPILER)
    return __shfl_sync(mask, variable, source);
 #endif
 #ifdef __HIP__
@@ -308,7 +308,7 @@ __device__ __forceinline__ T s_shuffle(T variable, unsigned int source, U mask =
 template <typename T, typename U>
 __device__ __forceinline__ T s_shuffle_down(T variable, unsigned int delta, U mask = 0) noexcept {
    static_assert(std::is_integral<T>::value && "Only integers supported");
-#ifdef __NVCC__
+#if defined(__NVCC__) || defined(__NVCOMPILER)
    return __shfl_down_sync(mask, variable, delta);
 #endif
 #ifdef __HIP__
@@ -329,7 +329,7 @@ __device__ __forceinline__ T s_shuffle_down(T variable, unsigned int delta, U ma
 template <typename T, typename U>
 __device__ __forceinline__ T s_shuffle_up(T variable, unsigned int delta, U mask = 0) noexcept {
    static_assert(std::is_integral<T>::value && "Only integers supported");
-#ifdef __NVCC__
+#if defined(__NVCC__) || defined(__NVCOMPILER)
    return __shfl_up_sync(mask, variable, delta);
 #endif
 #ifdef __HIP__

@@ -22,7 +22,7 @@
 
 namespace Hashinator {
 namespace defaults {
-#ifdef __NVCC__
+#if defined(__NVCC__) || defined(__NVCOMPILER)
 constexpr int WARPSIZE = 32;
 constexpr int BUCKET_OVERFLOW = 32;
 #elif (__HIP__ && __AMDGCN_WAVEFRONT_SIZE)

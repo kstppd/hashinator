@@ -57,7 +57,7 @@ constexpr inline size_t nextOverflow(size_t currentOverflow, size_t virtualWarp)
 }
 
 inline bool isDeviceAccessible(void* ptr){
-#ifdef __NVCC__
+#if defined(__NVCC__) || defined(__NVCOMPILER)
     cudaPointerAttributes attributes;
     cudaPointerGetAttributes(&attributes, ptr);
     if (attributes.type != cudaMemoryType::cudaMemoryTypeManaged &&

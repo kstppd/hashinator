@@ -21,6 +21,11 @@
 /* Select the compiled architecture */
 #ifdef __CUDACC__
 
+/* Needed here (not just transitively via gpu_wrappers.h, which some
+ * translation units include after this file) so CUDART_VERSION and the
+ * cudaMemLocation-related types below are guaranteed to be visible. */
+#include <cuda_runtime_api.h>
+
 #define split_gpuGetLastError cudaGetLastError
 #define split_gpuGetErrorString cudaGetErrorString
 #define split_gpuPeekAtLastError cudaPeekAtLastError
@@ -51,7 +56,27 @@
 #define split_gpuMemAdviseSetPreferredLocation cudaMemAdviseSetPreferredLocation
 #define split_gpuMemAttachSingle cudaMemAttachSingle
 #define split_gpuMemAttachGlobal cudaMemAttachGlobal
+
+#if defined(CUDART_VERSION) && (CUDART_VERSION >= 13000)
+/* CUDA 13 dropped the (ptr, count, int device, stream) overloads of
+ * cudaMemPrefetchAsync/cudaMemAdvise in favor of a cudaMemLocation-based
+ * signature. Keep call sites on the old int-device form and translate here. */
+static inline cudaMemLocation split_gpuMakeMemLocation(int device) {
+   cudaMemLocation location;
+   location.type = (device == cudaCpuDeviceId) ? cudaMemLocationTypeHost : cudaMemLocationTypeDevice;
+   location.id = (device == cudaCpuDeviceId) ? 0 : device;
+   return location;
+}
+static inline cudaError_t split_gpuMemPrefetchAsync(const void* devPtr, size_t count, int dstDevice, cudaStream_t stream) {
+   return cudaMemPrefetchAsync(devPtr, count, split_gpuMakeMemLocation(dstDevice), 0, stream);
+}
+static inline cudaError_t split_gpuMemAdvise(const void* devPtr, size_t count, cudaMemoryAdvise advice, int device) {
+   return cudaMemAdvise(devPtr, count, advice, split_gpuMakeMemLocation(device));
+}
+#define split_gpuMemAdviseDeclared
+#else
 #define split_gpuMemPrefetchAsync cudaMemPrefetchAsync
+#endif
 
 #define split_gpuStreamCreate cudaStreamCreate
 #define split_gpuStreamDestroy cudaStreamDestroy
@@ -90,7 +115,9 @@
 
 #define split_gpuCpuDeviceId cudaCpuDeviceId
 #define split_gpuMemoryAdvise cudaMemoryAdvise
+#ifndef split_gpuMemAdviseDeclared
 #define split_gpuMemAdvise cudaMemAdvise
+#endif
 
 #elif __HIP__
 
@@ -105,7 +132,7 @@
 #define split_gpuDeviceReset hipDeviceReset
 #define split_gpuFree hipFree
 #define split_gpuFreeHost hipHostFree
-#define split_gpuFreeAsync hipFreeAsync
+#define split_gpuFreeAsync(ptr,stream) hipFree(ptr)
 #define split_gpuMalloc hipMalloc
 #define split_gpuMallocHost hipHostMalloc
 #define split_gpuMallocAsync hipMallocAsync

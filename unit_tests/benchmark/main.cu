@@ -4,9 +4,14 @@
 #include <unordered_set>
 #include <random>
 #include "../../include/hashinator/hashinator.h"
-#include <nvToolsExt.h>
+#ifndef NOPROFILE
+#include <nvtx3/nvToolsExt.h>
 #define PROFILE_START(msg)   nvtxRangePushA((msg))
 #define PROFILE_END() nvtxRangePop()
+#else
+#define PROFILE_START(msg)
+#define PROFILE_END()
+#endif
 constexpr int R = 50;
 
 using namespace std::chrono;

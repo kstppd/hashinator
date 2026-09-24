@@ -23,7 +23,7 @@
 #include "../splitvector/gpu_wrappers.h"
 #include "defaults.h"
 #include "hashfunctions.h"
-#ifdef __NVCC__
+#if defined(__NVCC__) || defined(__NVCOMPILER)
 #include "kernels_NVIDIA.h"
 #endif
 #ifdef __HIP__
@@ -43,7 +43,10 @@ class Hasher {
 
 public:
    // Overload with separate input for keys and values.
-   static void insert(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+   // __host__: launches a kernel via <<<>>>, so it must never be compiled as a
+   // device function (nvc++'s -stdpar=gpu mode otherwise infers execution space
+   // from callers, and device-side kernel launches are unsupported).
+   static __host__ void insert(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
                       Hashinator::Info* info, size_t len,
                       split_gpuStream_t s = 0) {
       size_t blocks, blockSize;
@@ -65,7 +68,7 @@ public:
    }
 
    // Overload with input for keys only, using the index as the value
-   static void insertIndex(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, Hashinator::Info* info,
+   static __host__ void insertIndex(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buckets, Hashinator::Info* info,
                            size_t len, split_gpuStream_t s = 0) {
       size_t blocks, blockSize;
       info->err = status::success;
@@ -87,7 +90,7 @@ public:
 
    // Overload with hash_pair<key,val> (k,v) inputs
    // Used by the tombstone cleaning method.
-   static void insert(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+   static __host__ void insert(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
                       Hashinator::Info* info, size_t len, split_gpuStream_t s = 0) {
       size_t blocks, blockSize;
       info->err = status::success;
@@ -108,7 +111,7 @@ public:
    }
 
    // Retrieve wrapper
-   static void retrieve(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+   static __host__ void retrieve(KEY_TYPE* keys, VAL_TYPE* vals, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
                         Hashinator::Info* info, size_t len, split_gpuStream_t s = 0) {
 
       size_t blocks, blockSize;
@@ -118,7 +121,7 @@ public:
       SPLIT_CHECK_ERR(split_gpuStreamSynchronize(s));
    }
 
-   static void retrieve(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+   static __host__ void retrieve(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
                         Hashinator::Info* info, size_t len, split_gpuStream_t s = 0) {
 
       size_t blocks, blockSize;
@@ -129,7 +132,7 @@ public:
    }
 
    // Delete wrapper
-   static void erase(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
+   static __host__ void erase(KEY_TYPE* keys, hash_pair<KEY_TYPE, VAL_TYPE>* buckets,
                      Hashinator::Info* info, size_t len, split_gpuStream_t s = 0) {
 
       size_t blocks, blockSize;
@@ -141,7 +144,7 @@ public:
    }
 
    // Reset wrapper
-   static void reset(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* dst,
+   static __host__ void reset(hash_pair<KEY_TYPE, VAL_TYPE>* src, hash_pair<KEY_TYPE, VAL_TYPE>* dst,
                      Hashinator::Info* info, size_t len, split_gpuStream_t s = 0) {
       size_t blocks, blockSize;
       launchParams(len, blocks, blockSize);
@@ -152,7 +155,7 @@ public:
    }
 
    // Reset wrapper for all elements
-   static void reset_all(hash_pair<KEY_TYPE, VAL_TYPE>* dst, Hashinator::Info* info, size_t len,
+   static __host__ void reset_all(hash_pair<KEY_TYPE, VAL_TYPE>* dst, Hashinator::Info* info, size_t len,
                          split_gpuStream_t s = 0) {
       // fast ceil for positive ints
       size_t blocksNeeded = len / defaults::MAX_BLOCKSIZE + (len % defaults::MAX_BLOCKSIZE != 0);
@@ -162,7 +165,7 @@ public:
    }
 
 private:
-   static void launchParams(size_t N, size_t& blocks, size_t& blockSize) {
+   static __host__ void launchParams(size_t N, size_t& blocks, size_t& blockSize) {
       // fast ceil for positive ints
       size_t warpsNeeded = N / elementsPerWarp + (N % elementsPerWarp != 0);
       blockSize = std::min(warpsNeeded * WARP, static_cast<size_t>(defaults::MAX_BLOCKSIZE));

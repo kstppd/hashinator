@@ -74,11 +74,13 @@ private:
    //~Host members
 
    // Wrapper over available hash functions
+public:
    HASHINATOR_HOSTDEVICE
    uint32_t hash(KEY_TYPE in) const {
       static_assert(std::is_arithmetic<KEY_TYPE>::value);
       return HashFunction::_hash(in, _mapInfo->sizePower);
    }
+private:
 
    // Used by the constructors. Preallocates the device pointer and bookeepping info for later use on device.
    // This helps in reducing the number of calls to split_gpuMalloc
@@ -282,7 +284,7 @@ public:
    // Resize the table to fit more things. This is automatically invoked once
    // maxBucketOverflow has triggered. This can only be done on host (so far)
    template <bool prefetches = true>
-   void device_rehash(int newSizePower, split_gpuStream_t s = 0) {
+   __host__ void device_rehash(int newSizePower, split_gpuStream_t s = 0) {
       if (newSizePower > 32) {
          throw std::out_of_range("Hashmap ran into rehashing catastrophe and exceeded 32bit buckets.");
       }
@@ -480,6 +482,13 @@ public:
       }
       return buckets.data();
    }
+   template <bool warn = true>
+   HASHINATOR_HOSTDEVICE const hash_pair<KEY_TYPE, VAL_TYPE>* expose_bucketdata() const noexcept {
+      if constexpr(warn) {
+         printf("Warning, exposing Hashmap internal bucket data!\n");
+      }
+      return buckets.data();
+   }
 
 #ifdef HASHINATOR_CPU_ONLY_MODE
    void clear() {
@@ -488,8 +497,10 @@ public:
       return;
    }
 #else
+   // __host__: calls DeviceHasher, which launches kernels via <<<>>> and so
+   // must never be compiled as a device function (see hashers.h).
    template <bool prefetches = true>
-   void clear(targets t = targets::host, split_gpuStream_t s = 0, size_t len = 0) {
+   __host__ void clear(targets t = targets::host, split_gpuStream_t s = 0, size_t len = 0) {
       switch (t) {
       case targets::host:
          buckets =
@@ -527,7 +538,7 @@ public:
    }
 #else
    // Try to grow our buckets until we achieve a targetLF load factor
-   void resize_to_lf(float targetLF = 0.5, targets t = targets::host, split_gpuStream_t s = 0) {
+   __host__ void resize_to_lf(float targetLF = 0.5, targets t = targets::host, split_gpuStream_t s = 0) {
       while (load_factor() > targetLF) {
          switch (t) {
          case targets::host:
@@ -549,7 +560,7 @@ public:
 #ifdef HASHINATOR_CPU_ONLY_MODE
    void resize(int newSizePower) { rehash(newSizePower); }
 #else
-   void resize(int newSizePower, targets t = targets::host, split_gpuStream_t s = 0) {
+   __host__ void resize(int newSizePower, targets t = targets::host, split_gpuStream_t s = 0) {
       switch (t) {
       case targets::host:
          rehash(newSizePower);
@@ -1152,7 +1163,7 @@ public:
     *   hmap.extractPattern(elements,Rule<uint32_t,uint32_t>());
     * */
    template <bool prefetches = true, typename Rule>
-   size_t extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements, Rule rule,
+   __host__ size_t extractPattern(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements, Rule rule,
                          split_gpuStream_t s = 0) {
       elements.resize(_mapInfo->fill + 1, true);
       if constexpr (prefetches) {
@@ -1165,7 +1176,7 @@ public:
    }
 
    template <typename Rule, int BLOCKSIZE = 1024>
-   size_t extractPattern(hash_pair<KEY_TYPE, VAL_TYPE>* elements, Rule rule, split_gpuStream_t s = 0) {
+   __host__ size_t extractPattern(hash_pair<KEY_TYPE, VAL_TYPE>* elements, Rule rule, split_gpuStream_t s = 0) {
       // Extract elements matching the Pattern Rule(element)==true;
 
       // Figure out Blocks to use
@@ -1183,14 +1194,14 @@ public:
               buckets, elements, rule, nBlocks, mPool, s);
       return retval;
    }
-   template <typename Rule>
-   void extractPatternLoop(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements, Rule rule,
+   template <typename Rule, typename ALLOCATOR = split::split_unified_allocator<hash_pair<KEY_TYPE, VAL_TYPE>>>
+   __host__ void extractPatternLoop(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>, ALLOCATOR>& elements, Rule rule,
                            split_gpuStream_t s = 0) {
       // Extract elements matching the Pattern Rule(element)==true;
-      split::tools::copy_if_loop<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, defaults::MAX_BLOCKSIZE, defaults::WARPSIZE>(
+      split::tools::copy_if_loop<hash_pair<KEY_TYPE, VAL_TYPE>, Rule, ALLOCATOR, defaults::MAX_BLOCKSIZE, defaults::WARPSIZE>(
           *device_buckets, elements, rule, s);
    }
-   void extractLoop(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements, split_gpuStream_t s = 0) {
+   __host__ void extractLoop(split::SplitVector<hash_pair<KEY_TYPE, VAL_TYPE>>& elements, split_gpuStream_t s = 0) {
       // Extract all valid elements
       auto rule = [] __host__ __device__(const hash_pair<KEY_TYPE, VAL_TYPE>& kval) -> bool {
          return kval.first != EMPTYBUCKET && kval.first != TOMBSTONE;
@@ -1199,7 +1210,7 @@ public:
    }
 
    template <bool prefetches = true, typename Rule>
-   size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements, Rule rule, split_gpuStream_t s = 0) {
+   __host__ size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements, Rule rule, split_gpuStream_t s = 0) {
       elements.resize(_mapInfo->fill + 1, true);
       if constexpr (prefetches) {
          elements.optimizeGPU(s);
@@ -1215,7 +1226,7 @@ public:
       return elements.size();
    }
    template <bool prefetches = true, typename Rule>
-   size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements, Rule rule, void* stack, size_t max_size,
+   __host__ size_t extractKeysByPattern(split::SplitVector<KEY_TYPE>& elements, Rule rule, void* stack, size_t max_size,
                                split_gpuStream_t s = 0) {
       elements.resize(_mapInfo->fill + 1, true);
       if constexpr (prefetches) {
@@ -1226,15 +1237,15 @@ public:
                                  defaults::WARPSIZE>(buckets, elements, rule, stack, max_size, s);
       return elements.size();
    }
-   template <typename Rule>
-   void extractKeysByPatternLoop(split::SplitVector<KEY_TYPE>& elements, Rule rule, split_gpuStream_t s = 0) {
+   template <typename Rule, typename ALLOCATOR = split::split_unified_allocator<hash_pair<KEY_TYPE, VAL_TYPE>>>
+   __host__ void extractKeysByPatternLoop(split::SplitVector<KEY_TYPE, ALLOCATOR>& elements, Rule rule, split_gpuStream_t s = 0) {
       // Extract element **keys** matching the Pattern Rule(element)==true;
-      split::tools::copy_if_keys_loop<hash_pair<KEY_TYPE, VAL_TYPE>, KEY_TYPE, Rule, defaults::MAX_BLOCKSIZE,
+      split::tools::copy_if_keys_loop<hash_pair<KEY_TYPE, VAL_TYPE>, KEY_TYPE, Rule, ALLOCATOR, defaults::MAX_BLOCKSIZE,
                                       defaults::WARPSIZE>(*device_buckets, elements, rule, s);
    }
 
    template <bool prefetches = true>
-   size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, split_gpuStream_t s = 0) {
+   __host__ size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, split_gpuStream_t s = 0) {
       // Extract all keys
       auto rule = [] __host__ __device__(const hash_pair<KEY_TYPE, VAL_TYPE>& kval) -> bool {
          return kval.first != EMPTYBUCKET && kval.first != TOMBSTONE;
@@ -1242,7 +1253,7 @@ public:
       return extractKeysByPattern<prefetches>(elements, rule, s);
    }
    template <bool prefetches = true>
-   size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, void* stack, size_t max_size,
+   __host__ size_t extractAllKeys(split::SplitVector<KEY_TYPE>& elements, void* stack, size_t max_size,
                          split_gpuStream_t s = 0) {
       // Extract all keys
       auto rule = [] __host__ __device__(const hash_pair<KEY_TYPE, VAL_TYPE>& kval) -> bool {
@@ -1250,7 +1261,8 @@ public:
       };
       return extractKeysByPattern<prefetches>(elements, rule, stack, max_size, s);
    }
-   void extractAllKeysLoop(split::SplitVector<KEY_TYPE>& elements, split_gpuStream_t s = 0) {
+   template <typename ALLOCATOR = split::split_unified_allocator<hash_pair<KEY_TYPE, VAL_TYPE>>>
+   __host__ void extractAllKeysLoop(split::SplitVector<KEY_TYPE, ALLOCATOR>& elements, split_gpuStream_t s = 0) {
       // Extract all keys
       auto rule = [] __host__ __device__(const hash_pair<KEY_TYPE, VAL_TYPE>& kval) -> bool {
          return kval.first != EMPTYBUCKET && kval.first != TOMBSTONE;
@@ -1258,8 +1270,10 @@ public:
       extractKeysByPatternLoop(elements, rule, s);
    }
 
+   // __host__: calls DeviceHasher, which launches kernels via <<<>>> and so
+   // must never be compiled as a device function (see hashers.h).
    template <bool prefetches = true>
-   void clean_tombstones(split_gpuStream_t s = 0) {
+   __host__ void clean_tombstones(split_gpuStream_t s = 0) {
 
       if (_mapInfo->tombstoneCounter == 0) {
          return;
@@ -1315,8 +1329,10 @@ public:
    }
 
    // Uses Hasher's insert_kernel to insert all elements
+   // __host__: calls DeviceHasher, which launches kernels via <<<>>> and so
+   // must never be compiled as a device function (see hashers.h).
    template <bool prefetches = true>
-   void insert(KEY_TYPE* keys, VAL_TYPE* vals, size_t len, float targetLF = 0.5, split_gpuStream_t s = 0) {
+   __host__ void insert(KEY_TYPE* keys, VAL_TYPE* vals, size_t len, float targetLF = 0.5, split_gpuStream_t s = 0) {
       // Here we do some calculations to estimate how much if any we need to grow our buckets
       // TODO fix these if paths or at least annotate them .
       if (len == 0) {
@@ -1335,8 +1351,10 @@ public:
    }
 
    // Uses Hasher's insert_index_kernel to insert all elements, with the index as the value
+   // __host__: calls DeviceHasher, which launches kernels via <<<>>> and so
+   // must never be compiled as a device function (see hashers.h).
    template <bool prefetches = true>
-   void insertIndex(KEY_TYPE* keys, size_t len, float targetLF = 0.5, split_gpuStream_t s = 0) {
+   __host__ void insertIndex(KEY_TYPE* keys, size_t len, float targetLF = 0.5, split_gpuStream_t s = 0) {
       // Here we do some calculations to estimate how much if any we need to grow our buckets
       // TODO fix these if paths or at least annotate them .
       if (len == 0) {
@@ -1355,8 +1373,10 @@ public:
    }
 
    // Uses Hasher's insert_kernel to insert all elements
+   // __host__: calls DeviceHasher, which launches kernels via <<<>>> and so
+   // must never be compiled as a device function (see hashers.h).
    template <bool prefetches = true>
-   void insert(hash_pair<KEY_TYPE, VAL_TYPE>* src, size_t len, float targetLF = 0.5, split_gpuStream_t s = 0) {
+   __host__ void insert(hash_pair<KEY_TYPE, VAL_TYPE>* src, size_t len, float targetLF = 0.5, split_gpuStream_t s = 0) {
       if (len == 0) {
          set_status(status::success);
          return;
@@ -1374,8 +1394,10 @@ public:
    }
 
    // Uses Hasher's retrieve_kernel to read all elements
+   // __host__: calls DeviceHasher, which launches kernels via <<<>>> and so
+   // must never be compiled as a device function (see hashers.h).
    template <bool prefetches = true>
-   void retrieve(KEY_TYPE* keys, VAL_TYPE* vals, size_t len, split_gpuStream_t s = 0) {
+   __host__ void retrieve(KEY_TYPE* keys, VAL_TYPE* vals, size_t len, split_gpuStream_t s = 0) {
       if constexpr (prefetches) {
          buckets.optimizeGPU(s);
       }
@@ -1384,8 +1406,10 @@ public:
    }
 
    // Uses Hasher's retrieve_kernel to read all elements
+   // __host__: calls DeviceHasher, which launches kernels via <<<>>> and so
+   // must never be compiled as a device function (see hashers.h).
    template <bool prefetches = true>
-   void retrieve(hash_pair<KEY_TYPE, VAL_TYPE>* src, size_t len, split_gpuStream_t s = 0) {
+   __host__ void retrieve(hash_pair<KEY_TYPE, VAL_TYPE>* src, size_t len, split_gpuStream_t s = 0) {
       if constexpr (prefetches) {
          buckets.optimizeGPU(s);
       }
@@ -1394,8 +1418,10 @@ public:
    }
 
    // Uses Hasher's erase_kernel to delete all elements
+   // __host__: calls DeviceHasher, which launches kernels via <<<>>> and so
+   // must never be compiled as a device function (see hashers.h).
    template <bool prefetches = true>
-   void erase(KEY_TYPE* keys, size_t len, split_gpuStream_t s = 0) {
+   __host__ void erase(KEY_TYPE* keys, size_t len, split_gpuStream_t s = 0) {
       if constexpr (prefetches) {
          buckets.optimizeGPU(s);
       }

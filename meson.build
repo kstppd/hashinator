@@ -3,6 +3,8 @@ project('Hashinator', 'cpp', 'cuda' ,default_options : ['cpp_std=c++20','warning
 #Config
 add_global_arguments('-DHASHMAPDEBUG', language : 'cpp')
 add_global_arguments('-DHASHMAPDEBUG', language : 'cuda')
+add_global_arguments('-DNOPROFILE', language : 'cpp')
+add_global_arguments('-DNOPROFILE', language : 'cuda')
 add_project_arguments(['--expt-relaxed-constexpr','--expt-extended-lambda' ], language: 'cuda')
 
 #Dependencies
@@ -23,13 +25,15 @@ compaction2_unit = executable('compaction2_test', 'unit_tests/stream_compaction/
 compaction3_unit = executable('compaction3_test', 'unit_tests/stream_compaction/unit.cu', cuda_args:'--default-stream=per-thread',link_args : ['-fopenmp'],dependencies :gtest_dep)
 pointer_unit = executable('pointer_test', 'unit_tests/pointer_test/main.cu',dependencies :gtest_dep )
 hybridCPU = executable('hybrid_cpu', 'unit_tests/hybrid/main.cu',cpp_args:'-DHASHINATOR_CPU_ONLY_MODE',dependencies :gtest_dep )
-hashinator_bench = executable('bench', 'unit_tests/benchmark/main.cu', dependencies :gtest_dep,link_args:'-lnvToolsExt')
-compaction_bench = executable('streamBench', 'unit_tests/stream_compaction/bench.cu' ,link_args:'-lnvToolsExt')
+hashinator_bench = executable('bench', 'unit_tests/benchmark/main.cu', dependencies :gtest_dep)
+compaction_bench = executable('streamBench', 'unit_tests/stream_compaction/bench.cu')
 deletion_mechanism = executable('deletion', 'unit_tests/delete_by_compaction/main.cu', dependencies :gtest_dep)
 insertion_mechanism = executable('insertion', 'unit_tests/insertion_mechanism/main.cu', dependencies :gtest_dep)
 tombstoneTest = executable('tbPerf', 'unit_tests/benchmark/tbPerf.cu', dependencies :gtest_dep)
 realisticTest = executable('realistic', 'unit_tests/benchmark/realistic.cu', dependencies :gtest_dep)
 hybridGPU = executable('hybrid_gpu', 'unit_tests/hybrid/main.cu',dependencies :gtest_dep )
+customAllocator_unit = executable('custom_allocator_test', 'unit_tests/custom_allocator/unit.cu',dependencies :gtest_dep )
+memtest_unit = executable('memtest', 'unit_tests/memtest/memtest.cu',dependencies :gtest_dep )
 
 
 #Test-Runner
@@ -48,3 +52,5 @@ test('hybridCPU_Test',  hybridCPU)
 test('hybridGPU_Test',  hybridGPU)
 test('TbTest',  tombstoneTest)
 test('RealisticTest',  realisticTest)
+test('CustomAllocatorTest',  customAllocator_unit)
+test('MemTest',  memtest_unit)
